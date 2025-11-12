@@ -73,6 +73,82 @@ This module provides CLI commands for managing git worktrees. Git worktrees allo
 cd $(pando worktree:navigate --branch feature-x --output-path)
 ```
 
+## Post-Creation Setup (New Feature)
+
+### Rsync Operation
+After creating a worktree, pando can automatically copy files from the main worktree:
+
+**Purpose**: Copy gitignored files that aren't tracked by git
+- `node_modules/` for Node.js projects
+- `.env` files with environment variables
+- Build artifacts from previous builds
+- Any other gitignored files
+
+**Configuration**: Via `.pando.toml` or other config files
+```toml
+[rsync]
+enabled = true
+flags = ["--archive", "--exclude", ".git"]
+exclude = ["*.log", "tmp/"]
+```
+
+**CLI Overrides**:
+- `--skip-rsync` - Disable rsync for this worktree
+- `--rsync-flags` - Override rsync flags
+- `--rsync-exclude` - Add exclude patterns
+
+### Selective Symlinks
+Instead of copying certain files, create symlinks that point back to the main worktree:
+
+**Purpose**: Share files that should be synchronized across worktrees
+- `package.json` - Keep dependencies in sync
+- `pnpm-lock.yaml` / `yarn.lock` - Shared lockfiles
+- `.env*` - Shared environment configuration
+- `tsconfig.json` - Shared TypeScript config
+
+**Configuration**: Via `.pando.toml` or other config files
+```toml
+[symlink]
+patterns = ["package.json", "pnpm-lock.yaml", ".env*"]
+relative = true
+beforeRsync = true
+```
+
+**CLI Overrides**:
+- `--skip-symlink` - Disable symlink creation
+- `--symlink` - Override symlink patterns
+- `--absolute-symlinks` - Use absolute instead of relative paths
+
+### Transactional Guarantees
+If any post-creation step fails:
+1. Remove newly created worktree (`git worktree remove --force`)
+2. Clean up any partial symlinks
+3. Report what failed and why
+4. Suggest corrective action
+
+Users are **never** left with broken worktrees.
+
+### Workflow Integration
+```
+pando worktree:add --path ../feature --branch feature
+  ↓
+1. Create git worktree (git worktree add)
+  ↓
+2. Load configuration (.pando.toml, env vars, flags)
+  ↓
+3. Create symlinks (if beforeRsync = true)
+  ↓
+4. Execute rsync (copy files from main worktree)
+  ↓
+5. Create symlinks (if beforeRsync = false)
+  ↓
+6. Validate setup
+  ↓
+Success! Worktree ready to use.
+
+(On error: Rollback everything)
+```
+
 ## Patterns Used
 
 ### Command Pattern
@@ -83,12 +159,13 @@ Each command is a self-contained class following oclif conventions:
 - `async run()` for execution
 
 ### Delegation Pattern
-Commands delegate business logic to GitHelper:
+Commands delegate business logic to utilities:
 ```typescript
 // Command: CLI concerns only
 const result = await gitHelper.addWorktree(flags.path, flags)
+const setup = await orchestrator.setupNewWorktree(flags.path, options)
 
-// GitHelper: Git operations and business logic
+// Utilities: Business logic and operations
 ```
 
 ### Output Formatting Strategy

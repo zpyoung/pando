@@ -38,16 +38,41 @@ export class GitHelper {
   }
 
   /**
+   * Get the root directory of the git repository
+   */
+  async getRepositoryRoot(): Promise<string> {
+    // TODO: Implement repository root discovery
+    // 1. Execute git rev-parse --show-toplevel
+    // 2. Return the path
+    // 3. Handle errors (not a git repo)
+    // Used to find config files and determine source tree location
+    throw new Error('Not implemented')
+  }
+
+  /**
+   * Get the main worktree path (source for rsync operations)
+   */
+  async getMainWorktreePath(): Promise<string> {
+    // TODO: Implement main worktree detection
+    // 1. Execute git worktree list --porcelain
+    // 2. Parse output to find the main worktree (first one, no "branch" line)
+    // 3. Return its path
+    // Needed as source for rsync operations when creating new worktrees
+    throw new Error('Not implemented')
+  }
+
+  /**
    * Add a new worktree
    */
   async addWorktree(
     path: string,
-    options?: { branch?: string; commit?: string }
+    options?: { branch?: string; commit?: string; skipPostCreate?: boolean }
   ): Promise<WorktreeInfo> {
     // TODO: Implement worktree add
     // 1. Build command arguments
     // 2. Execute git worktree add
     // 3. Parse and return worktree info
+    // skipPostCreate flag added for integration with rsync/symlink setup
     throw new Error('Not implemented')
   }
 
