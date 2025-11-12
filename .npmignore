@@ -1,0 +1,44 @@
+# Source files
+src/
+test/
+*.test.ts
+
+# Configuration files
+tsconfig.json
+vitest.config.ts
+.eslintrc.json
+.prettierrc
+
+# Development files
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation (keep only essential)
+implementation.md
+ARCHITECTURE.md
+DESIGN.md
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.*
