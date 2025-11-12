@@ -1,0 +1,128 @@
+# Pando Configuration Example
+#
+# This file shows all available configuration options for pando.
+# Copy this to .pando.toml in your project root or add a [tool.pando]
+# section to your pyproject.toml, Cargo.toml, or "pando" key to package.json.
+#
+# For global configuration, place this at: ~/.config/pando/config.toml
+
+# ============================================================================
+# Rsync Configuration
+# ============================================================================
+# Controls how files are copied from the main worktree to new worktrees.
+# This allows gitignored files (node_modules, build artifacts, .env, etc.)
+# to be copied to new worktrees automatically.
+
+[rsync]
+# Enable or disable rsync operations
+# Default: true
+enabled = true
+
+# Rsync flags to use
+# Default: ["--archive", "--exclude", ".git"]
+# --archive: Preserves permissions, timestamps, symlinks
+# .git is always excluded
+flags = ["--archive", "--exclude", ".git"]
+
+# Additional patterns to exclude from rsync
+# Useful for large directories you don't want copied
+# Default: []
+# Examples:
+#   - "*.log"           # Exclude all log files
+#   - "tmp/"            # Exclude tmp directory
+#   - "node_modules/"   # Exclude node_modules (if you want to)
+#   - "*.pyc"           # Exclude Python bytecode
+#   - "__pycache__/"    # Exclude Python cache
+exclude = [
+  "*.log",
+  "tmp/",
+]
+
+# ============================================================================
+# Symlink Configuration
+# ============================================================================
+# Controls which files are symlinked instead of copied.
+# Symlinked files will reflect changes in the main worktree immediately.
+# Useful for shared configuration files, lockfiles, etc.
+
+[symlink]
+# Glob patterns for files to symlink
+# These files will be symlinked from the main worktree instead of copied.
+# Default: []
+#
+# Common patterns:
+#   - "package.json"      # Node.js package file
+#   - "pnpm-lock.yaml"    # pnpm lockfile
+#   - "yarn.lock"         # Yarn lockfile
+#   - "Cargo.lock"        # Rust lockfile
+#   - "poetry.lock"       # Python Poetry lockfile
+#   - ".env*"             # Environment files
+#   - "tsconfig.json"     # TypeScript config
+#   - ".eslintrc*"        # ESLint config
+patterns = [
+  "package.json",
+  "pnpm-lock.yaml",
+  ".env*",
+]
+
+# Use relative symlinks instead of absolute
+# Relative symlinks are more portable but require correct path calculation.
+# Default: true
+relative = true
+
+# Create symlinks before rsync (true) or after (false)
+# Before: Symlinks are created first, rsync skips them
+# After: Rsync copies files, then they're replaced with symlinks
+# Default: true (before rsync)
+beforeRsync = true
+
+# ============================================================================
+# Project-Specific Examples
+# ============================================================================
+
+# Node.js/TypeScript Project:
+# [rsync]
+# enabled = true
+# exclude = ["node_modules/", "dist/", "build/", ".next/", ".cache/"]
+#
+# [symlink]
+# patterns = ["package.json", "pnpm-lock.yaml", "tsconfig.json", ".env*"]
+
+# Python Project:
+# [rsync]
+# enabled = true
+# exclude = ["__pycache__/", "*.pyc", ".pytest_cache/", "dist/", "*.egg-info/"]
+#
+# [symlink]
+# patterns = ["pyproject.toml", "poetry.lock", ".env*"]
+
+# Rust Project:
+# [rsync]
+# enabled = true
+# exclude = ["target/", "**/*.rs.bk"]
+#
+# [symlink]
+# patterns = ["Cargo.toml", "Cargo.lock"]
+
+# ============================================================================
+# Environment Variable Overrides
+# ============================================================================
+# You can override any setting with environment variables:
+#
+#   PANDO_RSYNC_ENABLED=false
+#   PANDO_RSYNC_FLAGS=--archive,--exclude,.git
+#   PANDO_RSYNC_EXCLUDE=*.log,tmp/
+#   PANDO_SYMLINK_PATTERNS=package.json,pnpm-lock.yaml
+#   PANDO_SYMLINK_RELATIVE=false
+#   PANDO_SYMLINK_BEFORE_RSYNC=true
+
+# ============================================================================
+# CLI Flag Overrides
+# ============================================================================
+# All settings can be overridden via CLI flags:
+#
+#   pando worktree:add --path ../feature --branch feature --skip-rsync
+#   pando worktree:add --path ../feature --branch feature --skip-symlink
+#   pando worktree:add --path ../feature --branch feature --rsync-exclude "*.log"
+#   pando worktree:add --path ../feature --branch feature --symlink "package.json"
+#   pando worktree:add --path ../feature --branch feature --absolute-symlinks
