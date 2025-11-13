@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { GitHelper, WorktreeInfo, BranchInfo } from '../../src/utils/git'
+import { GitHelper, WorktreeInfo } from '../../src/utils/git'
 
 /**
  * Tests for GitHelper utility class
@@ -97,7 +97,13 @@ branch refs/heads/feature
         commit: 'abc123def456',
         isPrunable: false,
       })
-      expect(mockGit.raw).toHaveBeenCalledWith(['worktree', 'add', '-b', 'feature-branch', '/path/to/new'])
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'worktree',
+        'add',
+        '-b',
+        'feature-branch',
+        '/path/to/new',
+      ])
     })
 
     it('should add a worktree with commit reference', async () => {
@@ -183,11 +189,16 @@ prunable
 
       await gitHelper.removeWorktree('/path/to/worktree', true)
 
-      expect(mockGit.raw).toHaveBeenCalledWith(['worktree', 'remove', '--force', '/path/to/worktree'])
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'worktree',
+        'remove',
+        '--force',
+        '/path/to/worktree',
+      ])
     })
 
     it('should find worktree by exact branch name', async () => {
-      const mockWorktrees: WorktreeInfo[] = [
+      const _mockWorktrees: WorktreeInfo[] = [
         { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
         { path: '/path/to/feature', branch: 'feature-branch', commit: 'def456', isPrunable: false },
       ]
@@ -345,7 +356,11 @@ branch refs/heads/main
       const result = await gitHelper.branchExists('existing-branch')
 
       expect(result).toBe(true)
-      expect(mockGit.raw).toHaveBeenCalledWith(['rev-parse', '--verify', 'refs/heads/existing-branch'])
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'rev-parse',
+        '--verify',
+        'refs/heads/existing-branch',
+      ])
     })
 
     it('should return false if branch does not exist', async () => {
@@ -403,7 +418,9 @@ branch refs/heads/main
     it('should throw error when HEAD is detached', async () => {
       mockGit.raw = vi.fn().mockResolvedValue('HEAD\n')
 
-      await expect(gitHelper.getCurrentBranch()).rejects.toThrow('HEAD is detached (not on any branch)')
+      await expect(gitHelper.getCurrentBranch()).rejects.toThrow(
+        'HEAD is detached (not on any branch)'
+      )
     })
 
     it('should handle errors when getting current branch', async () => {

@@ -33,6 +33,7 @@ export default class CreateBranch extends Command {
       description: 'Automatically create a worktree at this path',
       required: false,
     }),
+
     json: jsonFlag,
   }
 
@@ -60,7 +61,7 @@ export default class CreateBranch extends Command {
         await git.branchExists(flags.from)
         // Note: branchExists checks refs/heads/, so this validates branch
         // For commit hashes, git will validate during branch creation
-      } catch (error) {
+      } catch {
         // Continue - will be validated during branch creation
       }
 

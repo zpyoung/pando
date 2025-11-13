@@ -1,6 +1,4 @@
-import { globby } from 'globby'
 import * as fs from 'fs-extra'
-import * as path from 'path'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import type { RsyncConfig, SymlinkConfig } from '../config/schema'
@@ -45,7 +43,10 @@ export class SymlinkConflictError extends Error {
  * Error thrown when file operations fail
  */
 export class FileOperationError extends Error {
-  constructor(message: string, public readonly cause?: Error) {
+  constructor(
+    message: string,
+    public readonly cause?: Error
+  ) {
     super(message)
     this.name = 'FileOperationError'
   }
@@ -82,7 +83,7 @@ export interface Operation {
  */
 export class FileOperationTransaction {
   private operations: Operation[] = []
-  private checkpoints: Map<string, any> = new Map()
+  private checkpoints: Map<string, unknown> = new Map()
 
   /**
    * Record an operation
@@ -101,7 +102,7 @@ export class FileOperationTransaction {
   /**
    * Create a checkpoint (snapshot state for potential rollback)
    */
-  async createCheckpoint(name: string, data: any): Promise<void> {
+  createCheckpoint(name: string, data: any): void {
     // TODO: Implement checkpoint creation
     // Store snapshot of current state
     // Used for rollback if needed
@@ -217,10 +218,10 @@ export class RsyncHelper {
    * Build rsync command from configuration
    */
   buildCommand(
-    source: string,
-    destination: string,
-    config: RsyncConfig,
-    additionalExcludes: string[] = []
+    _source: string,
+    _destination: string,
+    _config: RsyncConfig,
+    _additionalExcludes: string[] = []
   ): string {
     // TODO: Implement command builder
     // 1. Start with 'rsync'
@@ -237,11 +238,11 @@ export class RsyncHelper {
   /**
    * Execute rsync from source to destination
    */
-  async rsync(
-    source: string,
-    destination: string,
-    config: RsyncConfig,
-    options: {
+  rsync(
+    _source: string,
+    _destination: string,
+    _config: RsyncConfig,
+    _options: {
       excludePatterns?: string[]
       onProgress?: (output: string) => void
     } = {}
@@ -260,7 +261,7 @@ export class RsyncHelper {
   /**
    * Get estimated file count for rsync
    */
-  async estimateFileCount(source: string, config: RsyncConfig): Promise<number> {
+  estimateFileCount(_source: string, _config: RsyncConfig): Promise<number> {
     // TODO: Implement file count estimation
     // Run rsync with --dry-run and count files
     // Used for progress indicators
@@ -292,7 +293,7 @@ export class SymlinkHelper {
   /**
    * Match files against glob patterns
    */
-  async matchPatterns(baseDir: string, patterns: string[]): Promise<string[]> {
+  matchPatterns(_baseDir: string, _patterns: string[]): Promise<string[]> {
     // TODO: Implement pattern matching
     // 1. Use globby to match patterns in baseDir
     // 2. Return array of matched file paths (relative to baseDir)
@@ -305,8 +306,8 @@ export class SymlinkHelper {
   /**
    * Detect conflicts (files that exist at target path)
    */
-  async detectConflicts(
-    links: Array<{ source: string; target: string }>
+  detectConflicts(
+    _links: Array<{ source: string; target: string }>
   ): Promise<Array<{ source: string; target: string; reason: string }>> {
     // TODO: Implement conflict detection
     // 1. For each link, check if target exists
@@ -320,10 +321,10 @@ export class SymlinkHelper {
   /**
    * Create a single symlink
    */
-  async createSymlink(
-    source: string,
-    target: string,
-    options: {
+  createSymlink(
+    _source: string,
+    _target: string,
+    _options: {
       relative?: boolean
       replaceExisting?: boolean
     } = {}
@@ -343,11 +344,11 @@ export class SymlinkHelper {
   /**
    * Create multiple symlinks from patterns
    */
-  async createSymlinks(
-    sourceDir: string,
-    targetDir: string,
-    config: SymlinkConfig,
-    options: {
+  createSymlinks(
+    _sourceDir: string,
+    _targetDir: string,
+    _config: SymlinkConfig,
+    _options: {
       replaceExisting?: boolean
       skipConflicts?: boolean
     } = {}
@@ -367,7 +368,7 @@ export class SymlinkHelper {
   /**
    * Verify a symlink points to the correct target
    */
-  async verifySymlink(linkPath: string, expectedTarget: string): Promise<boolean> {
+  verifySymlink(_linkPath: string, _expectedTarget: string): Promise<boolean> {
     // TODO: Implement symlink verification
     // 1. Check if linkPath is a symlink
     // 2. Read link target

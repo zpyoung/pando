@@ -62,19 +62,19 @@ describe('FileOperationTransaction', () => {
   })
 
   describe('createCheckpoint', () => {
-    it('should create a checkpoint with data', async () => {
+    it('should create a checkpoint with data', () => {
       const checkpointName = 'test-checkpoint'
       const checkpointData = { content: 'test data' }
 
-      await transaction.createCheckpoint(checkpointName, checkpointData)
+      transaction.createCheckpoint(checkpointName, checkpointData)
 
       // Checkpoints are private, but we can verify by attempting rollback
       expect(true).toBe(true) // Checkpoint creation succeeds
     })
 
-    it('should store multiple checkpoints', async () => {
-      await transaction.createCheckpoint('checkpoint1', { value: 1 })
-      await transaction.createCheckpoint('checkpoint2', { value: 2 })
+    it('should store multiple checkpoints', () => {
+      transaction.createCheckpoint('checkpoint1', { value: 1 })
+      transaction.createCheckpoint('checkpoint2', { value: 2 })
 
       expect(true).toBe(true) // Multiple checkpoints succeed
     })
@@ -192,7 +192,7 @@ describe('FileOperationTransaction', () => {
       await fs.writeFile(filePath, originalContent)
 
       // Create checkpoint for the file
-      await transaction.createCheckpoint(`file:${filePath}`, originalContent)
+      transaction.createCheckpoint(`file:${filePath}`, originalContent)
 
       // Record deletion
       transaction.record(OperationType.DELETE_FILE, filePath)
@@ -283,10 +283,10 @@ describe('FileOperationTransaction', () => {
   })
 
   describe('clear', () => {
-    it('should clear all operations and checkpoints', async () => {
+    it('should clear all operations and checkpoints', () => {
       transaction.record(OperationType.CREATE_SYMLINK, '/path/1')
       transaction.record(OperationType.CREATE_DIR, '/path/2')
-      await transaction.createCheckpoint('test', { data: 'test' })
+      transaction.createCheckpoint('test', { data: 'test' })
 
       expect(transaction.getOperations()).toHaveLength(2)
 
@@ -327,11 +327,11 @@ describe('RsyncHelper', () => {
 
 describe('SymlinkHelper', () => {
   let transaction: FileOperationTransaction
-  let symlinkHelper: SymlinkHelper
+  let _symlinkHelper: SymlinkHelper
 
   beforeEach(() => {
     transaction = new FileOperationTransaction()
-    symlinkHelper = createSymlinkHelper(transaction)
+    _symlinkHelper = createSymlinkHelper(transaction)
   })
 
   describe('factory functions', () => {

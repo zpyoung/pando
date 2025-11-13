@@ -2,12 +2,7 @@ import { parse as parseToml } from '@iarna/toml'
 import * as fs from 'fs-extra'
 import * as os from 'os'
 import * as path from 'path'
-import type {
-  ConfigFile,
-  ConfigWithSource,
-  PandoConfig,
-  PartialPandoConfig,
-} from './schema'
+import type { ConfigFile, ConfigWithSource, PandoConfig, PartialPandoConfig } from './schema'
 import { ConfigSource, DEFAULT_CONFIG, validateConfig, validatePartialConfig } from './schema'
 import { getEnvConfig, hasEnvConfig } from './env'
 
@@ -43,15 +38,25 @@ const CONFIG_FILES = {
  */
 const SOURCE_PRIORITY: Record<ConfigSource, number> = {
   [ConfigSource.CLI_FLAG]: 100,
+
   [ConfigSource.ENV_VARS]: 90,
+
   [ConfigSource.ENV_VAR]: 90,
+
   [ConfigSource.PANDO_TOML]: 80,
+
   [ConfigSource.PYPROJECT_TOML]: 70,
+
   [ConfigSource.CARGO_TOML]: 69,
+
   [ConfigSource.PACKAGE_JSON]: 68,
+
   [ConfigSource.DENO_JSON]: 67,
+
   [ConfigSource.COMPOSER_JSON]: 66,
+
   [ConfigSource.GLOBAL_CONFIG]: 50,
+
   [ConfigSource.DEFAULT]: 0,
 }
 
@@ -481,10 +486,7 @@ export class ConfigLoader {
    * @param options - Load options
    * @returns Configuration with source metadata
    */
-  async loadWithSources(options: {
-    cwd?: string
-    gitRoot?: string
-  }): Promise<ConfigWithSource> {
+  async loadWithSources(options: { cwd?: string; gitRoot?: string }): Promise<ConfigWithSource> {
     const cwd = options.cwd || process.cwd()
     const gitRoot = options.gitRoot || cwd
 

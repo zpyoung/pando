@@ -24,6 +24,7 @@ export default class ConfigShow extends Command {
       description: 'Show where each setting comes from',
       default: false,
     }),
+
     json: jsonFlag,
   }
 
@@ -47,6 +48,7 @@ export default class ConfigShow extends Command {
       }
 
       // 3. Load configuration with source tracking
+
       const configWithSources = await configLoader.loadWithSources({
         cwd,
         gitRoot,
@@ -73,7 +75,7 @@ export default class ConfigShow extends Command {
    * Display configuration in human-readable format
    */
   private async displayHumanReadable(
-    configWithSources: { config: any; sources: any },
+    configWithSources: { config: Record<string, unknown>; sources: Record<string, unknown> },
     showSources: boolean
   ): Promise<void> {
     const chalk = (await import('chalk')).default
@@ -84,43 +86,55 @@ export default class ConfigShow extends Command {
     const sourceCount = uniqueSources.size + 1 // +1 for defaults
 
     // Title
-    this.log(chalk.bold(`\nConfiguration (merged from ${sourceCount} source${sourceCount === 1 ? '' : 's'}):\n`))
+    this.log(
+      chalk.bold(
+        `\nConfiguration (merged from ${sourceCount} source${sourceCount === 1 ? '' : 's'}):\n`
+      )
+    )
 
     // [rsync] section
+    const rsyncConfig = config.rsync as Record<string, unknown>
     this.log(chalk.cyan.bold('[rsync]'))
     this.log(
-      `  enabled = ${chalk.yellow(config.rsync.enabled)}${
-        showSources ? chalk.gray(` (${this.formatSource(sources['rsync.enabled'])})`) : ''
+      `  enabled = ${chalk.yellow(String(rsyncConfig.enabled))}${
+        showSources ? chalk.gray(` (${this.formatSource(String(sources['rsync.enabled']))})`) : ''
       }`
     )
     this.log(
-      `  flags = ${chalk.yellow(JSON.stringify(config.rsync.flags))}${
-        showSources ? chalk.gray(` (${this.formatSource(sources['rsync.flags'])})`) : ''
+      `  flags = ${chalk.yellow(JSON.stringify(rsyncConfig.flags))}${
+        showSources ? chalk.gray(` (${this.formatSource(String(sources['rsync.flags']))})`) : ''
       }`
     )
     this.log(
-      `  exclude = ${chalk.yellow(JSON.stringify(config.rsync.exclude))}${
-        showSources ? chalk.gray(` (${this.formatSource(sources['rsync.exclude'])})`) : ''
+      `  exclude = ${chalk.yellow(JSON.stringify(rsyncConfig.exclude))}${
+        showSources ? chalk.gray(` (${this.formatSource(String(sources['rsync.exclude']))})`) : ''
       }`
     )
 
     this.log('')
 
     // [symlink] section
+    const symlinkConfig = config.symlink as Record<string, unknown>
     this.log(chalk.cyan.bold('[symlink]'))
     this.log(
-      `  patterns = ${chalk.yellow(JSON.stringify(config.symlink.patterns))}${
-        showSources ? chalk.gray(` (${this.formatSource(sources['symlink.patterns'])})`) : ''
+      `  patterns = ${chalk.yellow(JSON.stringify(symlinkConfig.patterns))}${
+        showSources
+          ? chalk.gray(` (${this.formatSource(String(sources['symlink.patterns']))})`)
+          : ''
       }`
     )
     this.log(
-      `  relative = ${chalk.yellow(config.symlink.relative)}${
-        showSources ? chalk.gray(` (${this.formatSource(sources['symlink.relative'])})`) : ''
+      `  relative = ${chalk.yellow(String(symlinkConfig.relative))}${
+        showSources
+          ? chalk.gray(` (${this.formatSource(String(sources['symlink.relative']))})`)
+          : ''
       }`
     )
     this.log(
-      `  beforeRsync = ${chalk.yellow(config.symlink.beforeRsync)}${
-        showSources ? chalk.gray(` (${this.formatSource(sources['symlink.beforeRsync'])})`) : ''
+      `  beforeRsync = ${chalk.yellow(String(symlinkConfig.beforeRsync))}${
+        showSources
+          ? chalk.gray(` (${this.formatSource(String(sources['symlink.beforeRsync']))})`)
+          : ''
       }`
     )
 
@@ -143,16 +157,16 @@ export default class ConfigShow extends Command {
    */
   private formatSource(source: string): string {
     const sourceMap: Record<string, string> = {
-      'pando_toml': '.pando.toml',
-      'pyproject_toml': 'pyproject.toml',
-      'cargo_toml': 'Cargo.toml',
-      'package_json': 'package.json',
-      'deno_json': 'deno.json',
-      'composer_json': 'composer.json',
-      'global_config': '~/.config/pando/config.toml',
-      'default': 'default',
-      'cli_flag': 'CLI flag',
-      'env_var': 'environment variable',
+      pando_toml: '.pando.toml',
+      pyproject_toml: 'pyproject.toml',
+      cargo_toml: 'Cargo.toml',
+      package_json: 'package.json',
+      deno_json: 'deno.json',
+      composer_json: 'composer.json',
+      global_config: '~/.config/pando/config.toml',
+      default: 'default',
+      cli_flag: 'CLI flag',
+      env_var: 'environment variable',
     }
     return sourceMap[source] || source
   }

@@ -65,7 +65,10 @@ export function parseArray(value: string): string[] {
   // 2. Trim each value
   // 3. Filter out empty strings
   // 4. Return array
-  return value.split(',').map((v) => v.trim()).filter((v) => v.length > 0)
+  return value
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0)
 }
 
 /**
@@ -76,9 +79,9 @@ export function parseArray(value: string): string[] {
  * @param value - Value to set
  */
 export function setNestedProperty(
-  obj: Record<string, any>,
+  obj: Record<string, unknown>,
   path: string,
-  value: any
+  value: unknown
 ): void {
   // TODO: Implement nested property setting
   // 1. Split path by '.'
@@ -151,7 +154,7 @@ export function parseEnvVars(env: NodeJS.ProcessEnv = process.env): PartialPando
   // 6. Set nested property on config
   // 7. Return config object
 
-  const config: Record<string, any> = {}
+  const config: Record<string, unknown> = {}
 
   for (const [key, value] of Object.entries(env)) {
     if (!key.startsWith(ENV_PREFIX) || !value) {

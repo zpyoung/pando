@@ -56,11 +56,14 @@ export default class ConfigInit extends Command {
       // Git root config
       try {
         const git = simpleGit()
+
         const rootDir = await git.revparse(['--show-toplevel'])
         targetDir = rootDir.trim()
         filename = '.pando.toml'
-      } catch (error) {
-        this.error('Not in a git repository. Use --global or run from a git repository.', { exit: 1 })
+      } catch {
+        this.error('Not in a git repository. Use --global or run from a git repository.', {
+          exit: 1,
+        })
       }
     } else {
       // Current directory
@@ -73,10 +76,9 @@ export default class ConfigInit extends Command {
     // Check if file exists
     const fileExists = await fs.pathExists(configPath)
     if (fileExists && !flags.force) {
-      this.error(
-        `Configuration file already exists: ${configPath}\nUse --force to overwrite`,
-        { exit: 1 }
-      )
+      this.error(`Configuration file already exists: ${configPath}\nUse --force to overwrite`, {
+        exit: 1,
+      })
     }
 
     // Generate TOML content with helpful comments
@@ -100,7 +102,10 @@ export default class ConfigInit extends Command {
         this.log('  3. This config will be automatically discovered for this project')
       }
     } catch (error) {
-      this.error(`Failed to create configuration file: ${error instanceof Error ? error.message : String(error)}`, { exit: 1 })
+      this.error(
+        `Failed to create configuration file: ${error instanceof Error ? error.message : String(error)}`,
+        { exit: 1 }
+      )
     }
   }
 
@@ -108,7 +113,7 @@ export default class ConfigInit extends Command {
    * Generate TOML content with comments
    */
   private generateTomlContent(): string {
-    const toml = stringifyToml(DEFAULT_CONFIG)
+    const toml = stringifyToml(DEFAULT_CONFIG as Record<string, unknown>)
 
     // Add helpful header comment
     const header = `# Pando Configuration

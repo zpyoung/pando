@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import * as path from 'path'
 import * as fs from 'fs-extra'
 import { createGitHelper } from '../../../src/utils/git'
@@ -180,56 +180,56 @@ describe('worktree add', () => {
   describe('rsync and symlink integration', () => {
     it('should execute rsync with correct configuration', () => {
       // Test that rsync is called with proper flags and exclusions
-      const rsyncConfig = {
+      const _rsyncConfig = {
         enabled: true,
         flags: ['--archive', '--verbose'],
         exclude: ['*.log', 'tmp/', '.git'],
       }
 
-      expect(rsyncConfig.enabled).toBe(true)
-      expect(rsyncConfig.flags).toContain('--archive')
-      expect(rsyncConfig.exclude).toContain('.git')
+      expect(_rsyncConfig.enabled).toBe(true)
+      expect(_rsyncConfig.flags).toContain('--archive')
+      expect(_rsyncConfig.exclude).toContain('.git')
     })
 
     it('should create symlinks based on patterns', () => {
       // Test symlink creation logic
-      const symlinkConfig = {
+      const _symlinkConfig = {
         patterns: ['package.json', '*.lock'],
         relative: true,
         beforeRsync: true,
       }
 
-      const mockResult = {
+      const _mockResult = {
         created: 2,
         skipped: 0,
         conflicts: [],
       }
 
-      expect(mockResult.created).toBe(2)
-      expect(mockResult.conflicts).toHaveLength(0)
+      expect(_mockResult.created).toBe(2)
+      expect(_mockResult.conflicts).toHaveLength(0)
     })
 
     it('should handle rsync before symlink when beforeRsync=false', () => {
       // Test order of operations
-      const symlinkConfig = {
+      const _symlinkConfig = {
         patterns: ['*.json'],
         relative: true,
         beforeRsync: false, // Symlinks AFTER rsync
       }
 
-      expect(symlinkConfig.beforeRsync).toBe(false)
+      expect(_symlinkConfig.beforeRsync).toBe(false)
     })
 
     it('should exclude symlinked files from rsync when beforeRsync=true', () => {
       // Test that symlinked files are excluded from rsync
-      const symlinkConfig = {
+      const _symlinkConfig = {
         patterns: ['package.json'],
         relative: true,
         beforeRsync: true,
       }
 
-      const excludePatterns = ['.git', 'package.json'] // Should include symlinked file
-      expect(excludePatterns).toContain('package.json')
+      const _excludePatterns = ['.git', 'package.json'] // Should include symlinked file
+      expect(_excludePatterns).toContain('package.json')
     })
   })
 
@@ -261,7 +261,11 @@ describe('worktree add', () => {
       }
 
       const conflicts = [
-        { source: '/src/package.json', target: '/worktree/package.json', reason: 'File already exists' }
+        {
+          source: '/src/package.json',
+          target: '/worktree/package.json',
+          reason: 'File already exists',
+        },
       ]
       const error = new SymlinkConflictError('Conflicts detected', conflicts)
 
@@ -376,11 +380,11 @@ describe('worktree add', () => {
       ]
 
       const reportedPhases: string[] = []
-      const onProgress = (phase: string, message: string) => {
+      const onProgress = (phase: string, _message: string) => {
         reportedPhases.push(phase)
       }
 
-      phases.forEach(phase => onProgress(phase, `Executing ${phase}`))
+      phases.forEach((phase) => onProgress(phase, `Executing ${phase}`))
 
       expect(reportedPhases).toHaveLength(7)
       expect(reportedPhases).toContain('rsync')
