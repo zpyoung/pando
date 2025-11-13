@@ -1,5 +1,6 @@
 import { Command, Flags } from '@oclif/core'
 import { configLoader } from '../../config/loader'
+import { jsonFlag } from '../../utils/common-flags'
 
 /**
  * Show merged configuration
@@ -23,11 +24,7 @@ export default class ConfigShow extends Command {
       description: 'Show where each setting comes from',
       default: false,
     }),
-    json: Flags.boolean({
-      char: 'j',
-      description: 'Output in JSON format',
-      default: false,
-    }),
+    json: jsonFlag,
   }
 
   async run(): Promise<void> {

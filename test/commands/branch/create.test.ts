@@ -3,7 +3,7 @@ import CreateBranch from '../../../src/commands/branch/create.js'
 import * as gitUtils from '../../../src/utils/git.js'
 
 /**
- * Tests for branch:create command
+ * Tests for branch create command
  *
  * Tests cover all core functionality including:
  * - Creating new branches
@@ -14,7 +14,7 @@ import * as gitUtils from '../../../src/utils/git.js'
  * - Error handling
  */
 
-describe('branch:create', () => {
+describe('branch create', () => {
   let command: CreateBranch
   let logSpy: any
   let errorSpy: any

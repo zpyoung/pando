@@ -43,7 +43,7 @@
     "bin": "pando",
     "dirname": "pando",
     "commands": "./dist/commands",
-    "topicSeparator": ":",
+    "topicSeparator": " ",
     "topics": {
       "worktree": {
         "description": "Manage git worktrees"

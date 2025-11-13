@@ -3,7 +3,7 @@ import { GitHelper, WorktreeInfo } from '../../../src/utils/git.js'
 import RemoveWorktree from '../../../src/commands/worktree/remove.js'
 
 /**
- * Tests for worktree:remove command
+ * Tests for worktree remove command
  *
  * These tests use mocking to avoid requiring a real git repository
  */
@@ -23,7 +23,7 @@ vi.mock('../../../src/utils/git.js', () => {
   }
 })
 
-describe('worktree:remove', () => {
+describe('worktree remove', () => {
   let command: RemoveWorktree
   let mockGitHelper: any
   let logSpy: any

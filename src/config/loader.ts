@@ -9,6 +9,7 @@ import type {
   PartialPandoConfig,
 } from './schema'
 import { ConfigSource, DEFAULT_CONFIG, validateConfig, validatePartialConfig } from './schema'
+import { getEnvConfig, hasEnvConfig } from './env'
 
 /**
  * Configuration Loader
@@ -42,6 +43,7 @@ const CONFIG_FILES = {
  */
 const SOURCE_PRIORITY: Record<ConfigSource, number> = {
   [ConfigSource.CLI_FLAG]: 100,
+  [ConfigSource.ENV_VARS]: 90,
   [ConfigSource.ENV_VAR]: 90,
   [ConfigSource.PANDO_TOML]: 80,
   [ConfigSource.PYPROJECT_TOML]: 70,
@@ -78,7 +80,7 @@ export async function discoverConfigFiles(
   // Walk up directory tree from startDir to gitRoot
   while (true) {
     // Check each config file type at this level
-    for (const [sourceKey, fileName] of Object.entries(CONFIG_FILES)) {
+    for (const fileName of Object.values(CONFIG_FILES)) {
       const filePath = path.join(currentDir, fileName)
       const exists = await configFileExists(filePath)
 
@@ -453,6 +455,15 @@ export class ConfigLoader {
       }
     }
 
+    // Add environment variables with priority 90
+    const envConfig = getEnvConfig()
+    if (hasEnvConfig()) {
+      parsedConfigs.push({
+        config: envConfig,
+        source: ConfigSource.ENV_VARS,
+      })
+    }
+
     // Merge all configs with priority
     const { config: mergedConfig } = mergeMultipleConfigs(parsedConfigs)
 
@@ -498,6 +509,15 @@ export class ConfigLoader {
         // Log warning but continue with other configs
         console.warn(`Failed to parse ${configFile.path}:`, error)
       }
+    }
+
+    // Add environment variables with priority 90
+    const envConfig = getEnvConfig()
+    if (hasEnvConfig()) {
+      parsedConfigs.push({
+        config: envConfig,
+        source: ConfigSource.ENV_VARS,
+      })
     }
 
     // Merge all configs with source tracking

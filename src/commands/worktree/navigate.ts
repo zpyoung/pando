@@ -1,4 +1,5 @@
 import { Command, Flags } from '@oclif/core'
+import { jsonFlag } from '../../utils/common-flags'
 
 /**
  * Navigate to a git worktree
@@ -32,11 +33,7 @@ export default class NavigateWorktree extends Command {
       description: 'Output only the path (useful for shell evaluation)',
       default: false,
     }),
-    json: Flags.boolean({
-      char: 'j',
-      description: 'Output result in JSON format',
-      default: false,
-    }),
+    json: jsonFlag,
   }
 
   async run(): Promise<void> {

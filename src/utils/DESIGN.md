@@ -214,7 +214,7 @@ Please install rsync:
   - Ubuntu/Debian: apt install rsync
   - Fedora: dnf install rsync
 
-Or skip rsync: pando worktree:add --skip-rsync
+Or skip rsync: pando worktree add --skip-rsync
 ```
 
 ### Symlink Conflicts

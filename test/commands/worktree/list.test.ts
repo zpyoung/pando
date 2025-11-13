@@ -4,12 +4,12 @@ import * as gitUtils from '../../../src/utils/git'
 import type { WorktreeInfo } from '../../../src/utils/git'
 
 /**
- * Tests for worktree:list command
+ * Tests for worktree list command
  *
  * These tests verify the command logic by mocking the GitHelper
  */
 
-describe('worktree:list', () => {
+describe('worktree list', () => {
   // Mock sample data
   const mockWorktrees: WorktreeInfo[] = [
     {

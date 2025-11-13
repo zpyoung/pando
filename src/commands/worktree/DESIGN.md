@@ -20,7 +20,7 @@ This module provides CLI commands for managing git worktrees. Git worktrees allo
 
 - **navigate.ts** - Helps users navigate to worktrees
   - Supports lookup by branch name or path
-  - Outputs paths for shell evaluation (`cd $(pando worktree:navigate ...)`)
+  - Outputs paths for shell evaluation (`cd $(pando worktree navigate ...)`)
 
 ## Key Design Decisions
 
@@ -70,7 +70,7 @@ This module provides CLI commands for managing git worktrees. Git worktrees allo
 
 **Usage**:
 ```bash
-cd $(pando worktree:navigate --branch feature-x --output-path)
+cd $(pando worktree navigate --branch feature-x --output-path)
 ```
 
 ## Post-Creation Setup (New Feature)
@@ -130,7 +130,7 @@ Users are **never** left with broken worktrees.
 
 ### Workflow Integration
 ```
-pando worktree:add --path ../feature --branch feature
+pando worktree add --path ../feature --branch feature
   ↓
 1. Create git worktree (git worktree add)
   ↓
@@ -195,50 +195,50 @@ if (flags.json) {
 ### Adding a Worktree
 ```typescript
 // Interactive
-pando worktree:add
+pando worktree add
 // Prompts: Path? Branch?
 
 // Scripted
-pando worktree:add --path ../feature-x --branch feature-x
+pando worktree add --path ../feature-x --branch feature-x
 
 // From specific commit
-pando worktree:add --path ../hotfix --branch hotfix --commit abc123
+pando worktree add --path ../hotfix --branch hotfix --commit abc123
 
 // JSON output
-pando worktree:add --path ../feature-x --branch feature-x --json
+pando worktree add --path ../feature-x --branch feature-x --json
 ```
 
 ### Listing Worktrees
 ```typescript
 // Simple list
-pando worktree:list
+pando worktree list
 
 // Verbose
-pando worktree:list --verbose
+pando worktree list --verbose
 
 // For scripts
-pando worktree:list --json | jq '.data[] | select(.branch == "main")'
+pando worktree list --json | jq '.data[] | select(.branch == "main")'
 ```
 
 ### Removing Worktrees
 ```typescript
 // Safe removal
-pando worktree:remove --path ../feature-x
+pando worktree remove --path ../feature-x
 
 // Force removal
-pando worktree:remove --path ../feature-x --force
+pando worktree remove --path ../feature-x --force
 ```
 
 ### Navigating to Worktrees
 ```typescript
 # By branch name
-cd $(pando worktree:navigate --branch feature-x --output-path)
+cd $(pando worktree navigate --branch feature-x --output-path)
 
 # By path
-cd $(pando worktree:navigate --path ../feature-x --output-path)
+cd $(pando worktree navigate --path ../feature-x --output-path)
 
 # With shell alias
-alias goto='cd $(pando worktree:navigate --output-path --branch $1)'
+alias goto='cd $(pando worktree navigate --output-path --branch $1)'
 goto feature-x
 ```
 
@@ -249,7 +249,7 @@ Use `@oclif/test` to test command behavior:
 ```typescript
 test
   .stdout()
-  .command(['worktree:add', '--path', '../test', '--branch', 'test'])
+  .command(['worktree add', '--path', '../test', '--branch', 'test'])
   .it('creates a new worktree', ctx => {
     expect(ctx.stdout).to.contain('Worktree created')
   })

@@ -1,7 +1,7 @@
 import { Command, Flags } from '@oclif/core'
-import chalk from 'chalk'
 import * as path from 'node:path'
 import { createGitHelper } from '../../utils/git.js'
+import { jsonFlag, forceFlag } from '../../utils/common-flags'
 
 /**
  * Remove a git worktree
@@ -24,16 +24,8 @@ export default class RemoveWorktree extends Command {
       description: 'Path to the worktree to remove',
       required: true,
     }),
-    force: Flags.boolean({
-      char: 'f',
-      description: 'Force removal even with uncommitted changes',
-      default: false,
-    }),
-    json: Flags.boolean({
-      char: 'j',
-      description: 'Output result in JSON format',
-      default: false,
-    }),
+    force: forceFlag,
+    json: jsonFlag,
   }
 
   async run(): Promise<void> {
@@ -89,6 +81,7 @@ export default class RemoveWorktree extends Command {
               hasUncommittedChanges: true,
             }))
           } else {
+            const chalk = (await import('chalk')).default
             this.error(
               chalk.red('Worktree has uncommitted changes.') + '\n' +
               chalk.yellow(`Use ${chalk.bold('--force')} to remove anyway.`)
@@ -110,6 +103,7 @@ export default class RemoveWorktree extends Command {
           forced: flags.force,
         }))
       } else {
+        const chalk = (await import('chalk')).default
         this.log(chalk.green('✓ Worktree removed successfully'))
         this.log(`  Path: ${chalk.cyan(worktree.path)}`)
         if (worktree.branch) {
@@ -129,6 +123,7 @@ export default class RemoveWorktree extends Command {
           error: errorMessage,
         }))
       } else {
+        const chalk = (await import('chalk')).default
         this.error(chalk.red(`Failed to remove worktree: ${errorMessage}`))
       }
     }

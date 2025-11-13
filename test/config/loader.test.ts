@@ -844,6 +844,120 @@ enabled = true
   })
 
   // ============================================================================
+  // Environment Variables Integration Tests
+  // ============================================================================
+
+  describe('Environment Variables Integration', () => {
+    const originalEnv = process.env
+
+    afterEach(() => {
+      // Restore original environment
+      process.env = originalEnv
+    })
+
+    it('should automatically include environment variables in load()', async () => {
+      // Set environment variables
+      process.env = {
+        ...originalEnv,
+        PANDO_RSYNC_ENABLED: 'false',
+        PANDO_RSYNC_FLAGS: '--archive,--verbose',
+      }
+
+      const loader = new ConfigLoader()
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      expect(config.rsync.enabled).toBe(false)
+      expect(config.rsync.flags).toEqual(['--archive', '--verbose'])
+    })
+
+    it('should prioritize env vars over file configs', async () => {
+      // Create file config
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[rsync]
+enabled = true
+flags = ["--delete"]
+`
+      )
+
+      // Set conflicting environment variables
+      process.env = {
+        ...originalEnv,
+        PANDO_RSYNC_ENABLED: 'false',
+      }
+
+      const loader = new ConfigLoader()
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      // Env vars should win (priority 90 > 80)
+      expect(config.rsync.enabled).toBe(false)
+      // File config flags should be preserved since env didn't override them
+      expect(config.rsync.flags).toEqual(['--delete'])
+    })
+
+    it('should track env vars as source in loadWithSources()', async () => {
+      process.env = {
+        ...originalEnv,
+        PANDO_SYMLINK_PATTERNS: '*.json,*.lock',
+      }
+
+      const loader = new ConfigLoader()
+      const result = await loader.loadWithSources({ cwd: tempDir, gitRoot: tempDir })
+
+      expect(result.config.symlink.patterns).toEqual(['*.json', '*.lock'])
+      expect(result.sources['symlink.patterns']).toBe(ConfigSource.ENV_VARS)
+    })
+
+    it('should handle no env vars gracefully', async () => {
+      // Clear any PANDO_* env vars
+      const cleanEnv: NodeJS.ProcessEnv = {}
+      for (const key of Object.keys(originalEnv)) {
+        if (!key.startsWith('PANDO_')) {
+          cleanEnv[key] = originalEnv[key]
+        }
+      }
+      process.env = cleanEnv
+
+      const loader = new ConfigLoader()
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      // Should just return defaults
+      expect(config).toEqual(DEFAULT_CONFIG)
+    })
+
+    it('should merge env vars with file configs correctly', async () => {
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[rsync]
+enabled = false
+exclude = ["*.log"]
+
+[symlink]
+relative = false
+`
+      )
+
+      process.env = {
+        ...originalEnv,
+        PANDO_RSYNC_FLAGS: '--archive,--delete',
+        PANDO_SYMLINK_PATTERNS: '*.json',
+      }
+
+      const loader = new ConfigLoader()
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      // Should have both file and env configs merged
+      expect(config.rsync.enabled).toBe(false) // from file
+      expect(config.rsync.flags).toEqual(['--archive', '--delete']) // from env
+      expect(config.rsync.exclude).toEqual(['*.log']) // from file
+      expect(config.symlink.patterns).toEqual(['*.json']) // from env
+      expect(config.symlink.relative).toBe(false) // from file
+    })
+  })
+
+  // ============================================================================
   // Edge Cases and Error Handling
   // ============================================================================
 

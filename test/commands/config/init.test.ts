@@ -6,7 +6,7 @@ import * as os from 'os'
 import simpleGit from 'simple-git'
 import { parse as parseToml } from '@iarna/toml'
 
-describe('config:init', () => {
+describe('config init', () => {
   let tempDir: string
   let originalCwd: string
 
@@ -37,7 +37,7 @@ describe('config:init', () => {
 
   describe('basic functionality', () => {
     it('should create .pando.toml in current directory', async () => {
-      const result = await runCommand(['config:init'], import.meta.url)
+      const result = await runCommand(['config init'], import.meta.url)
 
       // Check file was created
       const configPath = path.join(tempDir, '.pando.toml')
@@ -48,7 +48,7 @@ describe('config:init', () => {
     })
 
     it('should create valid TOML content with defaults', async () => {
-      await runCommand(['config:init'], import.meta.url)
+      await runCommand(['config init'], import.meta.url)
 
       const configPath = path.join(tempDir, '.pando.toml')
       const content = await fs.readFile(configPath, 'utf-8')
@@ -74,7 +74,7 @@ describe('config:init', () => {
     })
 
     it('should include helpful comments in output', async () => {
-      await runCommand(['config:init'], import.meta.url)
+      await runCommand(['config init'], import.meta.url)
 
       const configPath = path.join(tempDir, '.pando.toml')
       const content = await fs.readFile(configPath, 'utf-8')
@@ -93,10 +93,10 @@ describe('config:init', () => {
   describe('--force flag', () => {
     it('should fail if file exists without --force', async () => {
       // Create initial config
-      await runCommand(['config:init'], import.meta.url)
+      await runCommand(['config init'], import.meta.url)
 
       // Try to create again without --force
-      const result = await runCommand(['config:init'], import.meta.url)
+      const result = await runCommand(['config init'], import.meta.url)
 
       // Should have an error
       expect(result.error).toBeDefined()
@@ -107,13 +107,13 @@ describe('config:init', () => {
       const configPath = path.join(tempDir, '.pando.toml')
 
       // Create initial config
-      await runCommand(['config:init'], import.meta.url)
+      await runCommand(['config init'], import.meta.url)
 
       // Modify the file
       await fs.writeFile(configPath, '# Modified content\n')
 
       // Overwrite with --force
-      await runCommand(['config:init', '--force'], import.meta.url)
+      await runCommand(['config init', '--force'], import.meta.url)
 
       // Verify file was overwritten with fresh content
       const content = await fs.readFile(configPath, 'utf-8')
@@ -138,7 +138,7 @@ describe('config:init', () => {
       }
 
       try {
-        const result = await runCommand(['config:init', '--global'], import.meta.url)
+        const result = await runCommand(['config init', '--global'], import.meta.url)
 
         // Check file was created in correct location
         expect(await fs.pathExists(globalConfigPath)).toBe(true)
@@ -171,7 +171,7 @@ describe('config:init', () => {
       }
 
       try {
-        await runCommand(['config:init', '--global'], import.meta.url)
+        await runCommand(['config init', '--global'], import.meta.url)
         expect(await fs.pathExists(globalConfigPath)).toBe(true)
       } finally {
         // Clean up
@@ -189,7 +189,7 @@ describe('config:init', () => {
       await fs.ensureDir(subDir)
       process.chdir(subDir)
 
-      const result = await runCommand(['config:init', '--git-root'], import.meta.url)
+      const result = await runCommand(['config init', '--git-root'], import.meta.url)
 
       // Config should be at git root, not in subdirectory
       const configPath = path.join(tempDir, '.pando.toml')
@@ -207,7 +207,7 @@ describe('config:init', () => {
       try {
         process.chdir(nonGitDir)
 
-        const result = await runCommand(['config:init', '--git-root'], import.meta.url)
+        const result = await runCommand(['config init', '--git-root'], import.meta.url)
 
         expect(result.error).toBeDefined()
         expect(result.error?.message).toContain('Not in a git repository')
@@ -220,7 +220,7 @@ describe('config:init', () => {
 
   describe('file permissions', () => {
     it('should create file with 0o644 permissions', async () => {
-      await runCommand(['config:init'], import.meta.url)
+      await runCommand(['config init'], import.meta.url)
 
       const configPath = path.join(tempDir, '.pando.toml')
       const stats = await fs.stat(configPath)
@@ -247,7 +247,7 @@ describe('config:init', () => {
       await fs.chmod(configPath, 0o444) // Read-only
 
       try {
-        const result = await runCommand(['config:init', '--force'], import.meta.url)
+        const result = await runCommand(['config init', '--force'], import.meta.url)
 
         // Should fail because file is read-only
         expect(result.error).toBeDefined()
@@ -268,7 +268,7 @@ describe('config:init', () => {
         delete process.env.HOME
         delete process.env.USERPROFILE
 
-        const result = await runCommand(['config:init', '--global'], import.meta.url)
+        const result = await runCommand(['config init', '--global'], import.meta.url)
 
         expect(result.error).toBeDefined()
         expect(result.error?.message).toContain('Could not determine home directory')
@@ -296,7 +296,7 @@ describe('config:init', () => {
       }
 
       try {
-        await runCommand(['config:init', '--global', '--git-root'], import.meta.url)
+        await runCommand(['config init', '--global', '--git-root'], import.meta.url)
 
         // Should create global config (global takes precedence)
         expect(await fs.pathExists(globalConfigPath)).toBe(true)
@@ -324,7 +324,7 @@ describe('config:init', () => {
       }
 
       try {
-        await runCommand(['config:init', '--global'], import.meta.url)
+        await runCommand(['config init', '--global'], import.meta.url)
 
         // Verify directory was created
         expect(await fs.pathExists(globalConfigDir)).toBe(true)
@@ -343,7 +343,7 @@ describe('config:init', () => {
 
   describe('output messages', () => {
     it('should show next steps after creation', async () => {
-      const result = await runCommand(['config:init'], import.meta.url)
+      const result = await runCommand(['config init'], import.meta.url)
 
       expect(result.error).toBeUndefined()
 
@@ -366,7 +366,7 @@ describe('config:init', () => {
       }
 
       try {
-        const result = await runCommand(['config:init', '--global'], import.meta.url)
+        const result = await runCommand(['config init', '--global'], import.meta.url)
 
         expect(result.error).toBeUndefined()
         expect(await fs.pathExists(globalConfigPath)).toBe(true)
@@ -379,7 +379,7 @@ describe('config:init', () => {
     })
 
     it('should show project-specific message for local config', async () => {
-      const result = await runCommand(['config:init'], import.meta.url)
+      const result = await runCommand(['config init'], import.meta.url)
 
       expect(result.error).toBeUndefined()
 

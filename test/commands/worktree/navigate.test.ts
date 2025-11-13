@@ -4,12 +4,12 @@ import * as gitUtils from '../../../src/utils/git'
 import type { WorktreeInfo } from '../../../src/utils/git'
 
 /**
- * Tests for worktree:navigate command
+ * Tests for worktree navigate command
  *
  * These tests verify the command logic by mocking the GitHelper
  */
 
-describe('worktree:navigate', () => {
+describe('worktree navigate', () => {
   // Mock sample data
   const mockWorktrees: WorktreeInfo[] = [
     {

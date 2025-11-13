@@ -19,10 +19,10 @@
 ## Core Features & Workflows
 
 **Worktree Management**
-- Add: Create new worktrees from branches/commits (`pando worktree:add`)
-- List: Show all worktrees with metadata (`pando worktree:list`)
-- Remove: Detach and clean up worktrees (`pando worktree:remove`)
-- Navigate: Output directory hints or navigation commands (`pando worktree:navigate`)
+- Add: Create new worktrees from branches/commits (`pando worktree add`)
+- List: Show all worktrees with metadata (`pando worktree list`)
+- Remove: Detach and clean up worktrees (`pando worktree remove`)
+- Navigate: Output directory hints or navigation commands (`pando worktree navigate`)
 
 **Branch Utilities**
 - Create/Delete branches
@@ -132,13 +132,13 @@ export default class AddWorktree extends Command {
 ## Example Workflows
 
 - Add a feature worktree  
-  `pando worktree:add --path ../feature-x --branch feature-x`
+  `pando worktree add --path ../feature-x --branch feature-x`
 - List all  
-  `pando worktree:list`
+  `pando worktree list`
 - Remove  
-  `pando worktree:remove --path ../feature-x`
+  `pando worktree remove --path ../feature-x`
 - Output JSON for agent  
-  `pando worktree:list --json`
+  `pando worktree list --json`
 
 ***
 
@@ -149,10 +149,10 @@ export default class AddWorktree extends Command {
 - Example:
 ```typescript
 import {expect, test} from '@oclif/test'
-describe('worktree:add', () => {
+describe('worktree add', () => {
   test
     .stdout()
-    .command(['worktree:add', '--path', '../feature-x', '--branch', 'feature-x'])
+    .command(['worktree add', '--path', '../feature-x', '--branch', 'feature-x'])
     .it('creates a new worktree', ctx => {
       expect(ctx.stdout).to.contain('Worktree created at:')
     })
