@@ -18,6 +18,22 @@ pnpm lint          # Lint code
 pnpm format        # Format code
 ```
 
+### Beads Commands (Task Management)
+```bash
+bd ready --json           # Find ready work (no blockers)
+bd list --json            # List all issues
+bd show <id> --json       # Show issue details
+bd create "title" --json  # Create new issue
+bd update <id> --status in_progress  # Claim task
+bd comments add <id> "text"          # Add progress comment
+bd close <id> --reason "Done"        # Complete task
+bd sync                   # Sync with git (run at session end)
+```
+
+**Database Location**: `.beads/pando.db` (SQLite, gitignored)
+**Issue Prefix**: `pando-` (e.g., `pando-1`, `pando-2`)
+**Versioned State**: `.beads/issues.jsonl` (committed to git)
+
 ### Key Directories
 - `src/commands/` - Command implementations (CLI layer)
 - `src/utils/` - Business logic and git operations
@@ -709,6 +725,248 @@ if (process.env.NODE_DEBUG?.includes('pando')) {
 - `eslint` - Linting
 - `prettier` - Formatting
 
+## Task Management with Beads
+
+### Overview
+
+This project uses **Beads** (`bd`) for task management instead of traditional TODO tools. Beads is an AI-first, dependency-aware issue tracker designed specifically for AI coding agents with CLI-first interface and JSON output.
+
+### Why Beads?
+
+- **Agent Memory**: Treats issues as agent memory rather than planning artifacts
+- **Dependency Tracking**: Four dependency types (blocks, related, parent-child, discovered-from)
+- **Distributed State**: SQLite for local queries, JSONL files in git for distributed sharing
+- **JSON-First**: Every command has `--json` flag for programmatic use
+- **Git Integration**: Automatic sync with git hooks and `bd sync` command
+
+### Core Workflow
+
+#### 1. Finding Ready Work
+
+```bash
+# Get top 5 ready tasks (no blockers)
+bd ready --limit 5 --json
+
+# Filter by priority
+bd ready --priority 0 --json
+```
+
+**MCP Integration**:
+```python
+mcp__plugin_beads_beads__ready(limit=5, priority=0)
+```
+
+#### 2. Claiming Tasks
+
+```bash
+# Claim task by setting status to in_progress
+bd update pando-3 --status in_progress --json
+```
+
+**MCP Integration**:
+```python
+mcp__plugin_beads_beads__update(
+    issue_id="pando-3",
+    status="in_progress"
+)
+```
+
+#### 3. Creating Issues
+
+```bash
+# Create with explicit parameters
+bd create "Fix authentication bug" \
+  -d "Users getting 401 errors on login" \
+  -p 0 \
+  -t bug \
+  --json
+
+# Create with dependencies
+bd create "Add rate limiting" \
+  -t feature -p 1 \
+  --deps discovered-from:pando-1,blocks:pando-5 \
+  --json
+```
+
+**MCP Integration**:
+```python
+mcp__plugin_beads_beads__create(
+    title="Fix authentication bug",
+    description="Users getting 401 errors on login",
+    priority=0,
+    issue_type="bug"
+)
+```
+
+#### 4. Tracking Progress with Comments
+
+```bash
+# Add progress comment
+bd comments add pando-3 "Implemented core logic, testing edge cases" --json
+
+# View all comments
+bd comments pando-3 --json
+```
+
+#### 5. Completing Tasks
+
+```bash
+# Close when done
+bd close pando-3 --reason "Implemented and tested" --json
+```
+
+**MCP Integration**:
+```python
+mcp__plugin_beads_beads__close(
+    issue_id="pando-3",
+    reason="Implemented and tested"
+)
+```
+
+### Dependency Management
+
+#### Dependency Types
+
+1. **blocks**: Hard blocker (task cannot proceed until blocker is closed)
+2. **related**: Soft link (informational only)
+3. **parent-child**: Epic/subtask relationship (blocking propagates through hierarchy)
+4. **discovered-from**: Links discovered work back to parent task
+
+#### Adding Dependencies
+
+```bash
+# Add blocking dependency (pando-5 blocked by pando-3)
+bd dep add pando-5 pando-3 --type blocks --json
+
+# Link discovered work back to parent
+bd create "Add tests for auth module" -t task -p 1 --json
+bd dep add pando-10 pando-3 --type discovered-from --json
+```
+
+**MCP Integration**:
+```python
+mcp__plugin_beads_beads__dep(
+    issue_id="pando-5",
+    depends_on_id="pando-3",
+    dep_type="blocks"
+)
+```
+
+### Git Integration
+
+#### Automatic Sync
+
+```bash
+# Full sync workflow: export + commit + pull + import + push
+bd sync --json
+
+# Dry run to preview
+bd sync --dry-run
+```
+
+**Always run `bd sync` at the end of a coding session** to ensure all issues are committed and pushed.
+
+### AI Agent Best Practices
+
+#### 1. Start Each Session
+
+```bash
+# Check workspace context
+bd info --json
+
+# Find ready work
+bd ready --limit 10 --json
+```
+
+#### 2. During Work
+
+```bash
+# Claim task before starting
+bd update pando-3 --status in_progress --json
+
+# Add progress comments
+bd comments add pando-3 "Working on implementation" --json
+
+# Create discovered issues with links
+bd create "Add missing tests" -t task -p 1 --json
+bd dep add pando-11 pando-3 --type discovered-from --json
+```
+
+#### 3. End Each Session
+
+```bash
+# Close completed tasks
+bd close pando-3 --reason "Completed" --json
+
+# Sync with git
+bd sync --json
+```
+
+### MCP Server Usage
+
+**Workspace Context**: Always set context before operations:
+```python
+mcp__plugin_beads_beads__set_context(
+    workspace_root="/path/to/project"
+)
+```
+
+**Common Operations**:
+- `mcp__plugin_beads_beads__ready()` - Find ready work
+- `mcp__plugin_beads_beads__list()` - List issues with filters
+- `mcp__plugin_beads_beads__show()` - Get issue details
+- `mcp__plugin_beads_beads__create()` - Create new issue
+- `mcp__plugin_beads_beads__update()` - Update issue
+- `mcp__plugin_beads_beads__close()` - Close issue
+- `mcp__plugin_beads_beads__stats()` - Get project statistics
+- `mcp__plugin_beads_beads__blocked()` - Show blocked issues
+
+### Issue Lifecycle
+
+```
+open → in_progress → closed
+  ↓         ↓
+blocked ←───┘
+```
+
+**Status Values**:
+- `open`: Ready to work on (if no blockers)
+- `in_progress`: Currently being worked on
+- `blocked`: Has unresolved dependencies
+- `closed`: Completed
+
+### Querying Issues
+
+```bash
+# List all open issues
+bd list --status open --json
+
+# Filter by multiple criteria
+bd list --priority 1 --type feature --json
+
+# Show full issue details with dependencies
+bd show pando-3 --json
+
+# Find blocked issues
+bd blocked --json
+
+# Get project statistics
+bd stats --json
+```
+
+### Labels and Organization
+
+```bash
+# Add labels
+bd label add pando-3 backend urgent --json
+
+# Filter by labels
+bd list --label backend,urgent --json
+
+# List all labels
+bd label list-all --json
+```
+
 ## Project Status
 
 ### Current Phase
@@ -720,12 +978,9 @@ if (process.env.NODE_DEBUG?.includes('pando')) {
 - GitHelper has method signatures defined
 - Documentation is complete
 
-### Next Steps
-1. Implement `GitHelper.isRepository()`
-2. Implement `GitHelper.addWorktree()`
-3. Implement `worktree:add` command
-4. Write tests for above
-5. Repeat for other commands
+### Next Steps (Managed in Beads)
+
+Use `bd ready --json` to see current ready tasks. Track implementation progress through beads issues.
 
 ## Resources
 
@@ -752,13 +1007,20 @@ if (process.env.NODE_DEBUG?.includes('pando')) {
 - **Type safety**: TypeScript provides guardrails
 - **TODO comments**: Step-by-step implementation guides
 - **Tests first**: Test structure guides implementation
+- **Beads integration**: AI-first task management with dependency tracking
 
 ### When implementing:
-1. Read related docs (ARCHITECTURE.md, DESIGN.md)
-2. Follow existing patterns in similar files
-3. Implement incrementally (one function at a time)
-4. Write tests alongside implementation
-5. Keep changes focused and atomic
+1. **Start session**: Check `bd ready --json` for available work
+2. **Claim task**: Update task status to `in_progress` before starting
+3. Read related docs (ARCHITECTURE.md, DESIGN.md)
+4. Follow existing patterns in similar files
+5. Implement incrementally (one function at a time)
+6. Write tests alongside implementation
+7. **Track discoveries**: Create new issues for discovered work and link with `discovered-from`
+8. **Add comments**: Use `bd comments add` to track progress
+9. Keep changes focused and atomic
+10. **Complete task**: Close issue when done
+11. **End session**: Run `bd sync` to commit all changes
 
 ### Code Review Checklist:
 - [ ] TypeScript strict mode passes
@@ -771,3 +1033,6 @@ if (process.env.NODE_DEBUG?.includes('pando')) {
 - [ ] **DESIGN.md exists** in feature directories with 2+ files
 - [ ] **ARCHITECTURE.md updated** if architectural changes were made
 - [ ] Documentation is synchronized with code changes
+- [ ] **Beads issue updated** with progress and completion status
+- [ ] **New issues created** for discovered work with proper dependencies
+- [ ] **Beads synced** with `bd sync` at end of session

@@ -69,6 +69,7 @@
   },
   "devDependencies": {
     "@oclif/test": "^4.0.0",
+    "@types/fs-extra": "^11.0.4",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",

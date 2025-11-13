@@ -22,6 +22,15 @@ export const RsyncConfigSchema = z.object({
 })
 
 /**
+ * Rsync configuration schema without defaults (for partial config validation)
+ */
+export const RsyncConfigSchemaPartial = z.object({
+  enabled: z.boolean().optional(),
+  flags: z.array(z.string()).optional(),
+  exclude: z.array(z.string()).optional(),
+})
+
+/**
  * Symlink configuration schema
  */
 export const SymlinkConfigSchema = z.object({
@@ -31,11 +40,28 @@ export const SymlinkConfigSchema = z.object({
 })
 
 /**
+ * Symlink configuration schema without defaults (for partial config validation)
+ */
+export const SymlinkConfigSchemaPartial = z.object({
+  patterns: z.array(z.string()).optional(),
+  relative: z.boolean().optional(),
+  beforeRsync: z.boolean().optional(),
+})
+
+/**
  * Complete Pando configuration schema
  */
 export const PandoConfigSchema = z.object({
   rsync: RsyncConfigSchema,
   symlink: SymlinkConfigSchema,
+})
+
+/**
+ * Partial Pando configuration schema without defaults
+ */
+export const PartialPandoConfigSchema = z.object({
+  rsync: RsyncConfigSchemaPartial.optional(),
+  symlink: SymlinkConfigSchemaPartial.optional(),
 })
 
 // ============================================================================
@@ -200,11 +226,7 @@ export function validateConfig(config: unknown): PandoConfig {
  * @returns Validated partial configuration
  */
 export function validatePartialConfig(config: unknown): PartialPandoConfig {
-  // TODO: Implement partial validation
-  // 1. Parse config with PandoConfigSchema.partial()
-  // 2. Return validated partial config
-  // 3. Throw ZodError if invalid
-  return PandoConfigSchema.partial({ rsync: true, symlink: true }).parse(config)
+  return PartialPandoConfigSchema.parse(config)
 }
 
 // ============================================================================
