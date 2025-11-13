@@ -2,6 +2,7 @@ import { Command, Flags } from '@oclif/core'
 import { stringify as stringifyToml } from '@iarna/toml'
 import * as fs from 'fs-extra'
 import * as path from 'path'
+import simpleGit from 'simple-git'
 import { DEFAULT_CONFIG } from '../../config/schema'
 
 /**
@@ -39,37 +40,100 @@ export default class ConfigInit extends Command {
   async run(): Promise<void> {
     const { flags } = await this.parse(ConfigInit)
 
-    // TODO: Determine target directory
-    // - If --global: ~/.config/pando/
-    // - If --git-root: git repository root
-    // - Otherwise: current directory
+    // Determine target directory
+    let targetDir: string
+    let filename: string
 
-    // TODO: Determine filename
-    // - Global: config.toml
-    // - Project: .pando.toml
+    if (flags.global) {
+      // Global config: ~/.config/pando/
+      const homeDir = process.env.HOME || process.env.USERPROFILE
+      if (!homeDir) {
+        this.error('Could not determine home directory')
+      }
+      targetDir = path.join(homeDir, '.config', 'pando')
+      filename = 'config.toml'
+    } else if (flags['git-root']) {
+      // Git root config
+      try {
+        const git = simpleGit()
+        const rootDir = await git.revparse(['--show-toplevel'])
+        targetDir = rootDir.trim()
+        filename = '.pando.toml'
+      } catch (error) {
+        this.error('Not in a git repository. Use --global or run from a git repository.', { exit: 1 })
+      }
+    } else {
+      // Current directory
+      targetDir = process.cwd()
+      filename = '.pando.toml'
+    }
 
-    // TODO: Check if file exists
-    // - If exists and not --force: Error with helpful message
-    // - If exists and --force: Continue
+    const configPath = path.join(targetDir, filename)
 
-    // TODO: Generate TOML content
-    // - Use DEFAULT_CONFIG from schema
-    // - Convert to TOML with stringifyToml
-    // - Add comments explaining each section
+    // Check if file exists
+    const fileExists = await fs.pathExists(configPath)
+    if (fileExists && !flags.force) {
+      this.error(
+        `Configuration file already exists: ${configPath}\nUse --force to overwrite`,
+        { exit: 1 }
+      )
+    }
 
-    // TODO: Write file
-    // - Create directory if needed (especially for global)
-    // - Write TOML content
-    // - Set appropriate permissions
+    // Generate TOML content with helpful comments
+    const tomlContent = this.generateTomlContent()
 
-    // TODO: Output success message
-    // - Show path where config was created
-    // - Provide next steps (edit file, see config:show)
-    // - If project config, mention it will be discovered automatically
+    // Write file
+    try {
+      // Create directory if needed
+      await fs.ensureDir(targetDir)
 
-    this.log('TODO: Implement config:init command')
-    this.log(`Force: ${flags.force}`)
-    this.log(`Global: ${flags.global}`)
-    this.log(`Git root: ${flags['git-root']}`)
+      // Write TOML content
+      await fs.writeFile(configPath, tomlContent, { mode: 0o644 })
+
+      // Output success message
+      this.log(`✓ Configuration file created: ${configPath}`)
+      this.log('')
+      this.log('Next steps:')
+      this.log('  1. Edit the file to customize your settings')
+      this.log('  2. Run `pando config:show` to verify configuration')
+      if (!flags.global) {
+        this.log('  3. This config will be automatically discovered for this project')
+      }
+    } catch (error) {
+      this.error(`Failed to create configuration file: ${error instanceof Error ? error.message : String(error)}`, { exit: 1 })
+    }
+  }
+
+  /**
+   * Generate TOML content with comments
+   */
+  private generateTomlContent(): string {
+    const toml = stringifyToml(DEFAULT_CONFIG)
+
+    // Add helpful header comment
+    const header = `# Pando Configuration
+#
+# This file configures pando's behavior for managing git worktrees.
+# See https://github.com/zpyoung/pando for documentation.
+
+`
+
+    // Add section comments
+    const sections = [
+      '# Rsync Configuration',
+      '# Controls how files are copied from source tree to new worktrees',
+      '',
+    ].join('\n')
+
+    const symlinkComment = [
+      '',
+      '# Symlink Configuration',
+      '# Controls which files are symlinked instead of copied',
+      '# Patterns support glob syntax (e.g., "*.json", ".env*")',
+      '',
+    ].join('\n')
+
+    // Insert comments into TOML
+    return header + sections + toml.replace('[symlink]', symlinkComment + '[symlink]')
   }
 }

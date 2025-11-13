@@ -119,17 +119,64 @@ export class FileOperationTransaction {
    * Rollback all operations in reverse order
    */
   async rollback(): Promise<void> {
-    // TODO: Implement rollback
-    // 1. Iterate operations in reverse order
-    // 2. For each operation, undo it:
-    //    - CREATE_SYMLINK: Remove symlink
-    //    - RSYNC: Remove copied files (tricky, may need snapshot)
-    //    - CREATE_DIR: Remove directory if empty
-    //    - DELETE_FILE: Restore from checkpoint
-    // 3. Handle errors gracefully (log but continue)
-    // 4. Return summary of rollback actions
+    // Iterate operations in reverse order
+    const reversedOps = [...this.operations].reverse()
 
-    throw new Error('Not implemented')
+    for (const op of reversedOps) {
+      try {
+        switch (op.type) {
+          case OperationType.CREATE_SYMLINK:
+            // Remove symlink if it exists
+            if (await fs.pathExists(op.path)) {
+              const stats = await fs.lstat(op.path)
+              if (stats.isSymbolicLink()) {
+                await fs.unlink(op.path)
+              }
+            }
+            break
+
+          case OperationType.RSYNC:
+            // For rsync, we need to remove the destination
+            // This is tricky - we can only remove if we have metadata about what was created
+            if (op.metadata?.destination) {
+              const dest = op.metadata.destination as string
+              if (await fs.pathExists(dest)) {
+                await fs.remove(dest)
+              }
+            }
+            break
+
+          case OperationType.CREATE_DIR:
+            // Remove directory if it exists and is empty
+            if (await fs.pathExists(op.path)) {
+              try {
+                const items = await fs.readdir(op.path)
+                if (items.length === 0) {
+                  await fs.rmdir(op.path)
+                }
+              } catch {
+                // Directory not empty or other error - skip
+              }
+            }
+            break
+
+          case OperationType.DELETE_FILE:
+            // Restore from checkpoint if available
+            const checkpointKey = `file:${op.path}`
+            if (this.checkpoints.has(checkpointKey)) {
+              const content = this.checkpoints.get(checkpointKey)
+              await fs.writeFile(op.path, content)
+            }
+            break
+        }
+      } catch (error) {
+        // Log error but continue rolling back other operations
+        console.warn(`Failed to rollback operation ${op.type} at ${op.path}:`, error)
+      }
+    }
+
+    // Clear operations after rollback
+    this.clear()
   }
 
   /**

@@ -129,24 +129,45 @@ export class WorktreeSetupOrchestrator {
       // ============================================================
       this.reportProgress(options.onProgress, SetupPhase.INIT, 'Initializing setup')
 
-      // TODO: Merge configuration with overrides
-      // Merge config.rsync with options.rsyncOverride
-      // Merge config.symlink with options.symlinkOverride
+      // Merge configuration with overrides
+      const rsyncConfig: RsyncConfig = {
+        ...this.config.rsync,
+        ...options.rsyncOverride,
+        exclude: [
+          ...(this.config.rsync.exclude || []),
+          ...(options.rsyncOverride?.exclude || []),
+        ],
+      }
 
-      // TODO: Get source tree path (main worktree)
-      // Use gitHelper.getMainWorktreePath()
+      const symlinkConfig: SymlinkConfig = {
+        ...this.config.symlink,
+        ...options.symlinkOverride,
+        patterns: [
+          ...(this.config.symlink.patterns || []),
+          ...(options.symlinkOverride?.patterns || []),
+        ],
+      }
 
-      // TODO: Validate paths exist
-      // Check source and worktree paths are valid
+      // Get source tree path (main worktree)
+      const sourceTreePath = await this.gitHelper.getMainWorktreePath()
+
+      // Validate paths exist
+      const fs = await import('fs-extra')
+      if (!(await fs.pathExists(sourceTreePath))) {
+        throw new Error(`Source tree path does not exist: ${sourceTreePath}`)
+      }
+      if (!(await fs.pathExists(worktreePath))) {
+        throw new Error(`Worktree path does not exist: ${worktreePath}`)
+      }
 
       // ============================================================
       // Phase 2: Create Checkpoint
       // ============================================================
       this.reportProgress(options.onProgress, SetupPhase.CHECKPOINT, 'Creating checkpoint')
 
-      // TODO: Create transaction checkpoint
+      // Create transaction checkpoint
       // Snapshot worktree state for potential rollback
-      // await this.transaction.createCheckpoint('worktree', worktreePath)
+      await this.transaction.createCheckpoint('worktree', { path: worktreePath })
 
       // ============================================================
       // Phase 3: Symlinks (Before Rsync)
@@ -158,12 +179,23 @@ export class WorktreeSetupOrchestrator {
           'Creating symlinks (before rsync)'
         )
 
-        // TODO: Create symlinks
-        // 1. Use symlinkHelper.createSymlinks()
-        // 2. Pass source and target directories
-        // 3. Use merged symlink config
-        // 4. Store result in symlinkResult
-        // 5. Add warnings if any conflicts were skipped
+        // Create symlinks before rsync
+        symlinkResult = await this.symlinkHelper.createSymlinks(
+          sourceTreePath,
+          worktreePath,
+          symlinkConfig,
+          {
+            replaceExisting: false,
+            skipConflicts: true,
+          }
+        )
+
+        // Add warnings for skipped conflicts
+        if (symlinkResult.conflicts.length > 0) {
+          warnings.push(
+            `Skipped ${symlinkResult.conflicts.length} symlink(s) due to conflicts`
+          )
+        }
       }
 
       // ============================================================
@@ -172,22 +204,45 @@ export class WorktreeSetupOrchestrator {
       if (!options.skipRsync && this.config.rsync.enabled) {
         this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Copying files with rsync')
 
-        // TODO: Check rsync is installed
-        // Throw RsyncNotInstalledError if not available
+        // Check rsync is installed
+        const { RsyncNotInstalledError } = await import('./fileOps')
+        if (!(await this.rsyncHelper.isInstalled())) {
+          throw new RsyncNotInstalledError()
+        }
 
-        // TODO: Build exclude patterns
-        // Combine:
-        // - .git directory (always)
-        // - Symlinked files (don't copy over symlinks)
-        // - Config excludes
-        // - Override excludes
+        // Build exclude patterns
+        const excludePatterns: string[] = [
+          '.git', // Always exclude .git
+          ...rsyncConfig.exclude,
+        ]
 
-        // TODO: Execute rsync
-        // 1. Use rsyncHelper.rsync()
-        // 2. Pass source and destination
-        // 3. Pass merged rsync config
-        // 4. Stream progress to onProgress callback
-        // 5. Store result in rsyncResult
+        // If symlinks were created before rsync, exclude those files
+        if (symlinkResult && symlinkResult.created > 0) {
+          // Get list of symlinked files from transaction
+          const { OperationType } = await import('./fileOps')
+          const symlinkOps = this.transaction
+            .getOperations()
+            .filter((op) => op.type === OperationType.CREATE_SYMLINK)
+
+          for (const op of symlinkOps) {
+            // Extract relative path from worktree
+            const relativePath = op.path.replace(worktreePath + '/', '')
+            excludePatterns.push(relativePath)
+          }
+        }
+
+        // Execute rsync
+        rsyncResult = await this.rsyncHelper.rsync(
+          sourceTreePath,
+          worktreePath,
+          rsyncConfig,
+          {
+            excludePatterns,
+            onProgress: options.onProgress
+              ? (output) => options.onProgress!(SetupPhase.RSYNC, output)
+              : undefined,
+          }
+        )
       }
 
       // ============================================================
@@ -200,10 +255,24 @@ export class WorktreeSetupOrchestrator {
           'Creating symlinks (after rsync)'
         )
 
-        // TODO: Create symlinks
-        // Same as Phase 3, but handle conflicts differently
+        // Create symlinks after rsync
         // May need to replace files that were copied by rsync
-        // Use replaceExisting option
+        symlinkResult = await this.symlinkHelper.createSymlinks(
+          sourceTreePath,
+          worktreePath,
+          symlinkConfig,
+          {
+            replaceExisting: true, // Replace files copied by rsync
+            skipConflicts: false, // Don't skip - we want to replace
+          }
+        )
+
+        // Add warnings for any remaining conflicts
+        if (symlinkResult.conflicts.length > 0) {
+          warnings.push(
+            `Could not create ${symlinkResult.conflicts.length} symlink(s) due to conflicts`
+          )
+        }
       }
 
       // ============================================================
@@ -211,11 +280,37 @@ export class WorktreeSetupOrchestrator {
       // ============================================================
       this.reportProgress(options.onProgress, SetupPhase.VALIDATION, 'Validating setup')
 
-      // TODO: Verify worktree is in good state
-      // - Check worktree still exists
-      // - Verify symlinks point to correct targets
-      // - Check for any unexpected errors
-      // - Add warnings for any issues
+      // Verify worktree is in good state
+      const path = await import('path')
+
+      // Check worktree still exists
+      if (!(await fs.pathExists(worktreePath))) {
+        warnings.push('Worktree path no longer exists after setup')
+      }
+
+      // Verify symlinks if any were created
+      if (symlinkResult && symlinkResult.created > 0) {
+        const { OperationType } = await import('./fileOps')
+        const symlinkOps = this.transaction
+          .getOperations()
+          .filter(
+            (op) => op.type === OperationType.CREATE_SYMLINK
+          )
+
+        for (const op of symlinkOps) {
+          const linkPath = op.path
+          const expectedTarget = op.metadata?.target as string
+
+          if (!(await this.symlinkHelper.verifySymlink(linkPath, expectedTarget))) {
+            warnings.push(`Symlink verification failed: ${linkPath}`)
+          }
+        }
+      }
+
+      // Verify rsync completed if enabled
+      if (rsyncResult && !rsyncResult.success) {
+        warnings.push('Rsync reported unsuccessful completion')
+      }
 
       // ============================================================
       // Phase 7: Complete

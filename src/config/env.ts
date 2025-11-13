@@ -197,12 +197,16 @@ export function hasEnvConfig(env: NodeJS.ProcessEnv = process.env): boolean {
  * @returns Array of supported env var names with descriptions
  */
 export function listSupportedEnvVars(): Array<{ name: string; path: string; type: string }> {
-  // TODO: Implement env var listing
-  // Return array of objects with name, config path, and expected type
-  // Useful for documentation and help text
-  return Object.entries(ENV_VAR_MAP).map(([name, path]) => ({
-    name,
-    path,
-    type: parseEnvValue(name, '') instanceof Array ? 'array' : typeof parseEnvValue(name, ''),
-  }))
+  return Object.entries(ENV_VAR_MAP).map(([name, path]) => {
+    // Determine type based on key patterns
+    let type = 'string'
+
+    if (name.includes('FLAGS') || name.includes('EXCLUDE') || name.includes('PATTERNS')) {
+      type = 'array'
+    } else if (name.includes('ENABLED') || name.includes('RELATIVE') || name.includes('BEFORE')) {
+      type = 'boolean'
+    }
+
+    return { name, path, type }
+  })
 }

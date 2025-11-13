@@ -1,4 +1,7 @@
 import { Command, Flags } from '@oclif/core'
+import chalk from 'chalk'
+import * as path from 'node:path'
+import { createGitHelper } from '../../utils/git.js'
 
 /**
  * Remove a git worktree
@@ -36,21 +39,98 @@ export default class RemoveWorktree extends Command {
   async run(): Promise<void> {
     const { flags } = await this.parse(RemoveWorktree)
 
-    // TODO: Implement worktree remove logic
-    // 1. Validate the repository is a git repo
-    // 2. Check if worktree exists
-    // 3. Check for uncommitted changes (unless --force)
-    // 4. Prompt for confirmation if not using --force
-    // 5. Execute git worktree remove command
-    // 6. Handle errors appropriately
-    // 7. Format output based on --json flag
+    try {
+      // 1. Validate the repository is a git repo
+      const gitHelper = createGitHelper()
+      const isRepo = await gitHelper.isRepository()
 
-    this.log(`TODO: Remove worktree at ${flags.path}`)
-    if (flags.force) {
-      this.log('TODO: Force removal (skip safety checks)')
-    }
-    if (flags.json) {
-      this.log('TODO: Output as JSON')
+      if (!isRepo) {
+        if (flags.json) {
+          this.log(JSON.stringify({
+            success: false,
+            error: 'Not a git repository',
+          }))
+        } else {
+          this.error('Not a git repository')
+        }
+        return
+      }
+
+      // 2. Check if worktree exists
+      const worktrees = await gitHelper.listWorktrees()
+      const absolutePath = path.resolve(flags.path)
+      const worktree = worktrees.find(w =>
+        path.resolve(w.path) === absolutePath || w.path === flags.path
+      )
+
+      if (!worktree) {
+        if (flags.json) {
+          this.log(JSON.stringify({
+            success: false,
+            error: `Worktree not found at ${flags.path}`,
+          }))
+        } else {
+          this.error(`Worktree not found at ${flags.path}`)
+        }
+        return
+      }
+
+      // 3. Check for uncommitted changes (unless --force)
+      let hasUncommitted = false
+      if (!flags.force) {
+        hasUncommitted = await gitHelper.hasUncommittedChanges(worktree.path)
+
+        if (hasUncommitted) {
+          if (flags.json) {
+            this.log(JSON.stringify({
+              success: false,
+              error: 'Worktree has uncommitted changes. Use --force to remove anyway.',
+              path: worktree.path,
+              hasUncommittedChanges: true,
+            }))
+          } else {
+            this.error(
+              chalk.red('Worktree has uncommitted changes.') + '\n' +
+              chalk.yellow(`Use ${chalk.bold('--force')} to remove anyway.`)
+            )
+          }
+          return
+        }
+      }
+
+      // 4. Execute git worktree remove command
+      await gitHelper.removeWorktree(worktree.path, flags.force)
+
+      // 5. Format output based on --json flag
+      if (flags.json) {
+        this.log(JSON.stringify({
+          success: true,
+          path: worktree.path,
+          branch: worktree.branch,
+          forced: flags.force,
+        }))
+      } else {
+        this.log(chalk.green('✓ Worktree removed successfully'))
+        this.log(`  Path: ${chalk.cyan(worktree.path)}`)
+        if (worktree.branch) {
+          this.log(`  Branch: ${chalk.cyan(worktree.branch)}`)
+        }
+        if (flags.force) {
+          this.log(chalk.yellow('  ⚠ Forced removal (uncommitted changes may have been lost)'))
+        }
+      }
+    } catch (error) {
+      // 6. Handle errors appropriately
+      const errorMessage = error instanceof Error ? error.message : String(error)
+
+      if (flags.json) {
+        this.log(JSON.stringify({
+          success: false,
+          error: errorMessage,
+        }))
+      } else {
+        this.error(chalk.red(`Failed to remove worktree: ${errorMessage}`))
+      }
     }
   }
 }
