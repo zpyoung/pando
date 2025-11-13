@@ -185,9 +185,7 @@ describe('worktree navigate', () => {
     await command.run()
 
     // Verify JSON output
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('"path"')
-    )
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('"path"'))
 
     const jsonOutput = logSpy.mock.calls[0][0]
     const parsed = JSON.parse(jsonOutput)
@@ -215,9 +213,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Worktree for branch 'nonexistent' not found"
-    )
+    expect(errorSpy).toHaveBeenCalledWith("Worktree for branch 'nonexistent' not found")
   })
 
   it('should error when worktree path not found', async () => {
@@ -236,9 +232,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Worktree at path '/nonexistent/path' not found"
-    )
+    expect(errorSpy).toHaveBeenCalledWith("Worktree at path '/nonexistent/path' not found")
   })
 
   it('should error when not in a git repository', async () => {
@@ -275,9 +269,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error handling
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to navigate to worktree')
-    )
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to navigate to worktree'))
   })
 
   it('should prioritize --output-path over --json flag', async () => {

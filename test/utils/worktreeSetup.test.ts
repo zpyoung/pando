@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   WorktreeSetupOrchestrator,
   SetupPhase,
@@ -27,9 +27,8 @@ vi.mock('fs-extra', () => ({
 }))
 
 vi.mock('../../src/utils/fileOps', async () => {
-  const actual = await vi.importActual<typeof import('../../src/utils/fileOps')>(
-    '../../src/utils/fileOps'
-  )
+  const actual =
+    await vi.importActual<typeof import('../../src/utils/fileOps')>('../../src/utils/fileOps')
   return {
     ...actual,
     createRsyncHelper: vi.fn(),
@@ -56,7 +55,6 @@ describe('WorktreeSetupOrchestrator', () => {
     mockPathExists = fsExtra.pathExists as any
     vi.mocked(mockPathExists).mockReset()
 
-
     // Create mock GitHelper
     mockGitHelper = {
       getMainWorktreePath: vi.fn().mockResolvedValue('/repo/main'),
@@ -79,7 +77,7 @@ describe('WorktreeSetupOrchestrator', () => {
     // Create mock transaction
     mockTransaction = {
       record: vi.fn(),
-      createCheckpoint: vi.fn().mockResolvedValue(undefined),
+      createCheckpoint: vi.fn(),
       getOperations: vi.fn().mockReturnValue([]),
       rollback: vi.fn().mockResolvedValue(undefined),
       clear: vi.fn(),

@@ -33,6 +33,7 @@ export default class NavigateWorktree extends Command {
       description: 'Output only the path (useful for shell evaluation)',
       default: false,
     }),
+
     json: jsonFlag,
   }
 
@@ -65,7 +66,7 @@ export default class NavigateWorktree extends Command {
       } else if (flags.path) {
         // For path-based lookup, list all worktrees and find matching path
         const worktrees = await git.listWorktrees()
-        worktree = worktrees.find(w => w.path === flags.path)
+        worktree = worktrees.find((w) => w.path === flags.path)
         if (!worktree) {
           this.error(`Worktree at path '${flags.path}' not found`)
         }
@@ -74,25 +75,27 @@ export default class NavigateWorktree extends Command {
       // Output based on flags
       if (flags['output-path']) {
         // Simple path output for shell evaluation
-        this.log(worktree!.path)
+        this.log(worktree.path)
       } else if (flags.json) {
         // JSON output
-        this.log(JSON.stringify({
-          path: worktree!.path,
-          branch: worktree!.branch,
-          commit: worktree!.commit,
-          isPrunable: worktree!.isPrunable,
-        }))
+        this.log(
+          JSON.stringify({
+            path: worktree.path,
+            branch: worktree.branch,
+            commit: worktree.commit,
+            isPrunable: worktree.isPrunable,
+          })
+        )
       } else {
         // Human-readable output
         const chalk = await import('chalk')
         this.log(chalk.default.green('✓ Worktree found'))
-        this.log(`  Path: ${worktree!.path}`)
-        this.log(`  Branch: ${worktree!.branch || 'detached'}`)
-        this.log(`  Commit: ${worktree!.commit}`)
+        this.log(`  Path: ${worktree.path}`)
+        this.log(`  Branch: ${worktree.branch || 'detached'}`)
+        this.log(`  Commit: ${worktree.commit}`)
         this.log()
         this.log(chalk.default.blue('To navigate:'))
-        this.log(`  cd ${worktree!.path}`)
+        this.log(`  cd ${worktree.path}`)
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)

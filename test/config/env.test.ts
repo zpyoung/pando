@@ -158,10 +158,7 @@ describe('parseEnvValue', () => {
   })
 
   it('should parse PATTERNS as array', () => {
-    expect(parseEnvValue('PANDO_SYMLINK_PATTERNS', '*.json,*.lock')).toEqual([
-      '*.json',
-      '*.lock',
-    ])
+    expect(parseEnvValue('PANDO_SYMLINK_PATTERNS', '*.json,*.lock')).toEqual(['*.json', '*.lock'])
   })
 
   it('should parse ENABLED as boolean', () => {

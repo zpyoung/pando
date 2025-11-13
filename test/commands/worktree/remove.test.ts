@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { GitHelper, WorktreeInfo } from '../../../src/utils/git.js'
+import { WorktreeInfo } from '../../../src/utils/git.js'
 import RemoveWorktree from '../../../src/commands/worktree/remove.js'
 
 /**
@@ -27,7 +27,7 @@ describe('worktree remove', () => {
   let command: RemoveWorktree
   let mockGitHelper: any
   let logSpy: any
-  let errorSpy: any
+  let _errorSpy: any
 
   beforeEach(async () => {
     // Create mock config
@@ -45,7 +45,7 @@ describe('worktree remove', () => {
 
     // Spy on log and error methods
     logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
-    errorSpy = vi.spyOn(command, 'error').mockImplementation((msg: string) => {
+    _errorSpy = vi.spyOn(command, 'error').mockImplementation((msg: string) => {
       throw new Error(msg)
     })
 
@@ -87,12 +87,8 @@ describe('worktree remove', () => {
     command.argv = ['--path', '/path/to/feature', '--json']
     await command.run()
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/"success"\s*:\s*true/)
-    )
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/"path"\s*:\s*"\/path\/to\/feature"/)
-    )
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"success"\s*:\s*true/))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"path"\s*:\s*"\/path\/to\/feature"/))
   })
 
   it('should error when not in a git repository', async () => {
@@ -178,12 +174,8 @@ describe('worktree remove', () => {
     command.argv = ['--path', '/path/to/feature', '--json']
     await command.run()
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/"success"\s*:\s*false/)
-    )
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/"hasUncommittedChanges"\s*:\s*true/)
-    )
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"success"\s*:\s*false/))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"hasUncommittedChanges"\s*:\s*true/))
   })
 
   it('should handle git errors gracefully', async () => {
@@ -219,12 +211,8 @@ describe('worktree remove', () => {
       // Expected to throw
     }
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/"success"\s*:\s*false/)
-    )
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringMatching(/"error"/)
-    )
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"success"\s*:\s*false/))
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"error"/))
   })
 
   it('should match worktree by path', async () => {

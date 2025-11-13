@@ -227,7 +227,6 @@ describe('config init', () => {
 
       // Check permissions (only on Unix-like systems)
       if (process.platform !== 'win32') {
-        // eslint-disable-next-line no-bitwise
         const mode = stats.mode & 0o777
         expect(mode).toBe(0o644)
       }

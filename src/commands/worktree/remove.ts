@@ -24,7 +24,9 @@ export default class RemoveWorktree extends Command {
       description: 'Path to the worktree to remove',
       required: true,
     }),
+
     force: forceFlag,
+
     json: jsonFlag,
   }
 
@@ -38,10 +40,12 @@ export default class RemoveWorktree extends Command {
 
       if (!isRepo) {
         if (flags.json) {
-          this.log(JSON.stringify({
-            success: false,
-            error: 'Not a git repository',
-          }))
+          this.log(
+            JSON.stringify({
+              success: false,
+              error: 'Not a git repository',
+            })
+          )
         } else {
           this.error('Not a git repository')
         }
@@ -51,16 +55,18 @@ export default class RemoveWorktree extends Command {
       // 2. Check if worktree exists
       const worktrees = await gitHelper.listWorktrees()
       const absolutePath = path.resolve(flags.path)
-      const worktree = worktrees.find(w =>
-        path.resolve(w.path) === absolutePath || w.path === flags.path
+      const worktree = worktrees.find(
+        (w) => path.resolve(w.path) === absolutePath || w.path === flags.path
       )
 
       if (!worktree) {
         if (flags.json) {
-          this.log(JSON.stringify({
-            success: false,
-            error: `Worktree not found at ${flags.path}`,
-          }))
+          this.log(
+            JSON.stringify({
+              success: false,
+              error: `Worktree not found at ${flags.path}`,
+            })
+          )
         } else {
           this.error(`Worktree not found at ${flags.path}`)
         }
@@ -74,17 +80,20 @@ export default class RemoveWorktree extends Command {
 
         if (hasUncommitted) {
           if (flags.json) {
-            this.log(JSON.stringify({
-              success: false,
-              error: 'Worktree has uncommitted changes. Use --force to remove anyway.',
-              path: worktree.path,
-              hasUncommittedChanges: true,
-            }))
+            this.log(
+              JSON.stringify({
+                success: false,
+                error: 'Worktree has uncommitted changes. Use --force to remove anyway.',
+                path: worktree.path,
+                hasUncommittedChanges: true,
+              })
+            )
           } else {
             const chalk = (await import('chalk')).default
             this.error(
-              chalk.red('Worktree has uncommitted changes.') + '\n' +
-              chalk.yellow(`Use ${chalk.bold('--force')} to remove anyway.`)
+              chalk.red('Worktree has uncommitted changes.') +
+                '\n' +
+                chalk.yellow(`Use ${chalk.bold('--force')} to remove anyway.`)
             )
           }
           return
@@ -96,12 +105,14 @@ export default class RemoveWorktree extends Command {
 
       // 5. Format output based on --json flag
       if (flags.json) {
-        this.log(JSON.stringify({
-          success: true,
-          path: worktree.path,
-          branch: worktree.branch,
-          forced: flags.force,
-        }))
+        this.log(
+          JSON.stringify({
+            success: true,
+            path: worktree.path,
+            branch: worktree.branch,
+            forced: flags.force,
+          })
+        )
       } else {
         const chalk = (await import('chalk')).default
         this.log(chalk.green('✓ Worktree removed successfully'))
@@ -118,10 +129,12 @@ export default class RemoveWorktree extends Command {
       const errorMessage = error instanceof Error ? error.message : String(error)
 
       if (flags.json) {
-        this.log(JSON.stringify({
-          success: false,
-          error: errorMessage,
-        }))
+        this.log(
+          JSON.stringify({
+            success: false,
+            error: errorMessage,
+          })
+        )
       } else {
         const chalk = (await import('chalk')).default
         this.error(chalk.red(`Failed to remove worktree: ${errorMessage}`))

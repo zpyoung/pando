@@ -69,6 +69,7 @@ export default class AddWorktree extends Command {
     }),
 
     // Output flags
+
     json: jsonFlag,
   }
 
@@ -79,20 +80,47 @@ export default class AddWorktree extends Command {
     const { spinner, chalk } = await this.initializeUI(flags.json)
 
     try {
-      const { gitHelper, resolvedPath } = await this.validateAndInitialize(flags, spinner)
-      const config = await this.loadAndMergeConfig(flags, gitHelper, spinner)
-      const worktreeInfo = await this.createWorktree(flags, gitHelper, resolvedPath, spinner)
-      const setupResult = await this.runSetup(flags, config, gitHelper, resolvedPath, spinner)
-      await this.formatOutput(flags, worktreeInfo, setupResult, Date.now() - startTime, chalk)
+      const { gitHelper, resolvedPath } = await this.validateAndInitialize(
+        flags as Record<string, unknown>,
+        spinner
+      )
+      const config = await this.loadAndMergeConfig(
+        flags as Record<string, unknown>,
+        gitHelper,
+        spinner
+      )
+      const worktreeInfo = await this.createWorktree(
+        flags as Record<string, unknown>,
+        gitHelper,
+        resolvedPath,
+        spinner
+      )
+      const setupResult = await this.runSetup(
+        flags as Record<string, unknown>,
+        config,
+        gitHelper,
+        resolvedPath,
+        spinner
+      )
+      this.formatOutput(
+        flags as Record<string, unknown>,
+        worktreeInfo,
+        setupResult,
+        Date.now() - startTime,
+        chalk
+      )
     } catch (error) {
-      await this.handleError(error, flags, chalk, spinner)
+      await this.handleError(error, flags as Record<string, unknown>, chalk, spinner)
     }
   }
 
   /**
    * Initialize UI components (spinner and chalk)
    */
-  private async initializeUI(isJson: boolean) {
+  private async initializeUI(isJson: boolean): Promise<{
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+    chalk: Awaited<typeof import('chalk').default> | null
+  }> {
     const ora = !isJson ? (await import('ora')).default : null
     const spinner = ora ? ora() : null
     const chalk = !isJson ? (await import('chalk')).default : null
@@ -103,7 +131,10 @@ export default class AddWorktree extends Command {
   /**
    * Phase 1: Initialize and validate
    */
-  private async validateAndInitialize(flags: any, spinner: any) {
+  private async validateAndInitialize(
+    flags: Record<string, unknown>,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): Promise<{ gitHelper: ReturnType<typeof createGitHelper>; resolvedPath: string }> {
     if (spinner) {
       spinner.start('Initializing...')
     }
@@ -119,7 +150,7 @@ export default class AddWorktree extends Command {
     // Check if worktree path already exists
     const fs = await import('fs-extra')
     const path = await import('path')
-    const resolvedPath = path.resolve(flags.path)
+    const resolvedPath = path.resolve(String(flags.path))
 
     if (await fs.pathExists(resolvedPath)) {
       this.error(`Path already exists: ${resolvedPath}`)
@@ -128,9 +159,11 @@ export default class AddWorktree extends Command {
     // Validate branch/commit if provided
     if (flags.branch && flags.commit) {
       // Check if branch already exists
-      const branchExists = await gitHelper.branchExists(flags.branch)
+      const branchExists = await gitHelper.branchExists(String(flags.branch))
       if (branchExists) {
-        this.error(`Branch '${flags.branch}' already exists. Choose a different branch name or omit --branch to checkout the commit in detached HEAD state.`)
+        this.error(
+          `Branch '${String(flags.branch)}' already exists. Choose a different branch name or omit --branch to checkout the commit in detached HEAD state.`
+        )
       }
     }
 
@@ -140,7 +173,11 @@ export default class AddWorktree extends Command {
   /**
    * Phase 2: Load configuration
    */
-  private async loadAndMergeConfig(flags: any, gitHelper: any, spinner: any) {
+  private async loadAndMergeConfig(
+    flags: Record<string, unknown>,
+    gitHelper: ReturnType<typeof createGitHelper>,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): Promise<Awaited<ReturnType<typeof loadConfig>>> {
     if (spinner) {
       spinner.text = 'Loading configuration...'
     }
@@ -159,19 +196,22 @@ export default class AddWorktree extends Command {
       config.rsync.enabled = false
     }
     if (flags['rsync-flags']) {
-      config.rsync.flags = flags['rsync-flags'].flatMap((f: string) => f.split(','))
+      const rsyncFlags = flags['rsync-flags'] as string[]
+      config.rsync.flags = rsyncFlags.flatMap((f: string) => f.split(','))
     }
     if (flags['rsync-exclude']) {
+      const rsyncExclude = flags['rsync-exclude'] as string[]
       config.rsync.exclude = [
         ...config.rsync.exclude,
-        ...flags['rsync-exclude'].flatMap((e: string) => e.split(','))
+        ...rsyncExclude.flatMap((e: string) => e.split(',')),
       ]
     }
     if (flags['skip-symlink']) {
       config.symlink.patterns = []
     }
     if (flags.symlink) {
-      config.symlink.patterns = flags.symlink.flatMap((s: string) => s.split(','))
+      const symlinkPatterns = flags.symlink as string[]
+      config.symlink.patterns = symlinkPatterns.flatMap((s: string) => s.split(','))
     }
     if (flags['absolute-symlinks']) {
       config.symlink.relative = false
@@ -183,15 +223,20 @@ export default class AddWorktree extends Command {
   /**
    * Phase 3: Create worktree
    */
-  private async createWorktree(flags: any, gitHelper: any, resolvedPath: string, spinner: any) {
+  private async createWorktree(
+    flags: Record<string, unknown>,
+    gitHelper: ReturnType<typeof createGitHelper>,
+    resolvedPath: string,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): Promise<{ path: string; branch: string | null; commit: string }> {
     if (spinner) {
       spinner.text = 'Creating worktree...'
     }
 
     try {
       return await gitHelper.addWorktree(resolvedPath, {
-        branch: flags.branch,
-        commit: flags.commit,
+        branch: flags.branch as string | undefined,
+        commit: flags.commit as string | undefined,
         skipPostCreate: true,
       })
     } catch (error) {
@@ -203,7 +248,15 @@ export default class AddWorktree extends Command {
   /**
    * Phase 4: Post-creation setup
    */
-  private async runSetup(flags: any, config: any, gitHelper: any, resolvedPath: string, spinner: any) {
+  private async runSetup(
+    flags: Record<string, unknown>,
+    config: Awaited<ReturnType<typeof loadConfig>>,
+    gitHelper: ReturnType<typeof createGitHelper>,
+    resolvedPath: string,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): Promise<
+    Awaited<ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>>
+  > {
     const orchestrator = createWorktreeSetupOrchestrator(gitHelper, config)
 
     const setupOptions = {
@@ -225,8 +278,11 @@ export default class AddWorktree extends Command {
   /**
    * Build progress callback for setup operations
    */
-  private buildProgressCallback(spinner: any, isJson: boolean) {
-    return (phase: SetupPhase, _message: string) => {
+  private buildProgressCallback(
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    isJson: boolean
+  ): (phase: SetupPhase, _message: string) => void {
+    return (phase: SetupPhase, _message: string): void => {
       if (spinner) {
         // Update spinner with phase-specific messages
         switch (phase) {
@@ -265,30 +321,48 @@ export default class AddWorktree extends Command {
   /**
    * Phase 5: Output formatting
    */
-  private formatOutput(flags: any, worktreeInfo: any, setupResult: any, duration: number, chalk: any) {
+  private formatOutput(
+    flags: Record<string, unknown>,
+    worktreeInfo: { path: string; branch: string | null; commit: string },
+    setupResult: Awaited<
+      ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>
+    >,
+    duration: number,
+    chalk: Awaited<typeof import('chalk').default> | null
+  ): void {
     if (flags.json) {
       // JSON output
-      this.log(JSON.stringify({
-        success: true,
-        worktree: {
-          path: worktreeInfo.path,
-          branch: worktreeInfo.branch,
-          commit: worktreeInfo.commit,
-        },
-        setup: {
-          rsync: setupResult.rsyncResult ? {
-            filesTransferred: setupResult.rsyncResult.filesTransferred,
-            totalSize: setupResult.rsyncResult.totalSize,
-          } : null,
-          symlink: setupResult.symlinkResult ? {
-            created: setupResult.symlinkResult.created,
-            skipped: setupResult.symlinkResult.skipped,
-            conflicts: setupResult.symlinkResult.conflicts.length,
-          } : null,
-        },
-        duration,
-        warnings: setupResult.warnings,
-      }, null, 2))
+      this.log(
+        JSON.stringify(
+          {
+            success: true,
+            worktree: {
+              path: worktreeInfo.path,
+              branch: worktreeInfo.branch,
+              commit: worktreeInfo.commit,
+            },
+            setup: {
+              rsync: setupResult.rsyncResult
+                ? {
+                    filesTransferred: setupResult.rsyncResult.filesTransferred,
+                    totalSize: setupResult.rsyncResult.totalSize,
+                  }
+                : null,
+              symlink: setupResult.symlinkResult
+                ? {
+                    created: setupResult.symlinkResult.created,
+                    skipped: setupResult.symlinkResult.skipped,
+                    conflicts: setupResult.symlinkResult.conflicts.length,
+                  }
+                : null,
+            },
+            duration,
+            warnings: setupResult.warnings,
+          },
+          null,
+          2
+        )
+      )
     } else {
       // Human-readable output
       const output: string[] = []
@@ -305,7 +379,9 @@ export default class AddWorktree extends Command {
       if (setupResult.rsyncResult) {
         const { filesTransferred, totalSize } = setupResult.rsyncResult
         const mbTotal = (totalSize / (1024 * 1024)).toFixed(2)
-        output.push(chalk.green(`✓ Files synced: ${filesTransferred.toLocaleString()} files (${mbTotal} MB)`))
+        output.push(
+          chalk.green(`✓ Files synced: ${filesTransferred.toLocaleString()} files (${mbTotal} MB)`)
+        )
       }
 
       // Symlink results
@@ -343,31 +419,52 @@ export default class AddWorktree extends Command {
   /**
    * Centralized error handling
    */
-  private async handleError(error: unknown, flags: any, chalk: any, spinner: any) {
+  private async handleError(
+    error: unknown,
+    flags: Record<string, unknown>,
+    chalk: Awaited<typeof import('chalk').default> | null,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): Promise<void> {
     if (spinner) {
       spinner.fail('Failed')
     }
 
     // Handle SetupError
     if (error instanceof Error && error.name === 'SetupError') {
-      const setupError = error as any
+      const setupError = error as Error & {
+        result: { rolledBack: boolean; warnings: string[]; duration: number }
+      }
       const result = setupError.result
 
       if (flags.json) {
-        this.log(JSON.stringify({
-          success: false,
-          error: setupError.message,
-          rolledBack: result.rolledBack,
-          warnings: result.warnings,
-          duration: result.duration,
-        }, null, 2))
+        this.log(
+          JSON.stringify(
+            {
+              success: false,
+              error: setupError.message,
+              rolledBack: result.rolledBack,
+              warnings: result.warnings,
+              duration: result.duration,
+            },
+            null,
+            2
+          )
+        )
       } else {
-        this.error([
-          chalk.red('✗ Setup failed:'),
-          `  ${setupError.message}`,
-          result.rolledBack ? chalk.yellow('  Worktree has been removed (rolled back)') : chalk.red('  WARNING: Worktree may be in inconsistent state'),
-          result.warnings.length > 0 ? `\n${chalk.yellow('⚠ Warnings:')}\n${result.warnings.map((w: string) => `  - ${w}`).join('\n')}` : '',
-        ].filter(Boolean).join('\n'))
+        this.error(
+          [
+            chalk.red('✗ Setup failed:'),
+            `  ${setupError.message}`,
+            result.rolledBack
+              ? chalk.yellow('  Worktree has been removed (rolled back)')
+              : chalk.red('  WARNING: Worktree may be in inconsistent state'),
+            result.warnings.length > 0
+              ? `\n${chalk.yellow('⚠ Warnings:')}\n${result.warnings.map((w: string) => `  - ${w}`).join('\n')}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join('\n')
+        )
       }
       return
     }
@@ -376,42 +473,64 @@ export default class AddWorktree extends Command {
     const { RsyncNotInstalledError } = await import('../../utils/fileOps.js')
     if (error instanceof RsyncNotInstalledError) {
       if (flags.json) {
-        this.log(JSON.stringify({
-          success: false,
-          error: 'rsync is not installed',
-          hint: 'Install rsync or use --skip-rsync flag',
-        }, null, 2))
+        this.log(
+          JSON.stringify(
+            {
+              success: false,
+              error: 'rsync is not installed',
+              hint: 'Install rsync or use --skip-rsync flag',
+            },
+            null,
+            2
+          )
+        )
       } else {
-        this.error([
-          chalk.red('✗ rsync is not installed or not in PATH'),
-          '',
-          'Install rsync to use file syncing:',
-          '  • macOS: brew install rsync',
-          '  • Ubuntu/Debian: apt install rsync',
-          '  • Windows: Install via WSL or use --skip-rsync',
-          '',
-          'Or skip rsync with: --skip-rsync',
-        ].join('\n'))
+        this.error(
+          [
+            chalk.red('✗ rsync is not installed or not in PATH'),
+            '',
+            'Install rsync to use file syncing:',
+            '  • macOS: brew install rsync',
+            '  • Ubuntu/Debian: apt install rsync',
+            '  • Windows: Install via WSL or use --skip-rsync',
+            '',
+            'Or skip rsync with: --skip-rsync',
+          ].join('\n')
+        )
       }
       return
     }
 
     // Handle SymlinkConflictError
     const { SymlinkConflictError } = await import('../../utils/fileOps.js')
-    if (error instanceof SymlinkConflictError && 'conflicts' in error) {
+    if (
+      error instanceof SymlinkConflictError &&
+      'conflicts' in error &&
+      Array.isArray(error.conflicts)
+    ) {
       if (flags.json) {
-        this.log(JSON.stringify({
-          success: false,
-          error: 'symlink conflicts',
-          conflicts: error.conflicts,
-        }, null, 2))
+        this.log(
+          JSON.stringify(
+            {
+              success: false,
+              error: 'symlink conflicts',
+              conflicts: error.conflicts,
+            },
+            null,
+            2
+          )
+        )
       } else {
-        this.error([
-          chalk.red('✗ Symlink conflicts detected:'),
-          ...error.conflicts.map((c: any) => `  • ${c.target}: ${c.reason}`),
-          '',
-          'Resolve conflicts manually or use --skip-symlink',
-        ].join('\n'))
+        this.error(
+          [
+            chalk ? chalk.red('✗ Symlink conflicts detected:') : '✗ Symlink conflicts detected:',
+            ...error.conflicts.map(
+              (c: { target: string; reason: string }) => `  • ${c.target}: ${c.reason}`
+            ),
+            '',
+            'Resolve conflicts manually or use --skip-symlink',
+          ].join('\n')
+        )
       }
       return
     }
@@ -419,10 +538,16 @@ export default class AddWorktree extends Command {
     // Generic error
     const errorMessage = error instanceof Error ? error.message : String(error)
     if (flags.json) {
-      this.log(JSON.stringify({
-        success: false,
-        error: errorMessage,
-      }, null, 2))
+      this.log(
+        JSON.stringify(
+          {
+            success: false,
+            error: errorMessage,
+          },
+          null,
+          2
+        )
+      )
     } else {
       this.error(errorMessage)
     }

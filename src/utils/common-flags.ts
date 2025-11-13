@@ -50,7 +50,9 @@ export const commonFlags = {
  * })
  * ```
  */
-export function withCommonFlags<T extends Record<string, any>>(customFlags: T) {
+export function withCommonFlags<T extends Record<string, unknown>>(
+  customFlags: T
+): Record<string, unknown> {
   return {
     ...commonFlags,
     ...customFlags,

@@ -102,6 +102,7 @@ export class WorktreeSetupOrchestrator {
     private config: PandoConfig
   ) {
     this.transaction = new FileOperationTransaction()
+
     this.rsyncHelper = createRsyncHelper(this.transaction)
     this.symlinkHelper = createSymlinkHelper(this.transaction)
   }
@@ -113,15 +114,18 @@ export class WorktreeSetupOrchestrator {
    * @param options - Setup options and overrides
    * @returns Setup result with statistics
    */
-  async setupNewWorktree(
-    worktreePath: string,
-    options: SetupOptions = {}
-  ): Promise<SetupResult> {
+  async setupNewWorktree(worktreePath: string, options: SetupOptions = {}): Promise<SetupResult> {
     const startTime = Date.now()
     const warnings: string[] = []
+    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     let rsyncResult: RsyncResult | undefined
+    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     let symlinkResult: SymlinkResult | undefined
     let rolledBack = false
+
+    // Initialize results to undefined to avoid type inference issues with stub methods
+    rsyncResult = undefined
+    symlinkResult = undefined
 
     try {
       // ============================================================
@@ -133,10 +137,7 @@ export class WorktreeSetupOrchestrator {
       const rsyncConfig: RsyncConfig = {
         ...this.config.rsync,
         ...options.rsyncOverride,
-        exclude: [
-          ...(this.config.rsync.exclude || []),
-          ...(options.rsyncOverride?.exclude || []),
-        ],
+        exclude: [...(this.config.rsync.exclude || []), ...(options.rsyncOverride?.exclude || [])],
       }
 
       const symlinkConfig: SymlinkConfig = {
@@ -167,7 +168,7 @@ export class WorktreeSetupOrchestrator {
 
       // Create transaction checkpoint
       // Snapshot worktree state for potential rollback
-      await this.transaction.createCheckpoint('worktree', { path: worktreePath })
+      this.transaction.createCheckpoint('worktree', { path: worktreePath })
 
       // ============================================================
       // Phase 3: Symlinks (Before Rsync)
@@ -192,9 +193,7 @@ export class WorktreeSetupOrchestrator {
 
         // Add warnings for skipped conflicts
         if (symlinkResult.conflicts.length > 0) {
-          warnings.push(
-            `Skipped ${symlinkResult.conflicts.length} symlink(s) due to conflicts`
-          )
+          warnings.push(`Skipped ${symlinkResult.conflicts.length} symlink(s) due to conflicts`)
         }
       }
 
@@ -232,17 +231,12 @@ export class WorktreeSetupOrchestrator {
         }
 
         // Execute rsync
-        rsyncResult = await this.rsyncHelper.rsync(
-          sourceTreePath,
-          worktreePath,
-          rsyncConfig,
-          {
-            excludePatterns,
-            onProgress: options.onProgress
-              ? (output) => options.onProgress!(SetupPhase.RSYNC, output)
-              : undefined,
-          }
-        )
+        rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
+          excludePatterns,
+          onProgress: options.onProgress
+            ? (output): void => options.onProgress!(SetupPhase.RSYNC, output)
+            : undefined,
+        })
       }
 
       // ============================================================
@@ -280,9 +274,6 @@ export class WorktreeSetupOrchestrator {
       // ============================================================
       this.reportProgress(options.onProgress, SetupPhase.VALIDATION, 'Validating setup')
 
-      // Verify worktree is in good state
-      const path = await import('path')
-
       // Check worktree still exists
       if (!(await fs.pathExists(worktreePath))) {
         warnings.push('Worktree path no longer exists after setup')
@@ -293,9 +284,7 @@ export class WorktreeSetupOrchestrator {
         const { OperationType } = await import('./fileOps')
         const symlinkOps = this.transaction
           .getOperations()
-          .filter(
-            (op) => op.type === OperationType.CREATE_SYMLINK
-          )
+          .filter((op) => op.type === OperationType.CREATE_SYMLINK)
 
         for (const op of symlinkOps) {
           const linkPath = op.path

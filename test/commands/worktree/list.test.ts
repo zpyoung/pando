@@ -112,9 +112,7 @@ describe('worktree list', () => {
     await command.run()
 
     // Verify JSON output
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('"worktrees"')
-    )
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('"worktrees"'))
 
     const jsonOutput = logSpy.mock.calls[0][0]
     const parsed = JSON.parse(jsonOutput)
@@ -242,9 +240,7 @@ describe('worktree list', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Not a git repository')
-    )
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Not a git repository'))
   })
 
   it('should handle git errors gracefully', async () => {
@@ -263,11 +259,7 @@ describe('worktree list', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error handling
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to list worktrees')
-    )
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Git command failed')
-    )
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to list worktrees'))
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Git command failed'))
   })
 })

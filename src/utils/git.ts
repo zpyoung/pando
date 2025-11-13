@@ -47,7 +47,7 @@ export class GitHelper {
     try {
       const root = await this.git.revparse(['--show-toplevel'])
       return root.trim()
-    } catch (error) {
+    } catch {
       throw new Error('Not a git repository or unable to determine root')
     }
   }
@@ -189,13 +189,13 @@ export class GitHelper {
     const worktrees = await this.listWorktrees()
 
     // Try exact match first
-    const exactMatch = worktrees.find(w => w.branch === branchName)
+    const exactMatch = worktrees.find((w) => w.branch === branchName)
     if (exactMatch) {
       return exactMatch
     }
 
     // Try fuzzy matching (case-insensitive, partial match)
-    const fuzzyMatch = worktrees.find(w =>
+    const fuzzyMatch = worktrees.find((w) =>
       w.branch?.toLowerCase().includes(branchName.toLowerCase())
     )
 
@@ -286,7 +286,7 @@ export class GitHelper {
       const output = await this.git.raw(['branch', '--merged', target])
       const mergedBranches = output
         .split('\n')
-        .map(line => line.trim().replace(/^\*\s*/, ''))
+        .map((line) => line.trim().replace(/^\*\s*/, ''))
         .filter(Boolean)
 
       return mergedBranches.includes(name)

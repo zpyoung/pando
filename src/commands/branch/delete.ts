@@ -23,12 +23,14 @@ export default class DeleteBranch extends Command {
       description: 'Name of the branch to delete',
       required: true,
     }),
+
     force: forceFlag,
     'remove-worktree': Flags.boolean({
       char: 'w',
       description: 'Also remove associated worktree if exists',
       default: false,
     }),
+
     json: jsonFlag,
   }
 
@@ -63,9 +65,7 @@ export default class DeleteBranch extends Command {
         const isMerged = await git.isBranchMerged(flags.name)
 
         if (!isMerged) {
-          this.error(
-            `Branch '${flags.name}' is not fully merged. Use --force to delete anyway.`
-          )
+          this.error(`Branch '${flags.name}' is not fully merged. Use --force to delete anyway.`)
         }
       }
 

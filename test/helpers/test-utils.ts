@@ -68,7 +68,7 @@ export async function setupTempRepo() {
  * Clean up test artifacts
  * TODO: Implement cleanup utilities
  */
-export async function cleanupTestRepo(path: string) {
+export async function cleanupTestRepo(_path: string) {
   // TODO: Remove temp directory safely
   throw new Error('Not implemented')
 }
