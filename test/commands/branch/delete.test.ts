@@ -3,7 +3,7 @@ import DeleteBranch from '../../../src/commands/branch/delete.js'
 import * as gitUtils from '../../../src/utils/git.js'
 
 /**
- * Tests for branch:delete command
+ * Tests for branch delete command
  *
  * Tests cover all core functionality including:
  * - Deleting branches
@@ -15,7 +15,7 @@ import * as gitUtils from '../../../src/utils/git.js'
  * - Error handling
  */
 
-describe('branch:delete', () => {
+describe('branch delete', () => {
   let command: DeleteBranch
   let logSpy: any
   let errorSpy: any

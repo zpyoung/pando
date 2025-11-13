@@ -145,6 +145,7 @@ export type PartialPandoConfig = {
  */
 export enum ConfigSource {
   CLI_FLAG = 'cli_flag',
+  ENV_VARS = 'env_vars',
   ENV_VAR = 'env_var',
   PANDO_TOML = 'pando_toml',
   PYPROJECT_TOML = 'pyproject_toml',

@@ -21,11 +21,11 @@ This document explains the design decisions, trade-offs, and rationale behind Pa
 **Example**:
 ```bash
 # Interactive (human)
-pando worktree:add
+pando worktree add
 # Prompts: Path? Branch?
 
 # Scripted (machine)
-pando worktree:add --path ../feature-x --branch feature-x --json
+pando worktree add --path ../feature-x --branch feature-x --json
 # {"path": "../feature-x", "branch": "feature-x", "commit": "abc123"}
 ```
 
@@ -35,7 +35,7 @@ pando worktree:add --path ../feature-x --branch feature-x --json
 
 **Rationale**:
 - Scales well (can add topics without conflicts)
-- Self-documenting (`worktree:add` is clearer than `add-worktree`)
+- Self-documenting (`worktree add` is clearer than `add-worktree`)
 - Follows industry conventions (Heroku CLI, Salesforce CLI)
 - Built-in help generation
 
@@ -55,8 +55,8 @@ pando worktree:add --path ../feature-x --branch feature-x --json
 
 **Implementation**:
 ```
-src/commands/worktree/add.ts     # Only handles worktree:add
-src/commands/worktree/remove.ts  # Only handles worktree:remove
+src/commands/worktree/add.ts     # Only handles worktree add
+src/commands/worktree/remove.ts  # Only handles worktree remove
 ```
 
 Each file is ~100-200 lines, highly focused.
@@ -184,10 +184,10 @@ async addWorktree(path, options) {
 **Example**:
 ```bash
 # Flag-based (chosen)
-pando worktree:add --path ../feature-x --branch feature-x
+pando worktree add --path ../feature-x --branch feature-x
 
 # Argument-based (rejected)
-pando worktree:add ../feature-x feature-x
+pando worktree add ../feature-x feature-x
 # What if branch is optional? Order matters!
 ```
 
@@ -223,18 +223,18 @@ pando worktree:add ../feature-x feature-x
 **Examples**:
 ```bash
 # Safe by default
-pando worktree:remove --path ../feature-x
+pando worktree remove --path ../feature-x
 # → Warns about uncommitted changes
 
 # Explicit force
-pando worktree:remove --path ../feature-x --force
+pando worktree remove --path ../feature-x --force
 # → Removes even with changes
 
 # Branch deletion
-pando branch:delete --name feature-x
+pando branch delete --name feature-x
 # → Checks if merged
 
-pando branch:delete --name feature-x --force
+pando branch delete --name feature-x --force
 # → Forces deletion
 ```
 
@@ -253,10 +253,10 @@ pando branch:delete --name feature-x --force
 
 ```bash
 # Output path for cd
-cd $(pando worktree:navigate --branch feature-x --output-path)
+cd $(pando worktree navigate --branch feature-x --output-path)
 
 # Or create shell alias
-alias goto-worktree='cd $(pando worktree:navigate --output-path --branch $1)'
+alias goto-worktree='cd $(pando worktree navigate --output-path --branch $1)'
 goto-worktree feature-x
 ```
 
@@ -372,7 +372,7 @@ pando worktree:workspace --output pando.code-workspace
 **Idea**: Worktree templates with pre-configured setups
 
 ```bash
-pando worktree:add --template feature --path ../feature-x
+pando worktree add --template feature --path ../feature-x
 # Creates worktree + installs deps + runs setup
 ```
 
@@ -400,8 +400,8 @@ Integration tests with temporary repos are valuable:
 ```typescript
 it('should create and list worktrees', async () => {
   const repo = await createTempRepo()
-  await run(['worktree:add', '--path', `${repo}/feature`, '--branch', 'test'])
-  const list = await run(['worktree:list', '--json'])
+  await run(['worktree add', '--path', `${repo}/feature`, '--branch', 'test'])
+  const list = await run(['worktree list', '--json'])
   expect(JSON.parse(list)).toHaveLength(2)
   await cleanupTempRepo(repo)
 })
@@ -437,12 +437,12 @@ Generated automatically by oclif from code.
 
 ```bash
 # Minimal command
-pando worktree:add
+pando worktree add
 
 # Prompts guide user
 
 # Expert usage
-pando worktree:add --path ../f --branch f --commit abc --json
+pando worktree add --path ../f --branch f --commit abc --json
 ```
 
 Supports both learning and efficiency.

@@ -1,5 +1,6 @@
 import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
+import { jsonFlag, forceFlag } from '../../utils/common-flags'
 
 /**
  * Delete a git branch
@@ -22,21 +23,13 @@ export default class DeleteBranch extends Command {
       description: 'Name of the branch to delete',
       required: true,
     }),
-    force: Flags.boolean({
-      char: 'f',
-      description: 'Force deletion even if not fully merged',
-      default: false,
-    }),
+    force: forceFlag,
     'remove-worktree': Flags.boolean({
       char: 'w',
       description: 'Also remove associated worktree if exists',
       default: false,
     }),
-    json: Flags.boolean({
-      char: 'j',
-      description: 'Output result in JSON format',
-      default: false,
-    }),
+    json: jsonFlag,
   }
 
   async run(): Promise<void> {

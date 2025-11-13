@@ -1,5 +1,6 @@
 import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
+import { jsonFlag } from '../../utils/common-flags'
 
 /**
  * Create a new git branch
@@ -32,11 +33,7 @@ export default class CreateBranch extends Command {
       description: 'Automatically create a worktree at this path',
       required: false,
     }),
-    json: Flags.boolean({
-      char: 'j',
-      description: 'Output result in JSON format',
-      default: false,
-    }),
+    json: jsonFlag,
   }
 
   async run(): Promise<void> {

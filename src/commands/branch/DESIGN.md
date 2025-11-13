@@ -30,10 +30,10 @@ This module provides CLI commands for managing git branches with integrated work
 ```bash
 # Traditional (2 commands)
 git branch feature-x
-pando worktree:add --path ../feature-x --branch feature-x
+pando worktree add --path ../feature-x --branch feature-x
 
 # Integrated (1 command)
-pando branch:create --name feature-x --worktree ../feature-x
+pando branch create --name feature-x --worktree ../feature-x
 ```
 
 ### Safety-First Defaults
@@ -47,10 +47,10 @@ pando branch:create --name feature-x --worktree ../feature-x
 **Implementation**:
 ```bash
 # Safe (checks if merged)
-pando branch:delete --name feature-x
+pando branch delete --name feature-x
 
 # Unsafe (requires explicit flag)
-pando branch:delete --name feature-x --force
+pando branch delete --name feature-x --force
 ```
 
 ### Default Base Branch
@@ -116,42 +116,42 @@ if (flags['remove-worktree']) {
 
 ```bash
 # Simple branch creation
-pando branch:create --name feature-x
+pando branch create --name feature-x
 
 # From specific base
-pando branch:create --name feature-x --from develop
+pando branch create --name feature-x --from develop
 
 # With worktree in one step
-pando branch:create --name feature-x --worktree ../feature-x
+pando branch create --name feature-x --worktree ../feature-x
 
 # JSON output for scripts
-pando branch:create --name feature-x --json
+pando branch create --name feature-x --json
 ```
 
 ### Deleting Branches
 
 ```bash
 # Safe deletion (checks if merged)
-pando branch:delete --name feature-x
+pando branch delete --name feature-x
 
 # Force delete unmerged branch
-pando branch:delete --name feature-x --force
+pando branch delete --name feature-x --force
 
 # Delete branch and its worktree
-pando branch:delete --name feature-x --remove-worktree
+pando branch delete --name feature-x --remove-worktree
 
 # Force delete both
-pando branch:delete --name feature-x --force --remove-worktree
+pando branch delete --name feature-x --force --remove-worktree
 ```
 
 ### Scripting Example
 
 ```bash
 # Create feature branch with worktree
-pando branch:create --name "feature-$TICKET" --worktree "../feature-$TICKET" --json
+pando branch create --name "feature-$TICKET" --worktree "../feature-$TICKET" --json
 
 # Cleanup after merge
-pando branch:delete --name "feature-$TICKET" --remove-worktree --json
+pando branch delete --name "feature-$TICKET" --remove-worktree --json
 ```
 
 ## Testing Approach
@@ -159,12 +159,12 @@ pando branch:delete --name "feature-$TICKET" --remove-worktree --json
 ### Unit Tests
 Test command logic with mocked GitHelper:
 ```typescript
-describe('branch:create', () => {
+describe('branch create', () => {
   it('should create branch', async () => {
     const gitHelper = createMockGitHelper()
     gitHelper.createBranch.mockResolvedValue({ name: 'test', ... })
 
-    await run(['branch:create', '--name', 'test'])
+    await run(['branch create', '--name', 'test'])
 
     expect(gitHelper.createBranch).toHaveBeenCalledWith('test', 'main')
   })
@@ -176,7 +176,7 @@ Test with real git operations in temp repositories:
 ```typescript
 test
   .stdout()
-  .command(['branch:create', '--name', 'test-branch'])
+  .command(['branch create', '--name', 'test-branch'])
   .it('creates a new branch', ctx => {
     expect(ctx.stdout).to.contain('Created branch: test-branch')
   })
@@ -242,7 +242,7 @@ try {
 ### Planned Features
 1. **Branch Templates** - Create branches with predefined structure
    ```bash
-   pando branch:create --name feature-x --template feature
+   pando branch create --name feature-x --template feature
    # Creates branch, worktree, runs setup scripts
    ```
 
@@ -254,13 +254,13 @@ try {
 
 3. **Interactive Selection** - Select branch from list
    ```bash
-   pando branch:delete
+   pando branch delete
    # Shows list of branches to choose from
    ```
 
 4. **Bulk Operations** - Create/delete multiple branches
    ```bash
-   pando branch:delete --pattern "feature/*" --merged
+   pando branch delete --pattern "feature/*" --merged
    # Deletes all merged feature branches
    ```
 
@@ -297,18 +297,18 @@ Future `.pandorc` support:
 ### Lifecycle Coordination
 ```
 Create:
-  branch:create --name X
+  branch create --name X
   └─> Branch X exists
 
-  branch:create --name X --worktree PATH
+  branch create --name X --worktree PATH
   ├─> Branch X exists
   └─> Worktree at PATH with branch X
 
 Delete:
-  branch:delete --name X
+  branch delete --name X
   └─> Branch X deleted (worktree remains)
 
-  branch:delete --name X --remove-worktree
+  branch delete --name X --remove-worktree
   ├─> Branch X deleted
   └─> Worktree removed if found
 ```

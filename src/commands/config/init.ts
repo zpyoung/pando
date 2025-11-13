@@ -95,7 +95,7 @@ export default class ConfigInit extends Command {
       this.log('')
       this.log('Next steps:')
       this.log('  1. Edit the file to customize your settings')
-      this.log('  2. Run `pando config:show` to verify configuration')
+      this.log('  2. Run `pando config show` to verify configuration')
       if (!flags.global) {
         this.log('  3. This config will be automatically discovered for this project')
       }

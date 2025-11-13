@@ -1,5 +1,6 @@
 import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
+import { jsonFlag } from '../../utils/common-flags'
 
 /**
  * List all git worktrees
@@ -17,11 +18,7 @@ export default class ListWorktree extends Command {
   ]
 
   static flags = {
-    json: Flags.boolean({
-      char: 'j',
-      description: 'Output result in JSON format',
-      default: false,
-    }),
+    json: jsonFlag,
     verbose: Flags.boolean({
       char: 'v',
       description: 'Show detailed information',

@@ -40,13 +40,13 @@ Each command:
 ```
 commands/
 ├── worktree/
-│   ├── add.ts      # pando worktree:add
-│   ├── list.ts     # pando worktree:list
-│   ├── remove.ts   # pando worktree:remove
-│   └── navigate.ts # pando worktree:navigate
+│   ├── add.ts      # pando worktree add
+│   ├── list.ts     # pando worktree list
+│   ├── remove.ts   # pando worktree remove
+│   └── navigate.ts # pando worktree navigate
 └── branch/
-    ├── create.ts   # pando branch:create
-    └── delete.ts   # pando branch:delete
+    ├── create.ts   # pando branch create
+    └── delete.ts   # pando branch delete
 ```
 
 **Design Pattern**: **Command Pattern**

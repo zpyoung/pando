@@ -402,7 +402,7 @@ git add src/commands/worktree/DESIGN.md
 git add README.md
 git commit -m "feat(worktree): add sync command
 
-- Implement worktree:sync for syncing with remote
+- Implement worktree sync for syncing with remote
 - Update DESIGN.md with sync implementation details
 - Add command to README.md reference"
 ```
@@ -583,10 +583,10 @@ Test commands with `@oclif/test`:
 ```typescript
 import { test } from '@oclif/test'
 
-describe('worktree:add', () => {
+describe('worktree add', () => {
   test
     .stdout()
-    .command(['worktree:add', '--path', '../test', '--branch', 'test'])
+    .command(['worktree add', '--path', '../test', '--branch', 'test'])
     .it('creates a new worktree', ctx => {
       expect(ctx.stdout).to.contain('Worktree created')
     })
@@ -682,7 +682,7 @@ try {
 
 ```bash
 # Run with Node debugger
-node --inspect bin/dev.js worktree:list
+node --inspect bin/dev.js worktree list
 
 # VS Code launch.json
 {
@@ -690,7 +690,7 @@ node --inspect bin/dev.js worktree:list
   "request": "launch",
   "name": "Debug Command",
   "program": "${workspaceFolder}/bin/dev.js",
-  "args": ["worktree:list"],
+  "args": ["worktree list"],
   "skipFiles": ["<node_internals>/**"]
 }
 ```

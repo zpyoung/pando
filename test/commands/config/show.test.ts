@@ -6,7 +6,7 @@ import * as os from 'os'
 import simpleGit from 'simple-git'
 
 /**
- * Tests for config:show command
+ * Tests for config show command
  *
  * Tests configuration display in various formats and scenarios:
  * - Basic config display (human-readable)
@@ -19,7 +19,7 @@ import simpleGit from 'simple-git'
  * and test JSON output via captured output in test environment.
  */
 
-describe('config:show', () => {
+describe('config show', () => {
   let tempDir: string
   let originalCwd: string
 
@@ -50,26 +50,26 @@ describe('config:show', () => {
 
   describe('basic functionality', () => {
     it('runs without errors', async () => {
-      const result = await runCommand(['config:show'], import.meta.url)
+      const result = await runCommand(['config show'], import.meta.url)
 
       // Verify no errors occurred
       expect(result.error).toBeUndefined()
     })
 
     it('runs with --sources flag without errors', async () => {
-      const result = await runCommand(['config:show', '--sources'], import.meta.url)
+      const result = await runCommand(['config show', '--sources'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
 
     it('runs with --json flag without errors', async () => {
-      const result = await runCommand(['config:show', '--json'], import.meta.url)
+      const result = await runCommand(['config show', '--json'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
 
     it('runs with combined flags without errors', async () => {
-      const result = await runCommand(['config:show', '--json', '--sources'], import.meta.url)
+      const result = await runCommand(['config show', '--json', '--sources'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -77,19 +77,19 @@ describe('config:show', () => {
 
   describe('short flags', () => {
     it('supports -j short flag for JSON', async () => {
-      const result = await runCommand(['config:show', '-j'], import.meta.url)
+      const result = await runCommand(['config show', '-j'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
 
     it('supports -s short flag for sources', async () => {
-      const result = await runCommand(['config:show', '-s'], import.meta.url)
+      const result = await runCommand(['config show', '-s'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
 
     it('supports combined short flags -j -s', async () => {
-      const result = await runCommand(['config:show', '-j', '-s'], import.meta.url)
+      const result = await runCommand(['config show', '-j', '-s'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -111,7 +111,7 @@ patterns = ["package.json", "pnpm-lock.yaml"]
 `
       )
 
-      const result = await runCommand(['config:show'], import.meta.url)
+      const result = await runCommand(['config show'], import.meta.url)
 
       // Should run without error
       expect(result.error).toBeUndefined()
@@ -132,7 +132,7 @@ patterns = ["package.json", "pnpm-lock.yaml"]
 `
       )
 
-      const result = await runCommand(['config:show', '--json'], import.meta.url)
+      const result = await runCommand(['config show', '--json'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -155,7 +155,7 @@ patterns = ["package.json", "pnpm-lock.yaml"]
         })
       )
 
-      const result = await runCommand(['config:show'], import.meta.url)
+      const result = await runCommand(['config show'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -176,7 +176,7 @@ patterns = ["package.json", "pnpm-lock.yaml"]
         })
       )
 
-      const result = await runCommand(['config:show', '--json'], import.meta.url)
+      const result = await runCommand(['config show', '--json'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -208,7 +208,7 @@ enabled = false
         })
       )
 
-      const result = await runCommand(['config:show'], import.meta.url)
+      const result = await runCommand(['config show'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -238,7 +238,7 @@ enabled = false
         })
       )
 
-      const result = await runCommand(['config:show', '--sources'], import.meta.url)
+      const result = await runCommand(['config show', '--sources'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -247,14 +247,14 @@ enabled = false
   describe('empty configuration', () => {
     it('handles empty config with defaults only', async () => {
       // No config files created, should use defaults
-      const result = await runCommand(['config:show'], import.meta.url)
+      const result = await runCommand(['config show'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
 
     it('outputs valid defaults in JSON format', async () => {
       // No config files created, should use defaults
-      const result = await runCommand(['config:show', '--json'], import.meta.url)
+      const result = await runCommand(['config show', '--json'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -262,7 +262,7 @@ enabled = false
 
   describe('error handling', () => {
     it('does not throw errors for valid configuration', async () => {
-      const result = await runCommand(['config:show'], import.meta.url)
+      const result = await runCommand(['config show'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -274,7 +274,7 @@ enabled = false
       try {
         process.chdir(nonGitDir)
 
-        const result = await runCommand(['config:show'], import.meta.url)
+        const result = await runCommand(['config show'], import.meta.url)
 
         // Should still work (falls back to cwd)
         expect(result.error).toBeUndefined()
@@ -307,7 +307,7 @@ beforeRsync = true
 `
       )
 
-      const result = await runCommand(['config:show'], import.meta.url)
+      const result = await runCommand(['config show'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })
@@ -322,7 +322,7 @@ enabled = false
 `
       )
 
-      const result = await runCommand(['config:show', '--json', '--sources'], import.meta.url)
+      const result = await runCommand(['config show', '--json', '--sources'], import.meta.url)
 
       expect(result.error).toBeUndefined()
     })

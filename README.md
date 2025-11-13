@@ -38,26 +38,26 @@ pnpm link
 
 ```bash
 # Create a new worktree for a feature branch
-pando worktree:add --path ../feature-x --branch feature-x
+pando worktree add --path ../feature-x --branch feature-x
 
 # List all worktrees
-pando worktree:list
+pando worktree list
 
 # Navigate to a worktree (outputs path for shell evaluation)
-cd $(pando worktree:navigate --branch feature-x --output-path)
+cd $(pando worktree navigate --branch feature-x --output-path)
 
 # Remove a worktree
-pando worktree:remove --path ../feature-x
+pando worktree remove --path ../feature-x
 
 # Create a branch with a worktree in one command
-pando branch:create --name feature-y --worktree ../feature-y
+pando branch create --name feature-y --worktree ../feature-y
 ```
 
 ## Commands
 
 ### Worktree Commands
 
-#### `pando worktree:add`
+#### `pando worktree add`
 Create a new git worktree
 
 **Flags:**
@@ -68,11 +68,11 @@ Create a new git worktree
 
 **Examples:**
 ```bash
-pando worktree:add --path ../feature-x --branch feature-x
-pando worktree:add --path ../hotfix --branch hotfix --commit abc123
+pando worktree add --path ../feature-x --branch feature-x
+pando worktree add --path ../hotfix --branch hotfix --commit abc123
 ```
 
-#### `pando worktree:list`
+#### `pando worktree list`
 List all git worktrees
 
 **Flags:**
@@ -81,11 +81,11 @@ List all git worktrees
 
 **Examples:**
 ```bash
-pando worktree:list
-pando worktree:list --json
+pando worktree list
+pando worktree list --json
 ```
 
-#### `pando worktree:remove`
+#### `pando worktree remove`
 Remove a git worktree
 
 **Flags:**
@@ -95,11 +95,11 @@ Remove a git worktree
 
 **Examples:**
 ```bash
-pando worktree:remove --path ../feature-x
-pando worktree:remove --path ../feature-x --force
+pando worktree remove --path ../feature-x
+pando worktree remove --path ../feature-x --force
 ```
 
-#### `pando worktree:navigate`
+#### `pando worktree navigate`
 Navigate to a git worktree
 
 **Flags:**
@@ -110,13 +110,13 @@ Navigate to a git worktree
 
 **Examples:**
 ```bash
-pando worktree:navigate --branch feature-x
-cd $(pando worktree:navigate --branch feature-x --output-path)
+pando worktree navigate --branch feature-x
+cd $(pando worktree navigate --branch feature-x --output-path)
 ```
 
 ### Branch Commands
 
-#### `pando branch:create`
+#### `pando branch create`
 Create a new git branch
 
 **Flags:**
@@ -127,11 +127,11 @@ Create a new git branch
 
 **Examples:**
 ```bash
-pando branch:create --name feature-x
-pando branch:create --name feature-x --worktree ../feature-x
+pando branch create --name feature-x
+pando branch create --name feature-x --worktree ../feature-x
 ```
 
-#### `pando branch:delete`
+#### `pando branch delete`
 Delete a git branch
 
 **Flags:**
@@ -142,8 +142,8 @@ Delete a git branch
 
 **Examples:**
 ```bash
-pando branch:delete --name feature-x
-pando branch:delete --name feature-x --remove-worktree
+pando branch delete --name feature-x
+pando branch delete --name feature-x --remove-worktree
 ```
 
 ## Automation & JSON Output
@@ -152,10 +152,10 @@ All commands support the `--json` flag for machine-readable output:
 
 ```bash
 # Use in scripts
-worktrees=$(pando worktree:list --json)
+worktrees=$(pando worktree list --json)
 
 # Parse with jq
-pando worktree:list --json | jq '.[] | select(.branch == "feature-x")'
+pando worktree list --json | jq '.[] | select(.branch == "feature-x")'
 ```
 
 ## Development
@@ -165,7 +165,7 @@ pando worktree:list --json | jq '.[] | select(.branch == "feature-x")'
 pnpm install
 
 # Run in development mode
-pnpm dev worktree:list
+pnpm dev worktree list
 
 # Build
 pnpm build
