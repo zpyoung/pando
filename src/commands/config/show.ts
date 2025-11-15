@@ -1,6 +1,7 @@
 import { Command, Flags } from '@oclif/core'
-import { configLoader } from '../../config/loader'
-import { jsonFlag } from '../../utils/common-flags'
+import { configLoader } from '../../config/loader.js'
+import type { ConfigWithSource } from '../../config/schema.js'
+import { jsonFlag } from '../../utils/common-flags.js'
 
 /**
  * Show merged configuration
@@ -75,14 +76,16 @@ export default class ConfigShow extends Command {
    * Display configuration in human-readable format
    */
   private async displayHumanReadable(
-    configWithSources: { config: Record<string, unknown>; sources: Record<string, unknown> },
+    configWithSources: ConfigWithSource,
     showSources: boolean
   ): Promise<void> {
     const chalk = (await import('chalk')).default
     const { config, sources } = configWithSources
 
     // Count unique sources (excluding DEFAULT)
-    const uniqueSources = new Set(Object.values(sources).filter((s) => s !== 'default'))
+    const uniqueSources = new Set(
+      Object.values(sources).filter((s) => String(s).toLowerCase() !== 'default')
+    )
     const sourceCount = uniqueSources.size + 1 // +1 for defaults
 
     // Title
@@ -93,7 +96,7 @@ export default class ConfigShow extends Command {
     )
 
     // [rsync] section
-    const rsyncConfig = config.rsync as Record<string, unknown>
+    const rsyncConfig = config.rsync as unknown as Record<string, unknown>
     this.log(chalk.cyan.bold('[rsync]'))
     this.log(
       `  enabled = ${chalk.yellow(String(rsyncConfig.enabled))}${
@@ -114,7 +117,7 @@ export default class ConfigShow extends Command {
     this.log('')
 
     // [symlink] section
-    const symlinkConfig = config.symlink as Record<string, unknown>
+    const symlinkConfig = config.symlink as unknown as Record<string, unknown>
     this.log(chalk.cyan.bold('[symlink]'))
     this.log(
       `  patterns = ${chalk.yellow(JSON.stringify(symlinkConfig.patterns))}${

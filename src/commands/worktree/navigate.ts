@@ -1,5 +1,5 @@
 import { Command, Flags } from '@oclif/core'
-import { jsonFlag } from '../../utils/common-flags'
+import { jsonFlag } from '../../utils/common-flags.js'
 
 /**
  * Navigate to a git worktree
@@ -69,7 +69,13 @@ export default class NavigateWorktree extends Command {
         worktree = worktrees.find((w) => w.path === flags.path)
         if (!worktree) {
           this.error(`Worktree at path '${flags.path}' not found`)
+          return // TypeScript doesn't know this.error() exits
         }
+      }
+
+      if (!worktree) {
+        this.error('Worktree not found')
+        return // TypeScript doesn't know this.error() exits
       }
 
       // Output based on flags

@@ -2,9 +2,9 @@ import { parse as parseToml } from '@iarna/toml'
 import * as fs from 'fs-extra'
 import * as os from 'os'
 import * as path from 'path'
-import type { ConfigFile, ConfigWithSource, PandoConfig, PartialPandoConfig } from './schema'
-import { ConfigSource, DEFAULT_CONFIG, validateConfig, validatePartialConfig } from './schema'
-import { getEnvConfig, hasEnvConfig } from './env'
+import type { ConfigFile, ConfigWithSource, PandoConfig, PartialPandoConfig } from './schema.js'
+import { ConfigSource, DEFAULT_CONFIG, validateConfig, validatePartialConfig } from './schema.js'
+import { getEnvConfig, hasEnvConfig } from './env.js'
 
 /**
  * Configuration Loader
@@ -359,7 +359,7 @@ export function mergeMultipleConfigs(
 ): ConfigWithSource {
   // Sort configs by priority (lowest first)
   const sortedConfigs = [...configs].sort(
-    (a, b) => SOURCE_PRIORITY[a.source] - SOURCE_PRIORITY[b.source]
+    (a, b) => (SOURCE_PRIORITY[a.source] ?? 0) - (SOURCE_PRIORITY[b.source] ?? 0)
   )
 
   // Start with DEFAULT_CONFIG
@@ -383,14 +383,14 @@ export function mergeMultipleConfigs(
     // Track source for each top-level key
     for (const key of Object.keys(config) as Array<keyof PartialPandoConfig>) {
       if (config[key] !== undefined) {
-        sources[key] = source
+        sources[String(key)] = source
 
         // Track source for nested keys
         const nestedConfig = config[key]
         if (typeof nestedConfig === 'object' && nestedConfig !== null) {
           for (const nestedKey of Object.keys(nestedConfig)) {
             if ((nestedConfig as any)[nestedKey] !== undefined) {
-              sources[`${key}.${nestedKey}`] = source
+              sources[`${String(key)}.${nestedKey}`] = source
             }
           }
         }

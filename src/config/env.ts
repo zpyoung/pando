@@ -1,4 +1,4 @@
-import type { PartialPandoConfig } from './schema'
+import type { PartialPandoConfig } from './schema.js'
 
 /**
  * Environment Variable Parser
@@ -96,7 +96,7 @@ export function setNestedProperty(
     if (!(key in current)) {
       current[key] = {}
     }
-    current = current[key]
+    current = current[key] as Record<string, unknown>
   }
 
   const lastKey = keys[keys.length - 1]!

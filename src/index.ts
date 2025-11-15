@@ -7,7 +7,7 @@
 export { run } from '@oclif/core'
 
 // Export utilities for programmatic usage
-export * from './utils/git'
+export * from './utils/git.js'
 
 // Re-export types
 export type { Command, Flags } from '@oclif/core'

@@ -2,8 +2,8 @@ import { Command, Flags } from '@oclif/core'
 import { stringify as stringifyToml } from '@iarna/toml'
 import * as fs from 'fs-extra'
 import * as path from 'path'
-import simpleGit from 'simple-git'
-import { DEFAULT_CONFIG } from '../../config/schema'
+import { simpleGit } from 'simple-git'
+import { DEFAULT_CONFIG } from '../../config/schema.js'
 
 /**
  * Initialize pando configuration
@@ -113,7 +113,9 @@ export default class ConfigInit extends Command {
    * Generate TOML content with comments
    */
   private generateTomlContent(): string {
-    const toml = stringifyToml(DEFAULT_CONFIG as Record<string, unknown>)
+    const toml = stringifyToml(
+      DEFAULT_CONFIG as unknown as ReturnType<typeof import('@iarna/toml').parse>
+    )
 
     // Add helpful header comment
     const header = `# Pando Configuration

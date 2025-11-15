@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra'
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import type { RsyncConfig, SymlinkConfig } from '../config/schema'
+import type { RsyncConfig, SymlinkConfig } from '../config/schema.js'
 
 const execAsync = promisify(exec)
 
@@ -165,7 +165,7 @@ export class FileOperationTransaction {
             // Restore from checkpoint if available
             const checkpointKey = `file:${op.path}`
             if (this.checkpoints.has(checkpointKey)) {
-              const content = this.checkpoints.get(checkpointKey)
+              const content = this.checkpoints.get(checkpointKey) as string
               await fs.writeFile(op.path, content)
             }
             break
@@ -197,7 +197,8 @@ export class FileOperationTransaction {
  * Helper for rsync operations
  */
 export class RsyncHelper {
-  constructor(private transaction: FileOperationTransaction) {}
+  // @ts-expect-error: transaction parameter reserved for future rollback implementation
+  constructor(private _transaction: FileOperationTransaction) {}
 
   /**
    * Check if rsync is installed and available
@@ -288,7 +289,8 @@ export interface RsyncResult {
  * Helper for symlink operations
  */
 export class SymlinkHelper {
-  constructor(private transaction: FileOperationTransaction) {}
+  // @ts-expect-error: transaction parameter reserved for future rollback implementation
+  constructor(private _transaction: FileOperationTransaction) {}
 
   /**
    * Match files against glob patterns

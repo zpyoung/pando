@@ -1,7 +1,7 @@
 import { Command, Flags } from '@oclif/core'
 import * as path from 'node:path'
 import { createGitHelper } from '../../utils/git.js'
-import { jsonFlag, forceFlag } from '../../utils/common-flags'
+import { jsonFlag, forceFlag } from '../../utils/common-flags.js'
 
 /**
  * Remove a git worktree
@@ -101,7 +101,7 @@ export default class RemoveWorktree extends Command {
       }
 
       // 4. Execute git worktree remove command
-      await gitHelper.removeWorktree(worktree.path, flags.force)
+      await gitHelper.removeWorktree(worktree.path, flags.force as boolean | undefined)
 
       // 5. Format output based on --json flag
       if (flags.json) {
