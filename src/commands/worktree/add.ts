@@ -1,8 +1,8 @@
 import { Command, Flags } from '@oclif/core'
-import { createGitHelper } from '../../utils/git'
-import { loadConfig } from '../../config/loader'
-import { createWorktreeSetupOrchestrator, SetupPhase } from '../../utils/worktreeSetup'
-import { jsonFlag } from '../../utils/common-flags'
+import { createGitHelper } from '../../utils/git.js'
+import { loadConfig } from '../../config/loader.js'
+import { createWorktreeSetupOrchestrator, SetupPhase } from '../../utils/worktreeSetup.js'
+import { jsonFlag } from '../../utils/common-flags.js'
 
 /**
  * Add a new git worktree
@@ -260,9 +260,10 @@ export default class AddWorktree extends Command {
     const orchestrator = createWorktreeSetupOrchestrator(gitHelper, config)
 
     const setupOptions = {
-      skipRsync: flags['skip-rsync'],
-      skipSymlink: flags['skip-symlink'],
-      onProgress: this.buildProgressCallback(spinner, flags.json),
+      skipRsync: flags['skip-rsync'] as boolean | undefined,
+      skipSymlink: flags['skip-symlink'] as boolean | undefined,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      onProgress: this.buildProgressCallback(spinner, flags.json as boolean),
     }
 
     try {
@@ -365,6 +366,9 @@ export default class AddWorktree extends Command {
       )
     } else {
       // Human-readable output
+      if (!chalk) {
+        this.error('Chalk not initialized for human-readable output')
+      }
       const output: string[] = []
 
       // Success header
@@ -451,6 +455,9 @@ export default class AddWorktree extends Command {
           )
         )
       } else {
+        if (!chalk) {
+          this.error('Chalk not initialized for error output')
+        }
         this.error(
           [
             chalk.red('✗ Setup failed:'),
@@ -485,6 +492,9 @@ export default class AddWorktree extends Command {
           )
         )
       } else {
+        if (!chalk) {
+          this.error('Chalk not initialized for error output')
+        }
         this.error(
           [
             chalk.red('✗ rsync is not installed or not in PATH'),

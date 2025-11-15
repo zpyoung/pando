@@ -1,6 +1,6 @@
 import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
-import { jsonFlag } from '../../utils/common-flags'
+import { jsonFlag } from '../../utils/common-flags.js'
 
 /**
  * List all git worktrees

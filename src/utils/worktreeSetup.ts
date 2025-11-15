@@ -1,14 +1,15 @@
-import type { PandoConfig, RsyncConfig, SymlinkConfig } from '../config/schema'
-import type { GitHelper } from './git'
+import type { PandoConfig, RsyncConfig, SymlinkConfig } from '../config/schema.js'
+import type { GitHelper } from './git.js'
 import {
   createRsyncHelper,
   createSymlinkHelper,
   FileOperationTransaction,
   RsyncHelper,
   SymlinkHelper,
+  type Operation,
   type RsyncResult,
   type SymlinkResult,
-} from './fileOps'
+} from './fileOps.js'
 
 /**
  * Worktree Setup Orchestrator
@@ -117,9 +118,7 @@ export class WorktreeSetupOrchestrator {
   async setupNewWorktree(worktreePath: string, options: SetupOptions = {}): Promise<SetupResult> {
     const startTime = Date.now()
     const warnings: string[] = []
-    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     let rsyncResult: RsyncResult | undefined
-    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     let symlinkResult: SymlinkResult | undefined
     let rolledBack = false
 
@@ -204,7 +203,7 @@ export class WorktreeSetupOrchestrator {
         this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Copying files with rsync')
 
         // Check rsync is installed
-        const { RsyncNotInstalledError } = await import('./fileOps')
+        const { RsyncNotInstalledError } = await import('./fileOps.js')
         if (!(await this.rsyncHelper.isInstalled())) {
           throw new RsyncNotInstalledError()
         }
@@ -218,10 +217,10 @@ export class WorktreeSetupOrchestrator {
         // If symlinks were created before rsync, exclude those files
         if (symlinkResult && symlinkResult.created > 0) {
           // Get list of symlinked files from transaction
-          const { OperationType } = await import('./fileOps')
+          const { OperationType } = await import('./fileOps.js')
           const symlinkOps = this.transaction
             .getOperations()
-            .filter((op) => op.type === OperationType.CREATE_SYMLINK)
+            .filter((op: Operation) => op.type === OperationType.CREATE_SYMLINK)
 
           for (const op of symlinkOps) {
             // Extract relative path from worktree
@@ -234,7 +233,7 @@ export class WorktreeSetupOrchestrator {
         rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
           excludePatterns,
           onProgress: options.onProgress
-            ? (output): void => options.onProgress!(SetupPhase.RSYNC, output)
+            ? (output: string): void => options.onProgress!(SetupPhase.RSYNC, output)
             : undefined,
         })
       }
@@ -281,10 +280,10 @@ export class WorktreeSetupOrchestrator {
 
       // Verify symlinks if any were created
       if (symlinkResult && symlinkResult.created > 0) {
-        const { OperationType } = await import('./fileOps')
+        const { OperationType } = await import('./fileOps.js')
         const symlinkOps = this.transaction
           .getOperations()
-          .filter((op) => op.type === OperationType.CREATE_SYMLINK)
+          .filter((op: Operation) => op.type === OperationType.CREATE_SYMLINK)
 
         for (const op of symlinkOps) {
           const linkPath = op.path
