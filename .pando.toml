@@ -1,0 +1,20 @@
+# Pando Configuration
+#
+# This file configures pando's behavior for managing git worktrees.
+# See https://github.com/zpyoung/pando for documentation.
+
+# Rsync Configuration
+# Controls how files are copied from source tree to new worktrees
+[rsync]
+enabled = true
+flags = [ "--archive", "--exclude", ".git" ]
+exclude = [ ]
+
+
+# Symlink Configuration
+# Controls which files are symlinked instead of copied
+# Patterns support glob syntax (e.g., "*.json", ".env*")
+[symlink]
+patterns = [ ]
+relative = true
+beforeRsync = true

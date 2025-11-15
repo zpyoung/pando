@@ -1,6 +1,6 @@
 import { Command, Flags } from '@oclif/core'
 import { stringify as stringifyToml } from '@iarna/toml'
-import * as fs from 'fs-extra'
+import fs from 'fs-extra'
 import * as path from 'path'
 import { simpleGit } from 'simple-git'
 import { DEFAULT_CONFIG } from '../../config/schema.js'
