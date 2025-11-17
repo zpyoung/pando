@@ -49,11 +49,26 @@ export const SymlinkConfigSchemaPartial = z.object({
 })
 
 /**
+ * Worktree configuration schema
+ */
+export const WorktreeConfigSchema = z.object({
+  defaultPath: z.string().optional(),
+})
+
+/**
+ * Worktree configuration schema without defaults (for partial config validation)
+ */
+export const WorktreeConfigSchemaPartial = z.object({
+  defaultPath: z.string().optional(),
+})
+
+/**
  * Complete Pando configuration schema
  */
 export const PandoConfigSchema = z.object({
   rsync: RsyncConfigSchema,
   symlink: SymlinkConfigSchema,
+  worktree: WorktreeConfigSchema.default({}),
 })
 
 /**
@@ -62,6 +77,7 @@ export const PandoConfigSchema = z.object({
 export const PartialPandoConfigSchema = z.object({
   rsync: RsyncConfigSchemaPartial.optional(),
   symlink: SymlinkConfigSchemaPartial.optional(),
+  worktree: WorktreeConfigSchemaPartial.optional(),
 })
 
 // ============================================================================
@@ -121,11 +137,27 @@ export interface SymlinkConfig {
 }
 
 /**
+ * Worktree configuration options
+ *
+ * Controls default paths and behavior for worktree operations
+ */
+export interface WorktreeConfig {
+  /**
+   * Default parent directory for worktrees
+   * Can be relative (to git root) or absolute path
+   * @default undefined
+   * @example '../worktrees' or '/absolute/path/to/worktrees'
+   */
+  defaultPath?: string
+}
+
+/**
  * Complete Pando configuration
  */
 export interface PandoConfig {
   rsync: RsyncConfig
   symlink: SymlinkConfig
+  worktree: WorktreeConfig
 }
 
 /**
@@ -134,6 +166,7 @@ export interface PandoConfig {
 export type PartialPandoConfig = {
   rsync?: Partial<RsyncConfig>
   symlink?: Partial<SymlinkConfig>
+  worktree?: Partial<WorktreeConfig>
 }
 
 // ============================================================================
@@ -198,6 +231,7 @@ export const DEFAULT_CONFIG: PandoConfig = {
     relative: true,
     beforeRsync: true,
   },
+  worktree: {},
 }
 
 // ============================================================================
@@ -252,6 +286,18 @@ export function isRsyncConfig(value: unknown): value is RsyncConfig {
 export function isSymlinkConfig(value: unknown): value is SymlinkConfig {
   try {
     SymlinkConfigSchema.parse(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check if value is a valid WorktreeConfig
+ */
+export function isWorktreeConfig(value: unknown): value is WorktreeConfig {
+  try {
+    WorktreeConfigSchema.parse(value)
     return true
   } catch {
     return false

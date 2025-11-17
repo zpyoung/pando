@@ -2,7 +2,7 @@ import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
 import { loadConfig } from '../../config/loader.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../../utils/worktreeSetup.js'
-import { jsonFlag } from '../../utils/common-flags.js'
+import { jsonFlag, pathFlag } from '../../utils/common-flags.js'
 import { ErrorHelper } from '../../utils/errors.js'
 
 /**
@@ -25,11 +25,7 @@ export default class AddWorktree extends Command {
 
   static flags = {
     // Basic worktree flags
-    path: Flags.string({
-      char: 'p',
-      description: 'Path for the new worktree',
-      required: true,
-    }),
+    path: pathFlag,
     branch: Flags.string({
       char: 'b',
       description: 'Branch to checkout or create',
@@ -81,15 +77,35 @@ export default class AddWorktree extends Command {
     const { spinner, chalk } = await this.initializeUI(flags.json)
 
     try {
-      const { gitHelper, resolvedPath } = await this.validateAndInitialize(
-        flags as Record<string, unknown>,
-        spinner
-      )
+      // Initialize git helper first to get git root
+      const gitHelper = createGitHelper()
+      const isRepo = await gitHelper.isRepository()
+      if (!isRepo) {
+        ErrorHelper.validation(
+          this,
+          'Not a git repository. Run this command from within a git repository.',
+          flags.json
+        )
+      }
+
+      // Load config before validation so we can use default path
       const config = await this.loadAndMergeConfig(
         flags as Record<string, unknown>,
         gitHelper,
         spinner
       )
+
+      // Get git root for path resolution
+      const gitRoot = await gitHelper.getRepositoryRoot()
+
+      // Validate and initialize with config
+      const { gitHelper: _gitHelper, resolvedPath } = await this.validateAndInitialize(
+        flags as Record<string, unknown>,
+        spinner,
+        config,
+        gitRoot
+      )
+
       const worktreeInfo = await this.createWorktree(
         flags as Record<string, unknown>,
         gitHelper,
@@ -134,28 +150,46 @@ export default class AddWorktree extends Command {
    */
   private async validateAndInitialize(
     flags: Record<string, unknown>,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    config: Awaited<ReturnType<typeof loadConfig>>,
+    gitRoot: string
   ): Promise<{ gitHelper: ReturnType<typeof createGitHelper>; resolvedPath: string }> {
     if (spinner) {
-      spinner.start('Initializing...')
+      spinner.start('Validating path...')
     }
 
     const gitHelper = createGitHelper()
 
-    // Validate we're in a git repository
-    const isRepo = await gitHelper.isRepository()
-    if (!isRepo) {
+    // Resolve path: CLI flag > config default > error
+    const fs = await import('fs-extra')
+    const path = await import('path')
+    let worktreePath: string
+
+    if (flags.path) {
+      // Path provided via flag
+      worktreePath = String(flags.path)
+    } else if (config.worktree.defaultPath) {
+      // Use config default path as parent directory
+      if (flags.branch) {
+        // Append branch name to default path
+        worktreePath = path.join(config.worktree.defaultPath, String(flags.branch))
+      } else {
+        // No branch specified, use default path as-is
+        worktreePath = config.worktree.defaultPath
+      }
+    } else {
+      // No path flag and no config default
       ErrorHelper.validation(
         this,
-        'Not a git repository. Run this command from within a git repository.',
+        'Path is required. Provide --path flag or set worktree.defaultPath in config.',
         flags.json as boolean | undefined
       )
     }
 
-    // Check if worktree path already exists
-    const fs = await import('fs-extra')
-    const path = await import('path')
-    const resolvedPath = path.resolve(String(flags.path))
+    // Resolve path (relative to git root if not absolute)
+    const resolvedPath = path.isAbsolute(worktreePath)
+      ? worktreePath
+      : path.resolve(gitRoot, worktreePath)
 
     if (await fs.pathExists(resolvedPath)) {
       ErrorHelper.validation(

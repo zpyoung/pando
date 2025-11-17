@@ -38,10 +38,46 @@ This module provides a comprehensive configuration system for pando that support
 - Better comments support
 - Standard in Rust and Python ecosystems
 
+### Configuration Schema
+
+**Supported Configuration Sections**:
+
+1. **`[rsync]`** - Controls file copying to new worktrees
+   - `enabled` (boolean) - Enable/disable rsync
+   - `flags` (array) - Rsync command flags
+   - `exclude` (array) - Patterns to exclude from sync
+
+2. **`[symlink]`** - Controls selective symlinking
+   - `patterns` (array) - Glob patterns for files to symlink
+   - `relative` (boolean) - Use relative vs absolute symlinks
+   - `beforeRsync` (boolean) - Create symlinks before or after rsync
+
+3. **`[worktree]`** - Worktree defaults (NEW)
+   - `defaultPath` (string, optional) - Default parent directory for worktrees
+     - Relative paths resolve from git repository root
+     - Absolute paths used as-is
+     - When used with `--branch` flag, branch name is appended
+
+**Example Configuration**:
+```toml
+[rsync]
+enabled = true
+flags = ["--archive", "--exclude", ".git"]
+exclude = ["dist/", "node_modules/"]
+
+[symlink]
+patterns = ["package.json", ".env*"]
+relative = true
+beforeRsync = true
+
+[worktree]
+defaultPath = "../worktrees"
+```
+
 ### Priority-Based Merging
 **Configuration Discovery Order** (highest to lowest priority):
 ```
-1. CLI flags (--rsync-flags, --symlink, etc.)
+1. CLI flags (--rsync-flags, --symlink, --path, etc.)
 2. Environment variables (PANDO_*)
 3. .pando.toml (current directory)
 4. Project files (walk up to git root):

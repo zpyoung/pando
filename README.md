@@ -61,14 +61,20 @@ pando branch create --name feature-y --worktree ../feature-y
 Create a new git worktree
 
 **Flags:**
-- `-p, --path` (required): Path for the new worktree
+- `-p, --path`: Path for the new worktree (optional if `worktree.defaultPath` is configured)
 - `-b, --branch`: Branch to checkout or create
 - `-c, --commit`: Commit hash to base the new branch on
 - `-j, --json`: Output in JSON format
 
 **Examples:**
 ```bash
+# With explicit path
 pando worktree add --path ../feature-x --branch feature-x
+
+# Using config default path (if worktree.defaultPath is set in .pando.toml)
+pando worktree add --branch feature-x
+
+# From specific commit
 pando worktree add --path ../hotfix --branch hotfix --commit abc123
 ```
 
@@ -89,7 +95,7 @@ pando worktree list --json
 Remove a git worktree
 
 **Flags:**
-- `-p, --path` (required): Path to the worktree to remove
+- `-p, --path`: Path to the worktree to remove (required)
 - `-f, --force`: Force removal even with uncommitted changes
 - `-j, --json`: Output in JSON format
 
@@ -144,6 +150,47 @@ Delete a git branch
 ```bash
 pando branch delete --name feature-x
 pando branch delete --name feature-x --remove-worktree
+```
+
+## Configuration
+
+Pando can be configured using a `.pando.toml` file in your project root:
+
+```toml
+# Rsync Configuration
+[rsync]
+enabled = true
+flags = ["--archive", "--exclude", ".git"]
+exclude = ["dist/", "node_modules/"]
+
+# Symlink Configuration
+[symlink]
+patterns = ["package.json", ".env*"]
+relative = true
+beforeRsync = true
+
+# Worktree Configuration
+[worktree]
+defaultPath = "../worktrees"  # Default parent directory for worktrees
+```
+
+### Worktree Default Path
+
+The `worktree.defaultPath` setting allows you to specify a default parent directory for worktrees:
+
+- **Relative paths** are resolved from the git repository root
+- **Absolute paths** are used as-is
+- When creating a worktree with `--branch` but no `--path`, the branch name is appended to the default path
+
+**Example:**
+```toml
+[worktree]
+defaultPath = "../worktrees"
+```
+
+```bash
+# Creates worktree at ../worktrees/feature-x (relative to git root)
+pando worktree add --branch feature-x
 ```
 
 ## Automation & JSON Output
