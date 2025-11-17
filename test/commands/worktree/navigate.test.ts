@@ -213,7 +213,9 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith("Worktree for branch 'nonexistent' not found", { exit: false })
+    expect(errorSpy).toHaveBeenCalledWith("Worktree for branch 'nonexistent' not found", {
+      exit: false,
+    })
   })
 
   it('should error when worktree path not found', async () => {
@@ -232,7 +234,9 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith("Worktree at path '/nonexistent/path' not found", { exit: false })
+    expect(errorSpy).toHaveBeenCalledWith("Worktree at path '/nonexistent/path' not found", {
+      exit: false,
+    })
   })
 
   it('should error when not in a git repository', async () => {
@@ -269,7 +273,10 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error handling
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to navigate to worktree'), { exit: false })
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to navigate to worktree'),
+      { exit: false }
+    )
   })
 
   it('should prioritize --output-path over --json flag', async () => {

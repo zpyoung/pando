@@ -112,7 +112,9 @@ describe('branch create', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith("Branch 'existing-branch' already exists", { exit: false })
+    expect(errorSpy).toHaveBeenCalledWith("Branch 'existing-branch' already exists", {
+      exit: false,
+    })
   })
 
   it('should create branch from specified base', async () => {
