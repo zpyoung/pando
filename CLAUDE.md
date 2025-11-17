@@ -736,6 +736,75 @@ try {
 }
 ```
 
+### Worktree Setup: Rsync/Symlink Coordination
+
+When setting up new worktrees with both rsync and symlink operations, **always match symlink patterns and exclude from rsync first**:
+
+```typescript
+// CRITICAL: Match symlink patterns BEFORE rsync execution
+// This prevents rsync from copying files that will be symlinked
+
+if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
+  // Match symlink patterns against source directory
+  const filesToSymlink = await this.symlinkHelper.matchPatterns(
+    sourceTreePath,
+    symlinkConfig.patterns
+  )
+
+  // Add matched files to rsync exclude patterns
+  excludePatterns.push(...filesToSymlink)
+}
+
+// Now execute rsync - it will skip symlink-intended files
+rsyncResult = await this.rsyncHelper.rsync(
+  sourceTreePath,
+  worktreePath,
+  rsyncConfig,
+  { excludePatterns }
+)
+```
+
+**Why This Matters**:
+- **Efficiency**: Prevents wasted rsync operations copying files that will be symlinked
+- **No Conflicts**: Eliminates conflicts between rsync and symlink operations
+- **Works Regardless of Timing**: Functions correctly whether symlinks are created before or after rsync
+- **Clear Separation**: Rsync handles copies, symlinks handle links
+
+**Location**: `src/utils/worktreeSetup.ts` (Phase 4: Rsync)
+
+**Best Practices for Symlink Patterns**:
+- **Good**: Non-tracked files that should sync across worktrees
+  - `node_modules/` (after install in main worktree)
+  - `.env` files (local configuration)
+  - `package.json`, lockfiles (if wanting synchronization)
+- **Bad**: Git-tracked files that vary between branches
+  - These are automatically checked out by git when creating worktrees
+  - Symlinking them defeats the purpose of separate worktrees
+
+### Config-First Initialization Pattern
+
+When commands use configuration defaults, load config **before** validation:
+
+```typescript
+// Pattern: Load config BEFORE validation when config provides defaults
+
+async run() {
+  // 1. Initialize git helper to get repository root
+  const gitHelper = createGitHelper()
+  const gitRoot = await gitHelper.getRepositoryRoot()
+
+  // 2. Load config BEFORE validating path
+  const config = await this.loadAndMergeConfig(...)
+
+  // 3. Validate with config awareness
+  const { resolvedPath } = await this.validateAndInitialize(flags, config, gitRoot)
+}
+```
+
+**Why**: Configuration may provide defaults (like `worktree.defaultPath`) that affect validation logic. Loading config first allows validation to account for these defaults.
+
+**Location**: Commands that use config defaults (e.g., `src/commands/worktree/add.ts`)
+
 ## Debugging
 
 ### Development Mode
