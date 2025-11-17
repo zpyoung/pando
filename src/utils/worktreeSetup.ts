@@ -214,19 +214,17 @@ export class WorktreeSetupOrchestrator {
           ...rsyncConfig.exclude,
         ]
 
-        // If symlinks were created before rsync, exclude those files
-        if (symlinkResult && symlinkResult.created > 0) {
-          // Get list of symlinked files from transaction
-          const { OperationType } = await import('./fileOps.js')
-          const symlinkOps = this.transaction
-            .getOperations()
-            .filter((op: Operation) => op.type === OperationType.CREATE_SYMLINK)
+        // ALWAYS exclude files that will be symlinked (regardless of beforeRsync setting)
+        // This prevents rsync from copying files that should be symlinks
+        if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
+          // Match symlink patterns against source directory to find files that will be symlinked
+          const filesToSymlink = await this.symlinkHelper.matchPatterns(
+            sourceTreePath,
+            symlinkConfig.patterns
+          )
 
-          for (const op of symlinkOps) {
-            // Extract relative path from worktree
-            const relativePath = op.path.replace(worktreePath + '/', '')
-            excludePatterns.push(relativePath)
-          }
+          // Add matched files to rsync exclude patterns
+          excludePatterns.push(...filesToSymlink)
         }
 
         // Execute rsync
@@ -249,18 +247,18 @@ export class WorktreeSetupOrchestrator {
         )
 
         // Create symlinks after rsync
-        // May need to replace files that were copied by rsync
+        // Rsync already excluded these files, so no conflicts expected
         symlinkResult = await this.symlinkHelper.createSymlinks(
           sourceTreePath,
           worktreePath,
           symlinkConfig,
           {
-            replaceExisting: true, // Replace files copied by rsync
-            skipConflicts: false, // Don't skip - we want to replace
+            replaceExisting: false,
+            skipConflicts: true,
           }
         )
 
-        // Add warnings for any remaining conflicts
+        // Add warnings for any conflicts (shouldn't happen since rsync excluded them)
         if (symlinkResult.conflicts.length > 0) {
           warnings.push(
             `Could not create ${symlinkResult.conflicts.length} symlink(s) due to conflicts`
