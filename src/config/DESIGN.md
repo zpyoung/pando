@@ -234,6 +234,60 @@ try {
 - Silently skip missing optional files
 - Only error if no config found anywhere
 
+## Known Issues and Solutions
+
+### Issue 1: Zod Schema `.default()` Overriding Parsed Config
+
+**Problem**: Using `.default({})` on a nested schema in the main config schema caused parsed configuration to be overridden with an empty object.
+
+**Example of Bug**:
+```typescript
+// BUG: This overrides parsed config
+export const PandoConfigSchema = z.object({
+  worktree: WorktreeConfigSchema.default({}),  // ❌ Overrides parsed values
+})
+```
+
+**Root Cause**: Zod's `.default()` applies the default value AFTER parsing completes, overriding any values that were successfully parsed from the config file.
+
+**Solution**: Remove `.default()` from nested schemas in the main schema:
+```typescript
+// FIXED: Let parser handle defaults through partial schemas
+export const PandoConfigSchema = z.object({
+  worktree: WorktreeConfigSchema,  // ✅ Preserves parsed values
+})
+```
+
+**Lesson**: Only use `.default()` on:
+- Primitive fields (strings, numbers, booleans, arrays)
+- Top-level schemas that won't be nested
+- NOT on nested object schemas that will be composed into a parent schema
+
+### Issue 2: fs-extra ES Module Import
+
+**Problem**: Using namespace import (`import * as fs from 'fs-extra'`) caused all fs-extra methods to be undefined in ES modules.
+
+**Example of Bug**:
+```typescript
+// BUG: fs methods are undefined
+import * as fs from 'fs-extra'
+await fs.access(filePath, fs.constants.R_OK)  // ❌ TypeError: fs.access is not a function
+```
+
+**Root Cause**: fs-extra is a CommonJS module that doesn't properly export named members through namespace imports in ES modules. The package provides a default export that contains all methods.
+
+**Solution**: Use default import instead:
+```typescript
+// FIXED: Use default import for CommonJS packages
+import fs from 'fs-extra'
+await fs.access(filePath, fs.constants.R_OK)  // ✅ Works correctly
+```
+
+**Lesson**: When importing CommonJS packages in ES modules:
+- Use default import (`import fs from 'fs-extra'`) instead of namespace import
+- Check package documentation for ESM compatibility
+- If methods are undefined, try switching import style
+
 ## Future Considerations
 
 ### Planned Features

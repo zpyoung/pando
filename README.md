@@ -181,6 +181,7 @@ The `worktree.defaultPath` setting allows you to specify a default parent direct
 - **Relative paths** are resolved from the git repository root
 - **Absolute paths** are used as-is
 - When creating a worktree with `--branch` but no `--path`, the branch name is appended to the default path
+- **Branch name sanitization**: Forward slashes (`/`) in branch names are automatically converted to underscores (`_`) for filesystem safety
 
 **Example:**
 ```toml
@@ -191,6 +192,10 @@ defaultPath = "../worktrees"
 ```bash
 # Creates worktree at ../worktrees/feature-x (relative to git root)
 pando worktree add --branch feature-x
+
+# Branch names with slashes are sanitized
+pando worktree add --branch feature/auth
+# Creates: ../worktrees/feature_auth
 ```
 
 ## Automation & JSON Output

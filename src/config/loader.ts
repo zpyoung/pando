@@ -1,5 +1,5 @@
 import { parse as parseToml } from '@iarna/toml'
-import * as fs from 'fs-extra'
+import fs from 'fs-extra'
 import * as os from 'os'
 import * as path from 'path'
 import type { ConfigFile, ConfigWithSource, PandoConfig, PartialPandoConfig } from './schema.js'
@@ -375,6 +375,7 @@ export function mergeMultipleConfigs(
   sources['symlink.patterns'] = ConfigSource.DEFAULT
   sources['symlink.relative'] = ConfigSource.DEFAULT
   sources['symlink.beforeRsync'] = ConfigSource.DEFAULT
+  sources['worktree'] = ConfigSource.DEFAULT
 
   // Merge each config in priority order
   for (const { config, source } of sortedConfigs) {

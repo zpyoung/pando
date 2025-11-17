@@ -171,8 +171,10 @@ export default class AddWorktree extends Command {
     } else if (config.worktree.defaultPath) {
       // Use config default path as parent directory
       if (flags.branch) {
-        // Append branch name to default path
-        worktreePath = path.join(config.worktree.defaultPath, String(flags.branch))
+        // Sanitize branch name: convert slashes to underscores for filesystem safety
+        const sanitizedBranch = String(flags.branch).replace(/\//g, '_')
+        // Append sanitized branch name to default path
+        worktreePath = path.join(config.worktree.defaultPath, sanitizedBranch)
       } else {
         // No branch specified, use default path as-is
         worktreePath = config.worktree.defaultPath

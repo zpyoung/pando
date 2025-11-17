@@ -23,7 +23,7 @@ beforeRsync = true
 # Worktree Configuration
 # Controls default behavior for worktree operations
 [worktree]
-# defaultPath = "../worktrees"  # Default parent directory for worktrees
+ defaultPath = "../worktrees/pando"  # Default parent directory for worktrees
                                 # Relative paths resolve from git root
                                 # Absolute paths are used as-is
                                 # When using --branch without --path, branch name is appended
