@@ -240,7 +240,9 @@ describe('worktree list', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Not a git repository'), { exit: false })
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Not a git repository'), {
+      exit: false,
+    })
   })
 
   it('should handle git errors gracefully', async () => {
@@ -259,7 +261,11 @@ describe('worktree list', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error handling
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to list worktrees'), { exit: false })
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Git command failed'), { exit: false })
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to list worktrees'), {
+      exit: false,
+    })
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Git command failed'), {
+      exit: false,
+    })
   })
 })
