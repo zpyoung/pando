@@ -317,7 +317,7 @@ export default class AddWorktree extends Command {
     const setupOptions = {
       skipRsync: flags['skip-rsync'] as boolean | undefined,
       skipSymlink: flags['skip-symlink'] as boolean | undefined,
-       
+
       onProgress: this.buildProgressCallback(spinner, flags.json as boolean),
     }
 

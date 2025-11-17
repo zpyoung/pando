@@ -1,6 +1,8 @@
 import * as fs from 'fs-extra'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { globby } from 'globby'
+import * as path from 'path'
 import type { RsyncConfig, SymlinkConfig } from '../config/schema.js'
 
 const execAsync = promisify(exec)
@@ -197,7 +199,6 @@ export class FileOperationTransaction {
  * Helper for rsync operations
  */
 export class RsyncHelper {
-  // @ts-expect-error: transaction parameter reserved for future rollback implementation
   constructor(private _transaction: FileOperationTransaction) {}
 
   /**
@@ -219,54 +220,174 @@ export class RsyncHelper {
    * Build rsync command from configuration
    */
   buildCommand(
-    _source: string,
-    _destination: string,
-    _config: RsyncConfig,
-    _additionalExcludes: string[] = []
+    source: string,
+    destination: string,
+    config: RsyncConfig,
+    additionalExcludes: string[] = []
   ): string {
-    // TODO: Implement command builder
-    // 1. Start with 'rsync'
-    // 2. Add flags from config.flags
-    // 3. Add excludes from config.exclude
-    // 4. Add additionalExcludes
-    // 5. Always exclude .git directory
-    // 6. Add source and destination paths (quote if needed)
-    // 7. Return complete command string
+    const parts: string[] = ['rsync']
 
-    throw new Error('Not implemented')
+    // Add flags from config
+    if (config.flags && config.flags.length > 0) {
+      parts.push(...config.flags)
+    }
+
+    // Collect all exclude patterns
+    const excludes: string[] = []
+
+    // Add excludes from config
+    if (config.exclude && config.exclude.length > 0) {
+      excludes.push(...config.exclude)
+    }
+
+    // Add additional excludes
+    if (additionalExcludes.length > 0) {
+      excludes.push(...additionalExcludes)
+    }
+
+    // Always exclude .git directory
+    if (!excludes.includes('.git')) {
+      excludes.push('.git')
+    }
+
+    // Add exclude flags
+    for (const pattern of excludes) {
+      parts.push('--exclude', `"${pattern}"`)
+    }
+
+    // Add source and destination (quote them)
+    parts.push(`"${source}"`, `"${destination}"`)
+
+    return parts.join(' ')
   }
 
   /**
    * Execute rsync from source to destination
    */
-  rsync(
-    _source: string,
-    _destination: string,
-    _config: RsyncConfig,
-    _options: {
+  async rsync(
+    source: string,
+    destination: string,
+    config: RsyncConfig,
+    options: {
       excludePatterns?: string[]
       onProgress?: (output: string) => void
     } = {}
   ): Promise<RsyncResult> {
-    // TODO: Implement rsync execution
-    // 1. Check if rsync is installed (throw RsyncNotInstalledError if not)
-    // 2. Build rsync command
-    // 3. Execute command (use spawn for progress streaming)
-    // 4. Track operation in transaction
-    // 5. Parse output for statistics
-    // 6. Return result with file counts
+    // Check if rsync is installed
+    if (!(await this.isInstalled())) {
+      throw new RsyncNotInstalledError()
+    }
 
-    throw new Error('Not implemented')
+    // Build rsync command (add --stats for statistics)
+    const configWithStats: RsyncConfig = {
+      ...config,
+      flags: [...(config.flags || []), '--stats'],
+    }
+    const command = this.buildCommand(
+      source,
+      destination,
+      configWithStats,
+      options.excludePatterns || []
+    )
+
+    // Record start time
+    const startTime = Date.now()
+
+    try {
+      // Execute command
+      const { stdout, stderr } = await execAsync(command)
+
+      // Call progress callback if provided
+      if (options.onProgress) {
+        options.onProgress(stdout)
+      }
+
+      // Track operation in transaction
+      this._transaction.record(OperationType.RSYNC, destination, {
+        source,
+        destination,
+        command,
+      })
+
+      // Parse output for statistics
+      const result = this.parseRsyncStats(stdout + stderr, Date.now() - startTime)
+
+      return result
+    } catch (error) {
+      throw new FileOperationError('rsync command failed', error as Error)
+    }
+  }
+
+  /**
+   * Parse rsync statistics from output
+   */
+  private parseRsyncStats(output: string, duration: number): RsyncResult {
+    const result: RsyncResult = {
+      success: true,
+      filesTransferred: 0,
+      bytesSent: 0,
+      totalSize: 0,
+      duration,
+    }
+
+    // Parse statistics from rsync output
+    // Example output:
+    // Number of files: 123 (reg: 100, dir: 23)
+    // Number of created files: 50
+    // Total file size: 1,234,567 bytes
+    // Total transferred file size: 1,000,000 bytes
+    // sent 1,234,567 bytes  received 890 bytes  2,470,914.00 bytes/sec
+
+    const filesMatch = output.match(/Number of created files: (\d+)/)
+    if (filesMatch && filesMatch[1]) {
+      result.filesTransferred = parseInt(filesMatch[1], 10)
+    }
+
+    const sentMatch = output.match(/sent ([\d,]+) bytes/)
+    if (sentMatch && sentMatch[1]) {
+      result.bytesSent = parseInt(sentMatch[1].replace(/,/g, ''), 10)
+    }
+
+    const totalSizeMatch = output.match(/Total file size: ([\d,]+) bytes/)
+    if (totalSizeMatch && totalSizeMatch[1]) {
+      result.totalSize = parseInt(totalSizeMatch[1].replace(/,/g, ''), 10)
+    }
+
+    return result
   }
 
   /**
    * Get estimated file count for rsync
    */
-  estimateFileCount(_source: string, _config: RsyncConfig): Promise<number> {
-    // TODO: Implement file count estimation
-    // Run rsync with --dry-run and count files
-    // Used for progress indicators
-    throw new Error('Not implemented')
+  async estimateFileCount(source: string, config: RsyncConfig): Promise<number> {
+    // Run rsync with --dry-run and --stats to get file count
+    const dryRunConfig: RsyncConfig = {
+      ...config,
+      flags: [...(config.flags || []), '--dry-run', '--stats'],
+    }
+
+    // Use a temporary destination that won't be created (dry-run)
+    const tempDest = '/tmp/pando-rsync-estimate'
+    const command = this.buildCommand(source, tempDest, dryRunConfig)
+
+    try {
+      const { stdout, stderr } = await execAsync(command)
+      const output = stdout + stderr
+
+      // Parse file count from output
+      // Look for "Number of files: X" or "Number of regular files transferred: X"
+      const filesMatch = output.match(/Number of (?:regular )?files(?: transferred)?: (\d+)/)
+      if (filesMatch && filesMatch[1]) {
+        return parseInt(filesMatch[1], 10)
+      }
+
+      // Fallback: count lines that look like file transfers
+      const lines = output.split('\n').filter((line) => line.trim() && !line.startsWith('sending'))
+      return lines.length
+    } catch {
+      // If estimation fails, return 0 (caller can handle gracefully)
+      return 0
+    }
   }
 }
 
@@ -289,95 +410,233 @@ export interface RsyncResult {
  * Helper for symlink operations
  */
 export class SymlinkHelper {
-  // @ts-expect-error: transaction parameter reserved for future rollback implementation
   constructor(private _transaction: FileOperationTransaction) {}
 
   /**
    * Match files against glob patterns
    */
-  matchPatterns(_baseDir: string, _patterns: string[]): Promise<string[]> {
-    // TODO: Implement pattern matching
-    // 1. Use globby to match patterns in baseDir
-    // 2. Return array of matched file paths (relative to baseDir)
-    // 3. Filter out directories (only match files)
-    // 4. Handle errors gracefully
+  async matchPatterns(baseDir: string, patterns: string[]): Promise<string[]> {
+    try {
+      // Use globby to match patterns in baseDir
+      const matches = await globby(patterns, {
+        cwd: baseDir,
+        onlyFiles: true, // Filter out directories
+        dot: true, // Include dotfiles
+      })
 
-    throw new Error('Not implemented')
+      return matches
+    } catch (error) {
+      throw new FileOperationError('Failed to match patterns', error as Error)
+    }
   }
 
   /**
    * Detect conflicts (files that exist at target path)
    */
-  detectConflicts(
-    _links: Array<{ source: string; target: string }>
+  async detectConflicts(
+    links: Array<{ source: string; target: string }>
   ): Promise<Array<{ source: string; target: string; reason: string }>> {
-    // TODO: Implement conflict detection
-    // 1. For each link, check if target exists
-    // 2. If exists, determine reason (file, directory, symlink)
-    // 3. Return array of conflicts
-    // 4. Empty array if no conflicts
+    const conflicts: Array<{ source: string; target: string; reason: string }> = []
 
-    throw new Error('Not implemented')
+    for (const link of links) {
+      try {
+        // Check if target exists
+        if (await fs.pathExists(link.target)) {
+          const stats = await fs.lstat(link.target)
+
+          let reason: string
+          if (stats.isSymbolicLink()) {
+            reason = 'symlink already exists'
+          } else if (stats.isDirectory()) {
+            reason = 'directory exists at target'
+          } else if (stats.isFile()) {
+            reason = 'file exists at target'
+          } else {
+            reason = 'unknown item exists at target'
+          }
+
+          conflicts.push({
+            source: link.source,
+            target: link.target,
+            reason,
+          })
+        }
+      } catch {
+        // If we can't check, treat it as no conflict (will fail during creation if needed)
+        continue
+      }
+    }
+
+    return conflicts
   }
 
   /**
    * Create a single symlink
    */
-  createSymlink(
-    _source: string,
-    _target: string,
-    _options: {
+  async createSymlink(
+    source: string,
+    target: string,
+    options: {
       relative?: boolean
       replaceExisting?: boolean
     } = {}
   ): Promise<void> {
-    // TODO: Implement symlink creation
-    // 1. Check if target exists
-    // 2. If exists and replaceExisting: Remove it
-    // 3. If exists and not replaceExisting: Throw error
-    // 4. Calculate link path (relative or absolute)
-    // 5. Create symlink with fs.symlink
-    // 6. Track operation in transaction
-    // 7. Handle errors (permissions, invalid paths)
+    try {
+      // Check if target exists
+      if (await fs.pathExists(target)) {
+        if (options.replaceExisting) {
+          // Remove existing target
+          const stats = await fs.lstat(target)
+          if (stats.isSymbolicLink() || stats.isFile()) {
+            await fs.unlink(target)
+          } else if (stats.isDirectory()) {
+            await fs.rmdir(target)
+          }
+        } else {
+          throw new FileOperationError(`Target already exists: ${target}`)
+        }
+      }
 
-    throw new Error('Not implemented')
+      // Ensure parent directory exists
+      const targetDir = path.dirname(target)
+      await fs.ensureDir(targetDir)
+
+      // Calculate link path (relative or absolute)
+      let linkPath: string
+      if (options.relative) {
+        // Calculate relative path from target to source
+        linkPath = path.relative(targetDir, source)
+      } else {
+        // Use absolute path
+        linkPath = path.resolve(source)
+      }
+
+      // Create symlink
+      await fs.symlink(linkPath, target)
+
+      // Track operation in transaction
+      this._transaction.record(OperationType.CREATE_SYMLINK, target, {
+        source,
+        linkPath,
+      })
+    } catch (error) {
+      if (error instanceof FileOperationError) {
+        throw error
+      }
+      throw new FileOperationError(
+        `Failed to create symlink from ${source} to ${target}`,
+        error as Error
+      )
+    }
   }
 
   /**
    * Create multiple symlinks from patterns
    */
-  createSymlinks(
-    _sourceDir: string,
-    _targetDir: string,
-    _config: SymlinkConfig,
-    _options: {
+  async createSymlinks(
+    sourceDir: string,
+    targetDir: string,
+    config: SymlinkConfig,
+    options: {
       replaceExisting?: boolean
       skipConflicts?: boolean
     } = {}
   ): Promise<SymlinkResult> {
-    // TODO: Implement batch symlink creation
-    // 1. Match files against config.patterns
-    // 2. Build list of (source, target) pairs
-    // 3. Detect conflicts
-    // 4. If conflicts and not skipConflicts: Throw SymlinkConflictError
-    // 5. Create all symlinks
-    // 6. Track each operation
-    // 7. Return result with counts and any skipped files
+    const result: SymlinkResult = {
+      success: true,
+      created: 0,
+      skipped: 0,
+      conflicts: [],
+    }
 
-    throw new Error('Not implemented')
+    try {
+      // Match files against config.patterns
+      const matches = await this.matchPatterns(sourceDir, config.patterns)
+
+      // Build list of (source, target) pairs
+      const links: Array<{ source: string; target: string }> = matches.map((relativePath) => ({
+        source: path.join(sourceDir, relativePath),
+        target: path.join(targetDir, relativePath),
+      }))
+
+      // Detect conflicts
+      const conflicts = await this.detectConflicts(links)
+      result.conflicts = conflicts
+
+      // If conflicts exist and not skipConflicts: Throw error
+      if (conflicts.length > 0 && !options.skipConflicts) {
+        throw new SymlinkConflictError(
+          `Found ${conflicts.length} conflict(s). Use skipConflicts option to skip them.`,
+          conflicts
+        )
+      }
+
+      // Create set of conflicting targets for easy lookup
+      const conflictTargets = new Set(conflicts.map((c) => c.target))
+
+      // Create all symlinks (skip conflicts if skipConflicts is true)
+      for (const link of links) {
+        if (conflictTargets.has(link.target) && options.skipConflicts) {
+          // Skip this link due to conflict
+          result.skipped++
+          continue
+        }
+
+        try {
+          await this.createSymlink(link.source, link.target, {
+            relative: config.relative,
+            replaceExisting: options.replaceExisting,
+          })
+          result.created++
+        } catch (error) {
+          // If individual symlink fails, track as conflict
+          result.conflicts.push({
+            source: link.source,
+            target: link.target,
+            reason: error instanceof Error ? error.message : 'unknown error',
+          })
+          result.skipped++
+        }
+      }
+
+      return result
+    } catch (error) {
+      result.success = false
+      if (error instanceof SymlinkConflictError) {
+        throw error
+      }
+      throw new FileOperationError('Failed to create symlinks', error as Error)
+    }
   }
 
   /**
    * Verify a symlink points to the correct target
    */
-  verifySymlink(_linkPath: string, _expectedTarget: string): Promise<boolean> {
-    // TODO: Implement symlink verification
-    // 1. Check if linkPath is a symlink
-    // 2. Read link target
-    // 3. Compare with expectedTarget (resolve relative paths)
-    // 4. Return true if matches, false otherwise
+  async verifySymlink(linkPath: string, expectedTarget: string): Promise<boolean> {
+    try {
+      // Check if linkPath exists and is a symlink
+      if (!(await fs.pathExists(linkPath))) {
+        return false
+      }
 
-    throw new Error('Not implemented')
+      const stats = await fs.lstat(linkPath)
+      if (!stats.isSymbolicLink()) {
+        return false
+      }
+
+      // Read the actual target of the symlink
+      const actualTarget = await fs.readlink(linkPath)
+
+      // Resolve both paths for comparison
+      const linkDir = path.dirname(linkPath)
+      const resolvedActual = path.resolve(linkDir, actualTarget)
+      const resolvedExpected = path.resolve(linkDir, expectedTarget)
+
+      return resolvedActual === resolvedExpected
+    } catch {
+      // If we can't verify, return false
+      return false
+    }
   }
 }
 
