@@ -24,13 +24,39 @@ This module provides CLI commands for managing git worktrees. Git worktrees allo
 
 ## Key Design Decisions
 
-### Flag-Driven Interface
-**Chosen**: All parameters passed via named flags (`--path`, `--branch`)
+### Flag-Driven Interface with Config Defaults
+**Chosen**: All parameters passed via named flags (`--path`, `--branch`) with optional config defaults
 **Rationale**:
 - More explicit and self-documenting
 - Order-independent
 - Easier to extend with optional parameters
 - Better for automation and scripting
+- Config defaults reduce repetitive flag usage
+
+**Path Resolution Priority**:
+1. CLI flag (`--path`) - Highest priority
+2. Config default (`worktree.defaultPath` in `.pando.toml`) - Used if no flag provided
+3. Error - Required if neither flag nor config provided
+
+**Path Resolution Logic**:
+- When using config default with `--branch` flag, branch name is appended to default path
+- Relative paths resolve from git repository root
+- Absolute paths are used as-is
+
+**Example**:
+```toml
+# .pando.toml
+[worktree]
+defaultPath = "../worktrees"
+```
+
+```bash
+# Creates ../worktrees/feature-x (relative to git root)
+pando worktree add --branch feature-x
+
+# Explicit path overrides config
+pando worktree add --path /custom/path --branch feature-x
+```
 
 **Alternative Rejected**: Positional arguments
 - Would require fixed order
@@ -155,8 +181,42 @@ Success! Worktree ready to use.
 Each command is a self-contained class following oclif conventions:
 - Static `description` for help text
 - Static `examples` for documentation
-- Static `flags` for argument parsing
+- Static `flags` for argument parsing (using common flags from `src/utils/common-flags.ts`)
 - `async run()` for execution
+
+### Common Flags Pattern
+Shared flags are centralized in `src/utils/common-flags.ts`:
+```typescript
+// Import common flags
+import { pathFlag, jsonFlag } from '../../utils/common-flags.js'
+
+// Use in command
+static flags = {
+  path: pathFlag,  // Reusable, consistent definition
+  json: jsonFlag,
+}
+```
+
+**Benefits**:
+- Consistent flag definitions across commands
+- Single source of truth for flag behavior
+- Easier to update flag descriptions or defaults globally
+
+### Config-First Initialization Pattern
+Commands that use config defaults must load config before validation:
+```typescript
+async run() {
+  // 1. Initialize git helper to get repository root
+  const gitHelper = createGitHelper()
+  const gitRoot = await gitHelper.getRepositoryRoot()
+
+  // 2. Load config before validating path
+  const config = await this.loadAndMergeConfig(...)
+
+  // 3. Validate with config awareness
+  const { resolvedPath } = await this.validateAndInitialize(flags, config, gitRoot)
+}
+```
 
 ### Delegation Pattern
 Commands delegate business logic to utilities:

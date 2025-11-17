@@ -28,11 +28,22 @@ export const forceFlag = Flags.boolean({
 })
 
 /**
+ * Path flag
+ * Specifies a path for the operation (can be relative or absolute)
+ */
+export const pathFlag = Flags.string({
+  char: 'p',
+  description: 'Path for the operation',
+  required: false,
+})
+
+/**
  * Common flags object for easy spreading
  * Use when you want to include all common flags in a command
  */
 export const commonFlags = {
   json: jsonFlag,
+  path: pathFlag,
 }
 
 /**

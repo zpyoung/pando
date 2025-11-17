@@ -8,13 +8,22 @@
 [rsync]
 enabled = true
 flags = [ "--archive", "--exclude", ".git" ]
-exclude = [ ]
+exclude = [ "dist/", "tsconfig.tsbuildinfo" ]
 
 
 # Symlink Configuration
 # Controls which files are symlinked instead of copied
 # Patterns support glob syntax (e.g., "*.json", ".env*")
 [symlink]
-patterns = [ ]
+patterns = [ "CLAUDE.md", ".claude/" ]
 relative = true
 beforeRsync = true
+
+
+# Worktree Configuration
+# Controls default behavior for worktree operations
+[worktree]
+# defaultPath = "../worktrees"  # Default parent directory for worktrees
+                                # Relative paths resolve from git root
+                                # Absolute paths are used as-is
+                                # When using --branch without --path, branch name is appended

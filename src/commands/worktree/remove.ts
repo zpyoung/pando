@@ -1,7 +1,7 @@
-import { Command, Flags } from '@oclif/core'
+import { Command } from '@oclif/core'
 import * as path from 'node:path'
 import { createGitHelper } from '../../utils/git.js'
-import { jsonFlag, forceFlag } from '../../utils/common-flags.js'
+import { jsonFlag, forceFlag, pathFlag } from '../../utils/common-flags.js'
 import { ErrorHelper } from '../../utils/errors.js'
 
 /**
@@ -20,11 +20,7 @@ export default class RemoveWorktree extends Command {
   ]
 
   static flags = {
-    path: Flags.string({
-      char: 'p',
-      description: 'Path to the worktree to remove',
-      required: true,
-    }),
+    path: pathFlag,
 
     force: forceFlag,
 
@@ -33,6 +29,15 @@ export default class RemoveWorktree extends Command {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(RemoveWorktree)
+
+    // Validate path is provided
+    if (!flags.path) {
+      ErrorHelper.validation(
+        this,
+        'Path is required. Provide --path flag to specify which worktree to remove.',
+        flags.json
+      )
+    }
 
     try {
       // 1. Validate the repository is a git repo
