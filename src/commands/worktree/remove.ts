@@ -2,6 +2,7 @@ import { Command, Flags } from '@oclif/core'
 import * as path from 'node:path'
 import { createGitHelper } from '../../utils/git.js'
 import { jsonFlag, forceFlag } from '../../utils/common-flags.js'
+import { ErrorHelper } from '../../utils/errors.js'
 
 /**
  * Remove a git worktree
@@ -46,10 +47,10 @@ export default class RemoveWorktree extends Command {
               error: 'Not a git repository',
             })
           )
+          this.exit(1)
         } else {
-          this.error('Not a git repository')
+          ErrorHelper.validation(this, 'Not a git repository', false)
         }
-        return
       }
 
       // 2. Check if worktree exists
@@ -67,10 +68,10 @@ export default class RemoveWorktree extends Command {
               error: `Worktree not found at ${flags.path}`,
             })
           )
+          this.exit(1)
         } else {
-          this.error(`Worktree not found at ${flags.path}`)
+          ErrorHelper.validation(this, `Worktree not found at ${flags.path}`, false)
         }
-        return
       }
 
       // 3. Check for uncommitted changes (unless --force)
@@ -88,15 +89,14 @@ export default class RemoveWorktree extends Command {
                 hasUncommittedChanges: true,
               })
             )
+            this.exit(1)
           } else {
-            const chalk = (await import('chalk')).default
-            this.error(
-              chalk.red('Worktree has uncommitted changes.') +
-                '\n' +
-                chalk.yellow(`Use ${chalk.bold('--force')} to remove anyway.`)
+            ErrorHelper.validation(
+              this,
+              'Worktree has uncommitted changes.\nUse --force to remove anyway.',
+              false
             )
           }
-          return
         }
       }
 
@@ -126,18 +126,21 @@ export default class RemoveWorktree extends Command {
       }
     } catch (error) {
       // 6. Handle errors appropriately
-      const errorMessage = error instanceof Error ? error.message : String(error)
-
       if (flags.json) {
         this.log(
           JSON.stringify({
             success: false,
-            error: errorMessage,
+            error: error instanceof Error ? error.message : String(error),
           })
         )
+        this.exit(1)
       } else {
-        const chalk = (await import('chalk')).default
-        this.error(chalk.red(`Failed to remove worktree: ${errorMessage}`))
+        ErrorHelper.operation(
+          this,
+          error instanceof Error ? error : new Error(String(error)),
+          'Failed to remove worktree',
+          false
+        )
       }
     }
   }

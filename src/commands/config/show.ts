@@ -2,6 +2,7 @@ import { Command, Flags } from '@oclif/core'
 import { configLoader } from '../../config/loader.js'
 import type { ConfigWithSource } from '../../config/schema.js'
 import { jsonFlag } from '../../utils/common-flags.js'
+import { ErrorHelper } from '../../utils/errors.js'
 
 /**
  * Show merged configuration
@@ -68,7 +69,12 @@ export default class ConfigShow extends Command {
         await this.displayHumanReadable(configWithSources, flags.sources)
       }
     } catch (error) {
-      this.error(`Failed to load configuration: ${error instanceof Error ? error.message : error}`)
+      ErrorHelper.operation(
+        this,
+        error as Error,
+        'Failed to load configuration',
+        flags.json as boolean | undefined
+      )
     }
   }
 

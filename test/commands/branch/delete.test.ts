@@ -99,7 +99,7 @@ describe('branch delete', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith('Not a git repository')
+    expect(errorSpy).toHaveBeenCalledWith('Not a git repository', { exit: false })
   })
 
   it('should error when branch does not exist', async () => {
@@ -123,7 +123,7 @@ describe('branch delete', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith("Branch 'nonexistent' does not exist")
+    expect(errorSpy).toHaveBeenCalledWith("Branch 'nonexistent' does not exist", { exit: false })
   })
 
   it('should error when trying to delete current branch', async () => {
@@ -148,7 +148,8 @@ describe('branch delete', () => {
 
     await expect(command.run()).rejects.toThrow()
     expect(errorSpy).toHaveBeenCalledWith(
-      "Cannot delete the currently checked out branch 'feature-x'"
+      "Cannot delete the currently checked out branch 'feature-x'",
+      { exit: false }
     )
   })
 
@@ -174,7 +175,8 @@ describe('branch delete', () => {
 
     await expect(command.run()).rejects.toThrow()
     expect(errorSpy).toHaveBeenCalledWith(
-      "Branch 'unmerged' is not fully merged. Use --force to delete anyway."
+      "Branch 'unmerged' is not fully merged. Use --force to delete anyway.",
+      { exit: false }
     )
     expect(mockGitHelper.deleteBranch).not.toHaveBeenCalled()
   })
@@ -269,7 +271,8 @@ describe('branch delete', () => {
 
     await expect(command.run()).rejects.toThrow()
     expect(errorSpy).toHaveBeenCalledWith(
-      "Worktree at '../feature-worktree' has uncommitted changes. Use --force to remove anyway."
+      "Worktree at '../feature-worktree' has uncommitted changes. Use --force to remove anyway.",
+      { exit: false }
     )
     expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
     expect(mockGitHelper.deleteBranch).not.toHaveBeenCalled()
@@ -518,7 +521,7 @@ describe('branch delete', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith('Cannot delete branch')
+    expect(errorSpy).toHaveBeenCalledWith('Cannot delete branch', { exit: false })
   })
 
   it('should handle errors from worktree removal', async () => {
@@ -547,7 +550,7 @@ describe('branch delete', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith('Cannot remove worktree')
+    expect(errorSpy).toHaveBeenCalledWith('Cannot remove worktree', { exit: false })
     expect(mockGitHelper.deleteBranch).not.toHaveBeenCalled()
   })
 })

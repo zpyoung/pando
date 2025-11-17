@@ -3,6 +3,7 @@ import { createGitHelper } from '../../utils/git.js'
 import { loadConfig } from '../../config/loader.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../../utils/worktreeSetup.js'
 import { jsonFlag } from '../../utils/common-flags.js'
+import { ErrorHelper } from '../../utils/errors.js'
 
 /**
  * Add a new git worktree
@@ -144,7 +145,11 @@ export default class AddWorktree extends Command {
     // Validate we're in a git repository
     const isRepo = await gitHelper.isRepository()
     if (!isRepo) {
-      this.error('Not a git repository. Run this command from within a git repository.')
+      ErrorHelper.validation(
+        this,
+        'Not a git repository. Run this command from within a git repository.',
+        flags.json as boolean | undefined
+      )
     }
 
     // Check if worktree path already exists
@@ -153,7 +158,11 @@ export default class AddWorktree extends Command {
     const resolvedPath = path.resolve(String(flags.path))
 
     if (await fs.pathExists(resolvedPath)) {
-      this.error(`Path already exists: ${resolvedPath}`)
+      ErrorHelper.validation(
+        this,
+        `Path already exists: ${resolvedPath}`,
+        flags.json as boolean | undefined
+      )
     }
 
     // Validate branch/commit if provided
@@ -161,8 +170,10 @@ export default class AddWorktree extends Command {
       // Check if branch already exists
       const branchExists = await gitHelper.branchExists(String(flags.branch))
       if (branchExists) {
-        this.error(
-          `Branch '${String(flags.branch)}' already exists. Choose a different branch name or omit --branch to checkout the commit in detached HEAD state.`
+        ErrorHelper.validation(
+          this,
+          `Branch '${String(flags.branch)}' already exists. Choose a different branch name or omit --branch to checkout the commit in detached HEAD state.`,
+          flags.json as boolean | undefined
         )
       }
     }
@@ -240,8 +251,12 @@ export default class AddWorktree extends Command {
         skipPostCreate: true,
       })
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      this.error(`Failed to create worktree: ${errorMessage}`)
+      ErrorHelper.operation(
+        this,
+        error as Error,
+        'Failed to create worktree',
+        flags.json as boolean | undefined
+      )
     }
   }
 
@@ -262,7 +277,7 @@ export default class AddWorktree extends Command {
     const setupOptions = {
       skipRsync: flags['skip-rsync'] as boolean | undefined,
       skipSymlink: flags['skip-symlink'] as boolean | undefined,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+       
       onProgress: this.buildProgressCallback(spinner, flags.json as boolean),
     }
 
@@ -367,7 +382,7 @@ export default class AddWorktree extends Command {
     } else {
       // Human-readable output
       if (!chalk) {
-        this.error('Chalk not initialized for human-readable output')
+        ErrorHelper.unexpected(this, new Error('Chalk not initialized for human-readable output'))
       }
       const output: string[] = []
 
@@ -456,21 +471,13 @@ export default class AddWorktree extends Command {
         )
       } else {
         if (!chalk) {
-          this.error('Chalk not initialized for error output')
+          ErrorHelper.unexpected(this, new Error('Chalk not initialized for error output'))
         }
-        this.error(
-          [
-            chalk.red('✗ Setup failed:'),
-            `  ${setupError.message}`,
-            result.rolledBack
-              ? chalk.yellow('  Worktree has been removed (rolled back)')
-              : chalk.red('  WARNING: Worktree may be in inconsistent state'),
-            result.warnings.length > 0
-              ? `\n${chalk.yellow('⚠ Warnings:')}\n${result.warnings.map((w: string) => `  - ${w}`).join('\n')}`
-              : '',
-          ]
-            .filter(Boolean)
-            .join('\n')
+        ErrorHelper.operation(
+          this,
+          setupError,
+          'Setup failed',
+          false // Not JSON mode
         )
       }
       return
@@ -493,19 +500,12 @@ export default class AddWorktree extends Command {
         )
       } else {
         if (!chalk) {
-          this.error('Chalk not initialized for error output')
+          ErrorHelper.unexpected(this, new Error('Chalk not initialized for error output'))
         }
-        this.error(
-          [
-            chalk.red('✗ rsync is not installed or not in PATH'),
-            '',
-            'Install rsync to use file syncing:',
-            '  • macOS: brew install rsync',
-            '  • Ubuntu/Debian: apt install rsync',
-            '  • Windows: Install via WSL or use --skip-rsync',
-            '',
-            'Or skip rsync with: --skip-rsync',
-          ].join('\n')
+        ErrorHelper.validation(
+          this,
+          'rsync is not installed or not in PATH\n\nInstall rsync to use file syncing:\n  • macOS: brew install rsync\n  • Ubuntu/Debian: apt install rsync\n  • Windows: Install via WSL or use --skip-rsync\n\nOr skip rsync with: --skip-rsync',
+          false // Not JSON mode
         )
       }
       return
@@ -531,35 +531,41 @@ export default class AddWorktree extends Command {
           )
         )
       } else {
-        this.error(
-          [
-            chalk ? chalk.red('✗ Symlink conflicts detected:') : '✗ Symlink conflicts detected:',
-            ...error.conflicts.map(
-              (c: { target: string; reason: string }) => `  • ${c.target}: ${c.reason}`
-            ),
-            '',
-            'Resolve conflicts manually or use --skip-symlink',
-          ].join('\n')
+        const conflictDetails = error.conflicts
+          .map((c: { target: string; reason: string }) => `  • ${c.target}: ${c.reason}`)
+          .join('\n')
+        ErrorHelper.operation(
+          this,
+          error as Error,
+          'Symlink conflicts detected:\n' +
+            conflictDetails +
+            '\n\nResolve conflicts manually or use --skip-symlink',
+          false // Not JSON mode
         )
       }
       return
     }
 
     // Generic error
-    const errorMessage = error instanceof Error ? error.message : String(error)
     if (flags.json) {
       this.log(
         JSON.stringify(
           {
             success: false,
-            error: errorMessage,
+            error: error instanceof Error ? error.message : String(error),
           },
           null,
           2
         )
       )
+      this.exit(1)
     } else {
-      this.error(errorMessage)
+      ErrorHelper.operation(
+        this,
+        error instanceof Error ? error : new Error(String(error)),
+        'Operation failed',
+        false // Not JSON mode
+      )
     }
   }
 }

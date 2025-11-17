@@ -1,6 +1,7 @@
 import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
 import { jsonFlag, forceFlag } from '../../utils/common-flags.js'
+import { ErrorHelper } from '../../utils/errors.js'
 
 /**
  * Delete a git branch
@@ -43,21 +44,29 @@ export default class DeleteBranch extends Command {
       const isRepo = await git.isRepository()
 
       if (!isRepo) {
-        this.error('Not a git repository')
+        ErrorHelper.validation(this, 'Not a git repository', flags.json as boolean | undefined)
       }
 
       // 2. Check if branch exists
       const branchExists = await git.branchExists(flags.name)
 
       if (!branchExists) {
-        this.error(`Branch '${flags.name}' does not exist`)
+        ErrorHelper.validation(
+          this,
+          `Branch '${flags.name}' does not exist`,
+          flags.json as boolean | undefined
+        )
       }
 
       // 3. Check if branch is currently checked out
       const currentBranch = await git.getCurrentBranch()
 
       if (currentBranch === flags.name) {
-        this.error(`Cannot delete the currently checked out branch '${flags.name}'`)
+        ErrorHelper.validation(
+          this,
+          `Cannot delete the currently checked out branch '${flags.name}'`,
+          flags.json as boolean | undefined
+        )
       }
 
       // 4. Check if branch has unmerged changes (unless --force)
@@ -65,7 +74,11 @@ export default class DeleteBranch extends Command {
         const isMerged = await git.isBranchMerged(flags.name)
 
         if (!isMerged) {
-          this.error(`Branch '${flags.name}' is not fully merged. Use --force to delete anyway.`)
+          ErrorHelper.validation(
+            this,
+            `Branch '${flags.name}' is not fully merged. Use --force to delete anyway.`,
+            flags.json as boolean | undefined
+          )
         }
       }
 
@@ -82,8 +95,10 @@ export default class DeleteBranch extends Command {
           const hasUncommitted = await git.hasUncommittedChanges(worktree.path)
 
           if (hasUncommitted && !flags.force) {
-            this.error(
-              `Worktree at '${worktree.path}' has uncommitted changes. Use --force to remove anyway.`
+            ErrorHelper.validation(
+              this,
+              `Worktree at '${worktree.path}' has uncommitted changes. Use --force to remove anyway.`,
+              flags.json as boolean | undefined
             )
           }
 
@@ -142,7 +157,7 @@ export default class DeleteBranch extends Command {
         )
         this.exit(1)
       } else {
-        this.error(errorMessage)
+        ErrorHelper.validation(this, errorMessage, false)
       }
     }
   }

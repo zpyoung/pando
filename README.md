@@ -196,6 +196,67 @@ pando/
 - Node.js >= 18.0.0
 - Git >= 2.5.0 (for worktree support)
 
+## Troubleshooting
+
+### Error Messages and Stack Traces
+
+Pando uses clean error messages for expected errors (like "file already exists" or "not a git repository"). You should **not** see stack traces for these errors.
+
+**If you see a stack trace for a validation error**, this indicates a bug - please report it!
+
+Common error types:
+- **Validation Errors**: Clean error messages without stack traces (use `--force`, missing files, invalid arguments)
+- **Operation Errors**: Runtime failures with context (network errors, permission issues, git command failures)
+- **Internal Errors**: Stack traces indicating bugs that should be reported
+
+### JSON Output for Scripts
+
+All commands support `--json` flag for machine-readable output:
+
+```bash
+# Get structured error output
+pando config init --json
+# Output: {"status":"error","error":"Configuration file already exists..."}
+
+# Check exit codes in scripts
+pando worktree add --path ../feature --branch feature --json
+if [ $? -ne 0 ]; then
+  echo "Command failed"
+fi
+```
+
+### Debug Mode
+
+For detailed debugging, run commands with Node.js debug environment:
+
+```bash
+# Enable debug output
+NODE_DEBUG=pando pnpm dev worktree list
+
+# Or with node inspector
+node --inspect bin/dev.js worktree list
+```
+
+### Common Issues
+
+**"Not a git repository"**
+- Make sure you're running pando from within a git repository
+- Check `git status` works in your current directory
+
+**"Worktree path already exists"**
+- The target path already has a directory/file
+- Use a different path or remove the existing path first
+
+**"Worktree has uncommitted changes"**
+- The worktree you're trying to remove has uncommitted changes
+- Commit or stash changes first, or use `--force` to remove anyway (WARNING: will lose changes)
+
+**"rsync is not installed"**
+- Install rsync for file syncing features
+- macOS: `brew install rsync`
+- Ubuntu/Debian: `apt install rsync`
+- Or use `--skip-rsync` to disable file syncing
+
 ## Contributing
 
 Contributions are welcome! Please read [ARCHITECTURE.md](./ARCHITECTURE.md) and [DESIGN.md](./DESIGN.md) to understand the project structure and design decisions.

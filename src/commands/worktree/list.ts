@@ -1,6 +1,7 @@
 import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
 import { jsonFlag } from '../../utils/common-flags.js'
+import { ErrorHelper } from '../../utils/errors.js'
 
 /**
  * List all git worktrees
@@ -35,7 +36,11 @@ export default class ListWorktree extends Command {
       const isRepo = await gitHelper.isRepository()
 
       if (!isRepo) {
-        this.error('Not a git repository. Run this command from within a git repository.')
+        ErrorHelper.validation(
+          this,
+          'Not a git repository. Run this command from within a git repository.',
+          flags.json as boolean | undefined
+        )
       }
 
       // 2. Execute git worktree list command and parse output
@@ -89,8 +94,12 @@ export default class ListWorktree extends Command {
         }
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      this.error(`Failed to list worktrees: ${errorMessage}`)
+      ErrorHelper.operation(
+        this,
+        error as Error,
+        'Failed to list worktrees',
+        flags.json as boolean | undefined
+      )
     }
   }
 }

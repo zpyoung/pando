@@ -111,6 +111,66 @@ describe('command-name', () => {
 })
 ```
 
+### Error Handling Pattern
+
+All commands use the centralized `ErrorHelper` utility from `src/utils/errors.ts` for consistent error handling with proper JSON support:
+
+```typescript
+import { ErrorHelper } from '../../utils/errors.js'
+
+// 1. VALIDATION ERRORS (expected user errors)
+// Use for: file exists, invalid arguments, missing requirements
+if (await fs.pathExists(path) && !flags.force) {
+  ErrorHelper.validation(
+    this,
+    'File already exists. Use --force to overwrite.',
+    flags.json
+  )
+}
+
+// 2. OPERATION ERRORS (runtime failures)
+// Use for: network errors, permission issues, external command failures
+try {
+  await gitHelper.operation()
+} catch (error) {
+  ErrorHelper.operation(
+    this,
+    error as Error,
+    'Failed to execute operation',
+    flags.json
+  )
+}
+
+// 3. UNEXPECTED ERRORS (internal bugs)
+// Use for: missing initialization, invalid state, should-never-happen
+if (!chalk) {
+  ErrorHelper.unexpected(
+    this,
+    new Error('Chalk not initialized - this is a bug')
+  )
+}
+
+// 4. WARNINGS (non-fatal issues)
+// Use for: deprecated features, ignored config, potential issues
+ErrorHelper.warn(
+  this,
+  'This feature is deprecated. Use --new-feature instead.',
+  flags.json
+)
+```
+
+**Key Differences:**
+- `validation()` - Clean errors without stack traces (expected)
+- `operation()` - Contextual errors for runtime failures
+- `unexpected()` - Shows stack traces for debugging bugs
+- `warn()` - Non-fatal warnings, doesn't exit
+
+**JSON Support:**
+All error methods automatically support `--json` flag:
+- Validation errors: `{ status: 'error', error: 'message' }`
+- Operation errors: `{ status: 'error', error: 'message', context: '...', details: '...' }`
+- Warnings: `{ status: 'warning', warning: 'message' }`
+
 ## Coding Conventions
 
 ### TypeScript Style
