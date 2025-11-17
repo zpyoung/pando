@@ -1,6 +1,7 @@
 import { Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
 import { jsonFlag } from '../../utils/common-flags.js'
+import { ErrorHelper } from '../../utils/errors.js'
 
 /**
  * Create a new git branch
@@ -46,14 +47,18 @@ export default class CreateBranch extends Command {
       const isRepo = await git.isRepository()
 
       if (!isRepo) {
-        this.error('Not a git repository')
+        ErrorHelper.validation(this, 'Not a git repository', flags.json as boolean | undefined)
       }
 
       // 2. Check if branch already exists
       const branchExists = await git.branchExists(flags.name)
 
       if (branchExists) {
-        this.error(`Branch '${flags.name}' already exists`)
+        ErrorHelper.validation(
+          this,
+          `Branch '${flags.name}' already exists`,
+          flags.json as boolean | undefined
+        )
       }
 
       // 3. Validate the base branch/commit exists
@@ -122,7 +127,7 @@ export default class CreateBranch extends Command {
         )
         this.exit(1)
       } else {
-        this.error(errorMessage)
+        ErrorHelper.validation(this, errorMessage, false)
       }
     }
   }

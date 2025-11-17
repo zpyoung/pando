@@ -146,7 +146,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith('Must specify either --branch or --path')
+    expect(errorSpy).toHaveBeenCalledWith('Must specify either --branch or --path', { exit: false })
   })
 
   it('should output only path when --output-path flag is set', async () => {
@@ -213,7 +213,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith("Worktree for branch 'nonexistent' not found")
+    expect(errorSpy).toHaveBeenCalledWith("Worktree for branch 'nonexistent' not found", { exit: false })
   })
 
   it('should error when worktree path not found', async () => {
@@ -232,7 +232,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith("Worktree at path '/nonexistent/path' not found")
+    expect(errorSpy).toHaveBeenCalledWith("Worktree at path '/nonexistent/path' not found", { exit: false })
   })
 
   it('should error when not in a git repository', async () => {
@@ -250,7 +250,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error message
-    expect(errorSpy).toHaveBeenCalledWith('Not a git repository')
+    expect(errorSpy).toHaveBeenCalledWith('Not a git repository', { exit: false })
   })
 
   it('should handle git errors gracefully', async () => {
@@ -269,7 +269,7 @@ describe('worktree navigate', () => {
     await expect(command.run()).rejects.toThrow()
 
     // Verify error handling
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to navigate to worktree'))
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to navigate to worktree'), { exit: false })
   })
 
   it('should prioritize --output-path over --json flag', async () => {

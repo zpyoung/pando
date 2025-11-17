@@ -1,5 +1,6 @@
 import { Command, Flags } from '@oclif/core'
 import { jsonFlag } from '../../utils/common-flags.js'
+import { ErrorHelper } from '../../utils/errors.js'
 
 /**
  * Navigate to a git worktree
@@ -42,7 +43,11 @@ export default class NavigateWorktree extends Command {
 
     // Validate required flags
     if (!flags.branch && !flags.path) {
-      this.error('Must specify either --branch or --path')
+      ErrorHelper.validation(
+        this,
+        'Must specify either --branch or --path',
+        flags.json as boolean | undefined
+      )
     }
 
     const { createGitHelper } = await import('../../utils/git.js')
@@ -51,7 +56,7 @@ export default class NavigateWorktree extends Command {
     // Validate repository
     const isRepo = await git.isRepository()
     if (!isRepo) {
-      this.error('Not a git repository')
+      ErrorHelper.validation(this, 'Not a git repository', flags.json as boolean | undefined)
     }
 
     try {
@@ -61,21 +66,27 @@ export default class NavigateWorktree extends Command {
       if (flags.branch) {
         worktree = await git.findWorktreeByBranch(flags.branch)
         if (!worktree) {
-          this.error(`Worktree for branch '${flags.branch}' not found`)
+          ErrorHelper.validation(
+            this,
+            `Worktree for branch '${flags.branch}' not found`,
+            flags.json as boolean | undefined
+          )
         }
       } else if (flags.path) {
         // For path-based lookup, list all worktrees and find matching path
         const worktrees = await git.listWorktrees()
         worktree = worktrees.find((w) => w.path === flags.path)
         if (!worktree) {
-          this.error(`Worktree at path '${flags.path}' not found`)
-          return // TypeScript doesn't know this.error() exits
+          ErrorHelper.validation(
+            this,
+            `Worktree at path '${flags.path}' not found`,
+            flags.json as boolean | undefined
+          )
         }
       }
 
       if (!worktree) {
-        this.error('Worktree not found')
-        return // TypeScript doesn't know this.error() exits
+        ErrorHelper.validation(this, 'Worktree not found', flags.json as boolean | undefined)
       }
 
       // Output based on flags
@@ -104,8 +115,12 @@ export default class NavigateWorktree extends Command {
         this.log(`  cd ${worktree.path}`)
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      this.error(`Failed to navigate to worktree: ${errorMessage}`)
+      ErrorHelper.operation(
+        this,
+        error as Error,
+        'Failed to navigate to worktree',
+        flags.json as boolean | undefined
+      )
     }
   }
 }

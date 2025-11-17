@@ -92,7 +92,7 @@ describe('branch create', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith('Not a git repository')
+    expect(errorSpy).toHaveBeenCalledWith('Not a git repository', { exit: false })
   })
 
   it('should error when branch already exists', async () => {
@@ -112,7 +112,7 @@ describe('branch create', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith("Branch 'existing-branch' already exists")
+    expect(errorSpy).toHaveBeenCalledWith("Branch 'existing-branch' already exists", { exit: false })
   })
 
   it('should create branch from specified base', async () => {
@@ -315,7 +315,7 @@ describe('branch create', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith('Invalid base reference')
+    expect(errorSpy).toHaveBeenCalledWith('Invalid base reference', { exit: false })
   })
 
   it('should handle errors from worktree creation', async () => {
@@ -340,6 +340,6 @@ describe('branch create', () => {
     } as any)
 
     await expect(command.run()).rejects.toThrow()
-    expect(errorSpy).toHaveBeenCalledWith('Path already exists')
+    expect(errorSpy).toHaveBeenCalledWith('Path already exists', { exit: false })
   })
 })

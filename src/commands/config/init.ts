@@ -4,6 +4,8 @@ import fs from 'fs-extra'
 import * as path from 'path'
 import { simpleGit } from 'simple-git'
 import { DEFAULT_CONFIG } from '../../config/schema.js'
+import { ErrorHelper } from '../../utils/errors.js'
+import { jsonFlag } from '../../utils/common-flags.js'
 
 /**
  * Initialize pando configuration
@@ -35,6 +37,7 @@ export default class ConfigInit extends Command {
       description: 'Create config at git repository root',
       default: false,
     }),
+    json: jsonFlag,
   }
 
   async run(): Promise<void> {
@@ -48,7 +51,7 @@ export default class ConfigInit extends Command {
       // Global config: ~/.config/pando/
       const homeDir = process.env.HOME || process.env.USERPROFILE
       if (!homeDir) {
-        this.error('Could not determine home directory')
+        ErrorHelper.validation(this, 'Could not determine home directory', flags.json)
       }
       targetDir = path.join(homeDir, '.config', 'pando')
       filename = 'config.toml'
@@ -61,9 +64,11 @@ export default class ConfigInit extends Command {
         targetDir = rootDir.trim()
         filename = '.pando.toml'
       } catch {
-        this.error('Not in a git repository. Use --global or run from a git repository.', {
-          exit: 1,
-        })
+        ErrorHelper.validation(
+          this,
+          'Not in a git repository. Use --global or run from a git repository.',
+          flags.json
+        )
       }
     } else {
       // Current directory
@@ -76,9 +81,11 @@ export default class ConfigInit extends Command {
     // Check if file exists
     const fileExists = await fs.pathExists(configPath)
     if (fileExists && !flags.force) {
-      this.error(`Configuration file already exists: ${configPath}\nUse --force to overwrite`, {
-        exit: 1,
-      })
+      ErrorHelper.validation(
+        this,
+        `Configuration file already exists: ${configPath}\nUse --force to overwrite`,
+        flags.json
+      )
     }
 
     // Generate TOML content with helpful comments
@@ -93,19 +100,30 @@ export default class ConfigInit extends Command {
       await fs.writeFile(configPath, tomlContent, { mode: 0o644 })
 
       // Output success message
-      this.log(`✓ Configuration file created: ${configPath}`)
-      this.log('')
-      this.log('Next steps:')
-      this.log('  1. Edit the file to customize your settings')
-      this.log('  2. Run `pando config show` to verify configuration')
-      if (!flags.global) {
-        this.log('  3. This config will be automatically discovered for this project')
+      if (flags.json) {
+        this.log(
+          JSON.stringify(
+            {
+              status: 'success',
+              path: configPath,
+              type: flags.global ? 'global' : 'local',
+            },
+            null,
+            2
+          )
+        )
+      } else {
+        this.log(`✓ Configuration file created: ${configPath}`)
+        this.log('')
+        this.log('Next steps:')
+        this.log('  1. Edit the file to customize your settings')
+        this.log('  2. Run `pando config show` to verify configuration')
+        if (!flags.global) {
+          this.log('  3. This config will be automatically discovered for this project')
+        }
       }
     } catch (error) {
-      this.error(
-        `Failed to create configuration file: ${error instanceof Error ? error.message : String(error)}`,
-        { exit: 1 }
-      )
+      ErrorHelper.operation(this, error as Error, 'Failed to create configuration file', flags.json)
     }
   }
 

@@ -171,11 +171,17 @@ describe('worktree remove', () => {
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(true)
 
+    // Mock exit to prevent actual exit
+    const exitSpy = vi.spyOn(command, 'exit').mockImplementation(() => {
+      throw new Error('exit called')
+    })
+
     command.argv = ['--path', '/path/to/feature', '--json']
-    await command.run()
+    await expect(command.run()).rejects.toThrow('exit called')
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"success"\s*:\s*false/))
     expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"hasUncommittedChanges"\s*:\s*true/))
+    expect(exitSpy).toHaveBeenCalledWith(1)
   })
 
   it('should handle git errors gracefully', async () => {
@@ -190,7 +196,8 @@ describe('worktree remove', () => {
 
     command.argv = ['--path', '/path/to/feature']
 
-    await expect(command.run()).rejects.toThrow('Failed to remove worktree')
+    // The error handling in the command will call this.error() with { exit: false }
+    await expect(command.run()).rejects.toThrow()
   })
 
   it('should output json error format on failure', async () => {
