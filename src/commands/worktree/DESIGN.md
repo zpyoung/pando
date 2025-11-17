@@ -42,6 +42,7 @@ This module provides CLI commands for managing git worktrees. Git worktrees allo
 - When using config default with `--branch` flag, branch name is appended to default path
 - Relative paths resolve from git repository root
 - Absolute paths are used as-is
+- **Branch name sanitization**: Forward slashes (`/`) are converted to underscores (`_`) for filesystem safety
 
 **Example**:
 ```toml
@@ -53,6 +54,10 @@ defaultPath = "../worktrees"
 ```bash
 # Creates ../worktrees/feature-x (relative to git root)
 pando worktree add --branch feature-x
+
+# Branch names with slashes are sanitized: feature/auth becomes feature_auth
+pando worktree add --branch feature/auth
+# Creates: ../worktrees/feature_auth
 
 # Explicit path overrides config
 pando worktree add --path /custom/path --branch feature-x

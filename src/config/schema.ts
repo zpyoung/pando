@@ -68,7 +68,7 @@ export const WorktreeConfigSchemaPartial = z.object({
 export const PandoConfigSchema = z.object({
   rsync: RsyncConfigSchema,
   symlink: SymlinkConfigSchema,
-  worktree: WorktreeConfigSchema.default({}),
+  worktree: WorktreeConfigSchema,
 })
 
 /**
