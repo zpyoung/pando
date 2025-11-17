@@ -162,25 +162,29 @@ export default class AddWorktree extends Command {
 
     // Resolve path: CLI flag > config default > error
     const fs = await import('fs-extra')
+    // Validate: require either --branch or --path (or both)
+    if (!flags.branch && !flags.path) {
+      ErrorHelper.validation(
+        this,
+        'Either --branch or --path is required.',
+        flags.json as boolean | undefined
+      )
+    }
+
     const path = await import('path')
     let worktreePath: string
 
     if (flags.path) {
       // Path provided via flag
       worktreePath = String(flags.path)
-    } else if (config.worktree.defaultPath) {
-      // Use config default path as parent directory
-      if (flags.branch) {
-        // Sanitize branch name: convert slashes to underscores for filesystem safety
-        const sanitizedBranch = String(flags.branch).replace(/\//g, '_')
-        // Append sanitized branch name to default path
-        worktreePath = path.join(config.worktree.defaultPath, sanitizedBranch)
-      } else {
-        // No branch specified, use default path as-is
-        worktreePath = config.worktree.defaultPath
-      }
+    } else if (config.worktree.defaultPath && flags.branch) {
+      // Use config default path + branch name
+      // Sanitize branch name: convert slashes to underscores for filesystem safety
+      const sanitizedBranch = String(flags.branch).replace(/\//g, '_')
+      // Append sanitized branch name to default path
+      worktreePath = path.join(config.worktree.defaultPath, sanitizedBranch)
     } else {
-      // No path flag and no config default
+      // No path flag and no usable config default
       ErrorHelper.validation(
         this,
         'Path is required. Provide --path flag or set worktree.defaultPath in config.',
