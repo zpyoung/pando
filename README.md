@@ -198,6 +198,25 @@ pando worktree add --branch feature/auth
 # Creates: ../worktrees/feature_auth
 ```
 
+### Environment Variables
+
+All configuration options can be set via environment variables using the `PANDO_` prefix:
+
+```bash
+# Set default worktree path
+export PANDO_WORKTREE_DEFAULT_PATH="../worktrees"
+
+# Now you can omit --path
+pando worktree add --branch feature-x
+```
+
+**Environment variable format:**
+- Prefix: `PANDO_`
+- Pattern: `PANDO_SECTION_KEY`
+- Example: `PANDO_WORKTREE_DEFAULT_PATH` → `worktree.defaultPath`
+
+Environment variables override file-based configuration but are overridden by explicit command-line flags.
+
 ## Automation & JSON Output
 
 All commands support the `--json` flag for machine-readable output:

@@ -34,6 +34,9 @@ const ENV_VAR_MAP: Record<string, string> = {
   PANDO_SYMLINK_PATTERNS: 'symlink.patterns',
   PANDO_SYMLINK_RELATIVE: 'symlink.relative',
   PANDO_SYMLINK_BEFORE_RSYNC: 'symlink.beforeRsync',
+
+  // Worktree settings
+  PANDO_WORKTREE_DEFAULT_PATH: 'worktree.defaultPath',
 }
 
 /**

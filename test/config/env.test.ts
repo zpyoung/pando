@@ -227,6 +227,17 @@ describe('parseEnvVars', () => {
     })
   })
 
+  it('should parse worktree variables', () => {
+    const env = {
+      PANDO_WORKTREE_DEFAULT_PATH: '../worktrees',
+    }
+    expect(parseEnvVars(env)).toEqual({
+      worktree: {
+        defaultPath: '../worktrees',
+      },
+    })
+  })
+
   it('should parse mixed variables', () => {
     const env = {
       PANDO_RSYNC_ENABLED: 'true',
@@ -267,6 +278,7 @@ describe('parseEnvVars', () => {
       PANDO_SYMLINK_PATTERNS: '*.json',
       PANDO_SYMLINK_RELATIVE: 'false',
       PANDO_SYMLINK_BEFORE_RSYNC: 'true',
+      PANDO_WORKTREE_DEFAULT_PATH: '../worktrees',
     }
     expect(parseEnvVars(env)).toEqual({
       rsync: {
@@ -278,6 +290,9 @@ describe('parseEnvVars', () => {
         patterns: ['*.json'],
         relative: false,
         beforeRsync: true,
+      },
+      worktree: {
+        defaultPath: '../worktrees',
       },
     })
   })

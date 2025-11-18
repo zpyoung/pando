@@ -158,7 +158,22 @@ export default class ConfigInit extends Command {
       '',
     ].join('\n')
 
+    const worktreeComment = [
+      '',
+      '# Worktree Configuration',
+      '# Controls default behavior for worktree operations',
+      '# defaultPath - Default parent directory for new worktrees',
+      '#   Relative paths resolve from git root, branch names are auto-appended',
+      '#   Example: "../worktrees" with --branch feat/login → ../worktrees/feat_login',
+      '# [worktree]',
+      '# defaultPath = "../worktrees"',
+      '',
+    ].join('\n')
+
     // Insert comments into TOML
-    return header + sections + toml.replace('[symlink]', symlinkComment + '[symlink]')
+    let result = header + sections + toml
+    result = result.replace('[symlink]', symlinkComment + '[symlink]')
+    result = result.replace('[worktree]', worktreeComment + '[worktree]')
+    return result
   }
 }
