@@ -179,13 +179,26 @@ export class WorktreeSetupOrchestrator {
           'Creating symlinks (before rsync)'
         )
 
+        // Remove git-checked-out files that will be symlinked
+        // Git automatically checks out tracked files when creating worktrees
+        const filesToSymlink = await this.symlinkHelper.matchPatterns(
+          sourceTreePath,
+          symlinkConfig.patterns
+        )
+        for (const file of filesToSymlink) {
+          const targetPath = await import('path').then((p) => p.default.join(worktreePath, file))
+          if (await fs.pathExists(targetPath)) {
+            await fs.remove(targetPath)
+          }
+        }
+
         // Create symlinks before rsync
         symlinkResult = await this.symlinkHelper.createSymlinks(
           sourceTreePath,
           worktreePath,
           symlinkConfig,
           {
-            replaceExisting: false,
+            replaceExisting: true,
             skipConflicts: true,
           }
         )
@@ -224,7 +237,9 @@ export class WorktreeSetupOrchestrator {
           )
 
           // Add matched files to rsync exclude patterns
-          excludePatterns.push(...filesToSymlink)
+          // Prepend '/' to match from root of source directory in rsync
+          const symlinkExcludes = filesToSymlink.map((file) => `/${file}`)
+          excludePatterns.push(...symlinkExcludes)
         }
 
         // Execute rsync
@@ -246,6 +261,20 @@ export class WorktreeSetupOrchestrator {
           'Creating symlinks (after rsync)'
         )
 
+        // Remove git-checked-out files that will be symlinked
+        // Git automatically checks out tracked files when creating worktrees
+        const filesToSymlink = await this.symlinkHelper.matchPatterns(
+          sourceTreePath,
+          symlinkConfig.patterns
+        )
+        const path = await import('path')
+        for (const file of filesToSymlink) {
+          const targetPath = path.default.join(worktreePath, file)
+          if (await fs.pathExists(targetPath)) {
+            await fs.remove(targetPath)
+          }
+        }
+
         // Create symlinks after rsync
         // Rsync already excluded these files, so no conflicts expected
         symlinkResult = await this.symlinkHelper.createSymlinks(
@@ -253,7 +282,7 @@ export class WorktreeSetupOrchestrator {
           worktreePath,
           symlinkConfig,
           {
-            replaceExisting: false,
+            replaceExisting: true,
             skipConflicts: true,
           }
         )

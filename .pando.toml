@@ -15,7 +15,7 @@ exclude = [ "dist/", "tsconfig.tsbuildinfo" ]
 # Controls which files are symlinked instead of copied
 # Patterns support glob syntax (e.g., "*.json", ".env*")
 [symlink]
-patterns = [ "CLAUDE.md", ".claude/" ]
+patterns = [ ".claude/settings.local.json" ]
 relative = true
 beforeRsync = true
 

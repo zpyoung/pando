@@ -1,4 +1,5 @@
 import * as fs from 'fs-extra'
+import { symlink as fsSymlink, readlink as fsReadlink, lstat as fsLstat } from 'fs/promises'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { globby } from 'globby'
@@ -512,19 +513,22 @@ export class SymlinkHelper {
       }
 
       // Create symlink
-      await fs.symlink(linkPath, target)
+      await fsSymlink(linkPath, target)
 
       // Track operation in transaction
       this._transaction.record(OperationType.CREATE_SYMLINK, target, {
         source,
+        target: source, // Store source as target for verification
         linkPath,
       })
     } catch (error) {
       if (error instanceof FileOperationError) {
         throw error
       }
+      const errMsg = error instanceof Error ? error.message : String(error)
+      const errCode = (error as any).code || 'UNKNOWN'
       throw new FileOperationError(
-        `Failed to create symlink from ${source} to ${target}`,
+        `Failed to create symlink from ${source} to ${target}: ${errMsg} (${errCode})`,
         error as Error
       )
     }
@@ -619,13 +623,13 @@ export class SymlinkHelper {
         return false
       }
 
-      const stats = await fs.lstat(linkPath)
+      const stats = await fsLstat(linkPath)
       if (!stats.isSymbolicLink()) {
         return false
       }
 
       // Read the actual target of the symlink
-      const actualTarget = await fs.readlink(linkPath)
+      const actualTarget = await fsReadlink(linkPath)
 
       // Resolve both paths for comparison
       const linkDir = path.dirname(linkPath)
