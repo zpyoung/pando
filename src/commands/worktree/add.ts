@@ -408,7 +408,8 @@ export default class AddWorktree extends Command {
                 ? {
                     created: setupResult.symlinkResult.created,
                     skipped: setupResult.symlinkResult.skipped,
-                    conflicts: setupResult.symlinkResult.conflicts.length,
+                    conflictCount: setupResult.symlinkResult.conflicts.length,
+                    conflicts: setupResult.symlinkResult.conflicts,
                   }
                 : null,
             },
@@ -454,6 +455,12 @@ export default class AddWorktree extends Command {
         }
         if (conflicts.length > 0) {
           output.push(chalk.yellow(`⚠ Symlink conflicts: ${conflicts.length} files`))
+          // Show conflict details
+          conflicts.forEach((conflict: { source: string; target: string; reason: string }) => {
+            output.push(chalk.yellow(`    • ${conflict.target}`))
+            output.push(chalk.gray(`      Source: ${conflict.source}`))
+            output.push(chalk.gray(`      Reason: ${conflict.reason}`))
+          })
         }
       }
 
@@ -491,7 +498,12 @@ export default class AddWorktree extends Command {
     // Handle SetupError
     if (error instanceof Error && error.name === 'SetupError') {
       const setupError = error as Error & {
-        result: { rolledBack: boolean; warnings: string[]; duration: number }
+        result: {
+          rolledBack: boolean
+          warnings: string[]
+          duration: number
+          symlinkResult?: { conflicts: Array<{ source: string; target: string; reason: string }> }
+        }
       }
       const result = setupError.result
 
@@ -504,6 +516,7 @@ export default class AddWorktree extends Command {
               rolledBack: result.rolledBack,
               warnings: result.warnings,
               duration: result.duration,
+              symlinkConflicts: result.symlinkResult?.conflicts || [],
             },
             null,
             2
@@ -513,10 +526,25 @@ export default class AddWorktree extends Command {
         if (!chalk) {
           ErrorHelper.unexpected(this, new Error('Chalk not initialized for error output'))
         }
+
+        // Build error message with symlink conflicts if present
+        let errorMessage = 'Setup failed'
+        if (result.symlinkResult?.conflicts && result.symlinkResult.conflicts.length > 0) {
+          const conflictDetails = result.symlinkResult.conflicts
+            .map(
+              (c) => `  • Target: ${c.target}\n    Source: ${c.source}\n    Reason: ${c.reason}`
+            )
+            .join('\n\n')
+          errorMessage +=
+            `\n\nSymlink conflicts (${result.symlinkResult.conflicts.length}):\n\n` +
+            conflictDetails +
+            '\n\nResolve conflicts manually or use --skip-symlink'
+        }
+
         ErrorHelper.operation(
           this,
           setupError,
-          'Setup failed',
+          errorMessage,
           false // Not JSON mode
         )
       }
@@ -572,12 +600,15 @@ export default class AddWorktree extends Command {
         )
       } else {
         const conflictDetails = error.conflicts
-          .map((c: { target: string; reason: string }) => `  • ${c.target}: ${c.reason}`)
-          .join('\n')
+          .map(
+            (c: { source: string; target: string; reason: string }) =>
+              `  • Target: ${c.target}\n    Source: ${c.source}\n    Reason: ${c.reason}`
+          )
+          .join('\n\n')
         ErrorHelper.operation(
           this,
           error as Error,
-          'Symlink conflicts detected:\n' +
+          'Symlink conflicts detected:\n\n' +
             conflictDetails +
             '\n\nResolve conflicts manually or use --skip-symlink',
           false // Not JSON mode
