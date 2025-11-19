@@ -31,7 +31,9 @@
     "ci": "pnpm run format:check && pnpm run lint && pnpm run test:run",
     "postpack": "rm -f oclif.manifest.json",
     "prepack": "pnpm build && oclif manifest",
-    "prepare": "pnpm build"
+    "prepare": "pnpm build",
+    "ai:context": "npx tsx scripts/ai-context.ts",
+    "ai:validate": "npx tsx scripts/validate-docs.ts"
   },
   "keywords": [
     "git",

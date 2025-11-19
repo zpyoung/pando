@@ -1,0 +1,4224 @@
+# Project Structure
+
+ARCHITECTURE.md
+CLAUDE.md
+DESIGN.md
+LICENSE
+README.md
+eslint.config.js
+package.json
+tsconfig.json
+vitest.config.ts
+ai-docs/CONTEXT.md
+ai-docs/LESSONS.md
+ai-docs/PLAN.md
+ai-docs/SPEC.md
+ai-docs/TASKS.md
+bin/dev.js
+bin/run.js
+src/index.ts
+scripts/ai-context.ts
+scripts/test-globby.ts
+scripts/validate-docs.ts
+src/config/DESIGN.md
+src/config/env.ts
+src/config/loader.ts
+src/config/schema.ts
+src/utils/DESIGN.md
+src/utils/common-flags.ts
+src/utils/errors.ts
+src/utils/fileOps.ts
+src/utils/git.ts
+src/utils/worktreeSetup.ts
+test/config/env.test.ts
+test/config/loader.test.ts
+test/helpers/test-utils.ts
+test/utils/errors.test.ts
+test/utils/fileOps.test.ts
+test/utils/git.test.ts
+test/utils/worktreeSetup.test.ts
+src/commands/branch/DESIGN.md
+src/commands/branch/create.ts
+src/commands/branch/delete.ts
+src/commands/config/DESIGN.md
+src/commands/config/init.ts
+src/commands/config/show.ts
+src/commands/worktree/DESIGN.md
+src/commands/worktree/add.ts
+src/commands/worktree/list.ts
+src/commands/worktree/navigate.ts
+src/commands/worktree/remove.ts
+src/commands/worktree/symlink.ts
+test/commands/branch/create.test.ts
+test/commands/branch/delete.test.ts
+test/commands/config/init.test.ts
+test/commands/config/show.test.ts
+test/commands/worktree/add.test.ts
+test/commands/worktree/list.test.ts
+test/commands/worktree/navigate.test.ts
+test/commands/worktree/remove.test.ts
+
+================================================================================
+
+# File: CLAUDE.md
+
+# Claude Code Context for Pando
+
+This file provides AI assistants with project-specific context, patterns, and guidelines for working with the Pando codebase.
+
+## Project Overview
+
+**Pando** is a TypeScript CLI for managing Git worktrees. It uses oclif for command handling, simple-git for git operations, and follows strict TypeScript patterns with an automation-first design philosophy.
+
+## Quick Reference
+
+### Project Commands
+
+```bash
+pnpm install       # Install dependencies
+pnpm build         # Compile TypeScript
+pnpm dev <cmd>     # Run command in dev mode
+pnpm test          # Run tests
+pnpm lint          # Lint code
+pnpm format        # Format code
+```
+
+### Beads Commands (Task Management)
+
+```bash
+bd ready --json           # Find ready work (no blockers)
+bd list --json            # List all issues
+bd show <id> --json       # Show issue details
+bd create "title" --json  # Create new issue
+bd update <id> --status in_progress  # Claim task
+bd comments add <id> "text"          # Add progress comment
+bd close <id> --reason "Done"        # Complete task
+bd sync                   # Sync with git (run at session end)
+```
+
+**Database Location**: `.beads/pando.db` (SQLite, gitignored)
+**Issue Prefix**: `pando-` (e.g., `pando-1`, `pando-2`)
+**Versioned State**: `.beads/issues.jsonl` (committed to git)
+
+### Key Directories
+
+- `src/commands/` - Command implementations (CLI layer)
+- `src/utils/` - Business logic and git operations
+- `test/` - Test files (mirrors src structure)
+- `bin/` - Executable entry points
+- `dist/` - Compiled output (gitignored)
+
+## Architecture Patterns
+
+### Command Pattern
+
+Each command is a self-contained class in `src/commands/topic/verb.ts`:
+
+```typescript
+import { Command, Flags } from '@oclif/core'
+
+export default class VerbTopic extends Command {
+  static description = 'Clear description of what this does'
+
+  static examples = ['<%= config.bin %> <%= command.id %> --required-flag value']
+
+  static flags = {
+    requiredFlag: Flags.string({
+      char: 'r',
+      description: 'What this flag does',
+      required: true,
+    }),
+    json: Flags.boolean({
+      char: 'j',
+      description: 'Output in JSON format',
+      default: false,
+    }),
+  }
+
+  async run(): Promise<void> {
+    const { flags } = await this.parse(VerbTopic)
+
+    // Implementation here
+    // 1. Validate inputs
+    // 2. Call GitHelper methods
+    // 3. Format output based on --json flag
+  }
+}
+```
+
+### Utility Pattern
+
+Business logic lives in `src/utils/git.ts` as methods on the `GitHelper` class:
+
+```typescript
+export class GitHelper {
+  async operationName(params: Type): Promise<ReturnType> {
+    // 1. Use this.git (simple-git instance)
+    // 2. Handle errors
+    // 3. Return typed results
+    throw new Error('Not implemented')
+  }
+}
+```
+
+### Test Pattern
+
+Tests use Vitest and mirror the source structure:
+
+```typescript
+import { describe, it, expect } from 'vitest'
+
+describe('command-name', () => {
+  it('should describe expected behavior', () => {
+    // TODO: Implement test
+    expect(true).toBe(true) // Placeholder
+  })
+})
+```
+
+### Error Handling Pattern
+
+All commands use the centralized `ErrorHelper` utility from `src/utils/errors.ts` for consistent error handling with proper JSON support:
+
+```typescript
+import { ErrorHelper } from '../../utils/errors.js'
+
+// 1. VALIDATION ERRORS (expected user errors)
+// Use for: file exists, invalid arguments, missing requirements
+if ((await fs.pathExists(path)) && !flags.force) {
+  ErrorHelper.validation(this, 'File already exists. Use --force to overwrite.', flags.json)
+}
+
+// 2. OPERATION ERRORS (runtime failures)
+// Use for: network errors, permission issues, external command failures
+try {
+  await gitHelper.operation()
+} catch (error) {
+  ErrorHelper.operation(this, error as Error, 'Failed to execute operation', flags.json)
+}
+
+// 3. UNEXPECTED ERRORS (internal bugs)
+// Use for: missing initialization, invalid state, should-never-happen
+if (!chalk) {
+  ErrorHelper.unexpected(this, new Error('Chalk not initialized - this is a bug'))
+}
+
+// 4. WARNINGS (non-fatal issues)
+// Use for: deprecated features, ignored config, potential issues
+ErrorHelper.warn(this, 'This feature is deprecated. Use --new-feature instead.', flags.json)
+```
+
+**Key Differences:**
+
+- `validation()` - Clean errors without stack traces (expected)
+- `operation()` - Contextual errors for runtime failures
+- `unexpected()` - Shows stack traces for debugging bugs
+- `warn()` - Non-fatal warnings, doesn't exit
+
+**JSON Support:**
+All error methods automatically support `--json` flag:
+
+- Validation errors: `{ status: 'error', error: 'message' }`
+- Operation errors: `{ status: 'error', error: 'message', context: '...', details: '...' }`
+- Warnings: `{ status: 'warning', warning: 'message' }`
+
+## Coding Conventions
+
+### TypeScript Style
+
+1. **Strict Types**: No `any`, always explicit types
+2. **Async/Await**: All I/O uses promises
+3. **Interfaces for Data**: Use interfaces for data structures
+
+```typescript
+// Good
+interface WorktreeInfo {
+  path: string
+  branch: string | null
+  commit: string
+  isPrunable: boolean
+}
+
+async function getWorktrees(): Promise<WorktreeInfo[]> {
+  // ...
+}
+
+// Avoid
+function getWorktrees(): any {
+  // ...
+}
+```
+
+### Naming Conventions
+
+- **Commands**: `VerbNoun` (e.g., `AddWorktree`, `ListBranch`)
+- **Files**: `kebab-case.ts` (e.g., `add.ts`, `git-helper.ts`)
+- **Variables**: `camelCase`
+- **Types/Interfaces**: `PascalCase`
+- **Constants**: `UPPER_SNAKE_CASE`
+
+### File Organization
+
+```
+src/commands/topic/verb.ts     # Command implementation
+   ├─ imports
+   ├─ class definition
+   │  ├─ static description
+   │  ├─ static examples
+   │  ├─ static flags
+   │  └─ async run() method
+   └─ exports
+```
+
+Keep files under 250 lines. If longer, extract utilities.
+
+## Common Tasks
+
+### Adding a New Command
+
+1. **Create command file**:
+
+   ```bash
+   touch src/commands/topic/verb.ts
+   ```
+
+2. **Implement command** (follow Command Pattern above)
+
+3. **Create test file**:
+
+   ```bash
+   touch test/commands/topic/verb.test.ts
+   ```
+
+4. **Add examples to README.md**
+
+5. **Run and verify**:
+   ```bash
+   pnpm dev topic:verb --help
+   ```
+
+### Adding Git Operations
+
+1. **Add method to GitHelper** in `src/utils/git.ts`:
+
+   ```typescript
+   async newOperation(params: Type): Promise<ResultType> {
+     // Implementation with TODOs
+     throw new Error('Not implemented')
+   }
+   ```
+
+2. **Add tests** in `test/utils/git.test.ts`
+
+3. **Use in command layer**
+
+### Implementing TODOs
+
+Look for `// TODO:` comments in stub files. Each TODO includes:
+
+- What needs to be done
+- Step-by-step implementation hints
+- Expected behavior
+
+Example:
+
+```typescript
+// TODO: Implement worktree add logic
+// 1. Validate the repository is a git repo
+// 2. Check if path already exists
+// 3. Validate branch/commit if provided
+// 4. Execute git worktree add command
+// 5. Handle errors appropriately
+// 6. Format output based on --json flag
+```
+
+## Documentation Maintenance
+
+### CRITICAL: Automatic Documentation Updates
+
+**AI assistants MUST automatically keep documentation files synchronized with code changes.**
+
+### Documentation File Types
+
+#### 1. CLAUDE.md (Project Root Only)
+
+**Purpose**: AI assistant context and project-specific guidelines
+
+**Location**: Project root (`/CLAUDE.md`)
+
+**Update When**:
+
+- Project patterns or conventions change
+- New common tasks are established
+- Dependencies are added or removed
+- Project status or phase changes
+- New workflows or development practices are adopted
+
+**Contents**:
+
+- Project overview and quick reference
+- Architecture patterns and coding conventions
+- Common tasks and workflows
+- Testing guidelines
+- Git workflow
+- Dependencies
+- Project status
+- Resources and references
+
+### AI Workflow (Spec-Driven Development)
+
+We follow a **Spec-Driven Development (SDD)** workflow to ensure AI agents have clear context.
+
+#### 1. Core Context Files (`ai-docs/`)
+
+- **`SPEC.md`**: High-level goals and user stories. **Start here.**
+- **`PLAN.md`**: Technical architecture and implementation plan.
+- **`TASKS.md`**: Atomic checklist of tasks.
+- **`CONTEXT.md`**: Domain glossary and constraints.
+- **`LESSONS.md`**: Feedback loop (patterns to keep/avoid).
+
+#### 2. Workflow Steps
+
+1. **Update Specs**: Before writing code, update `SPEC.md` and `PLAN.md`.
+2. **Define Tasks**: Break down work into `TASKS.md`.
+3. **Implement**: Execute tasks one by one.
+4. **Validate**: Run `pnpm ai:validate` to ensure docs are in sync.
+5. **Update Context**: Run `pnpm ai:context` to refresh `llm.txt`.
+
+#### 3. Automation
+
+- `pnpm ai:context`: Generates `llm.txt` (full project context).
+- `pnpm ai:validate`: Checks for missing `DESIGN.md` files.
+
+#### 2. ARCHITECTURE.md (Major/Important Folders)
+
+**Purpose**: High-level architectural decisions and system design
+
+**Placement Rules**:
+
+- **Always** in project root
+- In **major feature directories** (e.g., `src/plugins/`, `src/core/`)
+- In **significant subsystems** with multiple components
+- When a folder contains 5+ files or 3+ subdirectories
+- When introducing a new architectural pattern
+
+**Do NOT create in**:
+
+- Test directories
+- Single-file directories
+- Utility folders with simple helpers
+- Build/config directories
+
+**Update When**:
+
+- Adding new architectural layers or patterns
+- Changing module dependencies
+- Adding new major features or subsystems
+- Refactoring system boundaries
+- Changing technology stack
+- Modifying data flow or execution patterns
+
+**Contents**:
+
+```markdown
+# [Module/Feature] Architecture
+
+## Overview
+
+High-level description of the module/subsystem
+
+## Components
+
+Major components and their responsibilities
+
+## Architecture Pattern
+
+What pattern is used (layered, plugin, event-driven, etc.)
+
+## Dependencies
+
+What this module depends on and what depends on it
+
+## Data Flow
+
+How data moves through the system
+
+## Extension Points
+
+How to extend or modify this architecture
+
+## Design Decisions
+
+Key architectural choices and rationale
+```
+
+#### 3. DESIGN.md (Most Individual Folders)
+
+**Purpose**: Lower-level design decisions and implementation details
+
+**Placement Rules**:
+
+- In **feature directories** (e.g., `src/commands/worktree/`)
+- In **utility directories** (e.g., `src/utils/`)
+- In **any folder with 2+ implementation files**
+- When a folder represents a cohesive feature or concern
+
+**Do NOT create in**:
+
+- Test directories (tests document themselves)
+- Folders with only types/interfaces
+- Folders with single utility files
+- Parent folders that only contain subdirectories
+
+**Update When**:
+
+- Adding new files to the folder
+- Changing implementation approach
+- Adding new patterns or utilities
+- Refactoring existing code
+- Adding new dependencies or integrations
+
+**Contents**:
+
+```markdown
+# [Feature/Module] Design
+
+## Purpose
+
+What this module does and why it exists
+
+## Files Overview
+
+Brief description of each file in this directory
+
+## Key Design Decisions
+
+- Why this approach was chosen
+- Trade-offs considered
+- Alternative approaches rejected
+
+## Patterns Used
+
+Specific patterns or techniques used in this module
+
+## Dependencies
+
+Libraries or modules this depends on
+
+## Usage Examples
+
+How to use the main exports from this module
+
+## Future Considerations
+
+Potential improvements or extensions
+```
+
+#### 4. README.md
+
+**Purpose**: User-facing documentation
+
+**Location**: Project root (and optionally in major subdirectories)
+
+**Update When**:
+
+- Adding new commands or features
+- Changing command flags or behavior
+- Adding new installation methods
+- Changing requirements
+- Adding new examples or use cases
+
+**Contents**:
+
+- Project description
+- Installation instructions
+- Quick start guide
+- Command reference
+- Examples
+- Contributing guidelines
+
+### Automatic Update Workflow
+
+When making code changes, AI assistants MUST follow this workflow:
+
+#### Step 1: Identify Affected Documentation
+
+```
+Code Change → Check:
+├─ Does this change affect user-facing behavior? → Update README.md
+├─ Does this change affect architecture? → Update relevant ARCHITECTURE.md
+├─ Does this add/modify a module? → Update/Create DESIGN.md in that folder
+└─ Does this change project patterns? → Update CLAUDE.md
+```
+
+#### Step 2: Update Documentation Files
+
+**Do this automatically WITHOUT asking the user**
+
+```typescript
+// Example: Adding a new command
+// 1. Create src/commands/new/command.ts
+// 2. Automatically update:
+//    - README.md: Add command to reference section
+//    - src/commands/new/DESIGN.md: Create if doesn't exist
+//    - src/commands/ARCHITECTURE.md: Update if pattern changes
+//    - CLAUDE.md: Update if new patterns introduced
+```
+
+#### Step 3: Commit Documentation with Code
+
+**Include documentation updates in the same commit**
+
+```bash
+# Good commit
+git add src/commands/worktree/sync.ts
+git add src/commands/worktree/DESIGN.md
+git add README.md
+git commit -m "feat(worktree): add sync command
+
+- Implement worktree sync for syncing with remote
+- Update DESIGN.md with sync implementation details
+- Add command to README.md reference"
+```
+
+### Documentation Update Examples
+
+#### Example 1: Adding a New Command
+
+**Code Change**: Create `src/commands/worktree/sync.ts`
+
+**Required Documentation Updates**:
+
+1. **README.md**: Add command to reference section with examples
+2. **src/commands/worktree/DESIGN.md**: Add description of sync command
+3. **CLAUDE.md**: Update if new patterns are introduced (e.g., new git operation)
+
+#### Example 2: Adding a New Utility Module
+
+**Code Change**: Create `src/utils/config.ts` for configuration management
+
+**Required Documentation Updates**:
+
+1. **src/utils/DESIGN.md**: Create or update with config utility details
+2. **ARCHITECTURE.md** (root): Update "Utility Layer" section
+3. **CLAUDE.md**: Add to "Common Patterns" if it's a new pattern
+
+#### Example 3: Refactoring Architecture
+
+**Code Change**: Split GitHelper into separate classes per concern
+
+**Required Documentation Updates**:
+
+1. **ARCHITECTURE.md** (root): Update architecture layers and patterns
+2. **src/utils/DESIGN.md**: Update with new structure
+3. **CLAUDE.md**: Update patterns and common tasks
+4. **README.md**: Update if usage examples change
+
+### Documentation Structure Guidelines
+
+#### ARCHITECTURE.md Structure
+
+```markdown
+# [Name] Architecture
+
+## Overview
+
+2-3 paragraphs: What is this, why it exists, high-level approach
+
+## Technology Stack
+
+Table or list of technologies and their purposes
+
+## Architecture Layers/Components
+
+Detailed breakdown of major components
+
+## Module Organization
+
+How code is organized (vertical slice, layered, etc.)
+
+## Key Patterns
+
+Design patterns used (Command, Factory, etc.)
+
+## Data Flow
+
+How data moves through the system
+
+## Extension Points
+
+How to add new features or modify behavior
+
+## Design Decisions
+
+Major decisions and their rationale
+```
+
+#### DESIGN.md Structure
+
+```markdown
+# [Name] Design
+
+## Purpose
+
+1-2 paragraphs: What this does and why
+
+## Files in This Module
+
+- file1.ts - Description
+- file2.ts - Description
+
+## Implementation Approach
+
+Why this approach over alternatives
+
+## Key Functions/Classes
+
+Brief description of main exports
+
+## Dependencies
+
+What this module uses
+
+## Usage
+
+Code examples of common usage
+
+## Testing Approach
+
+How this module is tested
+
+## Future Improvements
+
+Potential enhancements
+```
+
+### When to Create New Documentation Files
+
+#### Create ARCHITECTURE.md when:
+
+- [ ] Creating a new major directory (src/plugins/, src/integrations/)
+- [ ] Directory has 5+ files or 3+ subdirectories
+- [ ] Introducing a new architectural pattern
+- [ ] Creating a subsystem with multiple interacting components
+
+#### Create DESIGN.md when:
+
+- [ ] Creating a feature directory with 2+ files
+- [ ] Adding utility modules that others will use
+- [ ] Implementing a complex algorithm or pattern
+- [ ] Creating reusable components
+
+#### Update README.md when:
+
+- [ ] Adding user-facing commands
+- [ ] Changing installation or setup
+- [ ] Adding new features or capabilities
+- [ ] Changing CLI behavior
+
+#### Update CLAUDE.md when:
+
+- [ ] Establishing new coding patterns
+- [ ] Adding common tasks or workflows
+- [ ] Changing project structure significantly
+- [ ] Adding dependencies or tools
+
+### Documentation Quality Standards
+
+#### All documentation files MUST:
+
+- Use clear, concise language
+- Include code examples where relevant
+- Be kept synchronized with code
+- Follow markdown best practices
+- Use consistent formatting
+- Be up-to-date (no stale information)
+
+#### ARCHITECTURE.md files MUST:
+
+- Explain high-level structure and patterns
+- Show component relationships
+- Document key design decisions
+- Explain extension points
+
+#### DESIGN.md files MUST:
+
+- Describe implementation details
+- List all files in the directory
+- Explain design choices
+- Provide usage examples
+
+### Enforcement
+
+**AI assistants MUST**:
+
+- Check for missing documentation files when creating new directories
+- Update affected documentation files automatically when making code changes
+- Create DESIGN.md files for new feature directories
+- Create ARCHITECTURE.md files for new major subsystems
+- Never ask the user "should I update documentation?" - just do it
+
+**AI assistants SHOULD**:
+
+- Suggest documentation improvements when reading outdated files
+- Flag inconsistencies between code and documentation
+- Offer to create missing documentation files proactively
+
+## Testing Guidelines
+
+### Unit Tests (Utilities)
+
+Test `GitHelper` methods with mocked `simple-git`:
+
+```typescript
+describe('GitHelper', () => {
+  it('should add worktree', async () => {
+    // Mock git operations
+    // Call method
+    // Assert results
+  })
+})
+```
+
+### Integration Tests (Commands)
+
+Test commands with `@oclif/test`:
+
+```typescript
+import { test } from '@oclif/test'
+
+describe('worktree add', () => {
+  test
+    .stdout()
+    .command(['worktree add', '--path', '../test', '--branch', 'test'])
+    .it('creates a new worktree', (ctx) => {
+      expect(ctx.stdout).to.contain('Worktree created')
+    })
+})
+```
+
+### Running Tests
+
+```bash
+pnpm test                # Run all tests
+pnpm test:watch          # Watch mode
+pnpm test:coverage       # With coverage
+```
+
+## Git Workflow
+
+### Branching
+
+- `main` - Production-ready code
+- `develop` - Integration branch
+- `feature/name` - Feature branches
+- `fix/name` - Bug fixes
+
+### Commits
+
+Follow conventional commits:
+
+```
+feat(worktree): add navigation command
+fix(branch): handle deleted branches correctly
+docs(readme): update installation instructions
+test(worktree): add integration tests
+```
+
+### Before Committing
+
+```bash
+pnpm format     # Format code
+pnpm lint       # Check for issues
+pnpm build      # Ensure it compiles
+pnpm test       # Run tests
+```
+
+## Common Patterns
+
+### Flag Validation
+
+```typescript
+async run(): Promise<void> {
+  const { flags } = await this.parse(CommandName)
+
+  // Validate required combinations
+  if (!flags.branch && !flags.path) {
+    this.error('Must specify either --branch or --path')
+  }
+
+  // Rest of implementation
+}
+```
+
+### JSON Output
+
+```typescript
+if (flags.json) {
+  this.log(
+    JSON.stringify({
+      status: 'success',
+      data: result,
+    })
+  )
+} else {
+  // Human-readable output with chalk
+  this.log(chalk.green(`✓ Operation completed`))
+  this.log(`  Path: ${result.path}`)
+}
+```
+
+### Error Handling
+
+```typescript
+try {
+  const result = await gitHelper.operation(params)
+  // Handle success
+} catch (error) {
+  if (error instanceof GitError) {
+    this.error(`Git operation failed: ${error.message}`)
+  } else {
+    this.error(`Unexpected error: ${error}`)
+  }
+}
+```
+
+### Worktree Setup: Rsync/Symlink Coordination
+
+When setting up new worktrees with both rsync and symlink operations, **always match symlink patterns and exclude from rsync first**:
+
+```typescript
+// CRITICAL: Match symlink patterns BEFORE rsync execution
+// This prevents rsync from copying files that will be symlinked
+
+if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
+  // Match symlink patterns against source directory
+  const filesToSymlink = await this.symlinkHelper.matchPatterns(
+    sourceTreePath,
+    symlinkConfig.patterns
+  )
+
+  // Add matched files to rsync exclude patterns
+  excludePatterns.push(...filesToSymlink)
+}
+
+// Now execute rsync - it will skip symlink-intended files
+rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
+  excludePatterns,
+})
+```
+
+**Why This Matters**:
+
+- **Efficiency**: Prevents wasted rsync operations copying files that will be symlinked
+- **No Conflicts**: Eliminates conflicts between rsync and symlink operations
+- **Works Regardless of Timing**: Functions correctly whether symlinks are created before or after rsync
+- **Clear Separation**: Rsync handles copies, symlinks handle links
+
+**Location**: `src/utils/worktreeSetup.ts` (Phase 4: Rsync)
+
+**Best Practices for Symlink Patterns**:
+
+- **Good**: Non-tracked files that should sync across worktrees
+  - `node_modules/` (after install in main worktree)
+  - `.env` files (local configuration)
+  - `package.json`, lockfiles (if wanting synchronization)
+- **Bad**: Git-tracked files that vary between branches
+  - These are automatically checked out by git when creating worktrees
+  - Symlinking them defeats the purpose of separate worktrees
+
+### Config-First Initialization Pattern
+
+When commands use configuration defaults, load config **before** validation:
+
+```typescript
+// Pattern: Load config BEFORE validation when config provides defaults
+
+async run() {
+  // 1. Initialize git helper to get repository root
+  const gitHelper = createGitHelper()
+  const gitRoot = await gitHelper.getRepositoryRoot()
+
+  // 2. Load config BEFORE validating path
+  const config = await this.loadAndMergeConfig(...)
+
+  // 3. Validate with config awareness
+  const { resolvedPath } = await this.validateAndInitialize(flags, config, gitRoot)
+}
+```
+
+**Why**: Configuration may provide defaults (like `worktree.defaultPath`) that affect validation logic. Loading config first allows validation to account for these defaults.
+
+**Location**: Commands that use config defaults (e.g., `src/commands/worktree/add.ts`)
+
+## Debugging
+
+### Development Mode
+
+```bash
+# Run with Node debugger
+node --inspect bin/dev.js worktree list
+
+# VS Code launch.json
+{
+  "type": "node",
+  "request": "launch",
+  "name": "Debug Command",
+  "program": "${workspaceFolder}/bin/dev.js",
+  "args": ["worktree list"],
+  "skipFiles": ["<node_internals>/**"]
+}
+```
+
+### Logging
+
+```typescript
+// Use oclif's built-in logging
+this.log('Info message')
+this.warn('Warning message')
+this.error('Error message') // Exits process
+
+// Debug mode (NODE_DEBUG=pando)
+if (process.env.NODE_DEBUG?.includes('pando')) {
+  this.log('Debug info')
+}
+```
+
+## Dependencies
+
+### Core Dependencies
+
+- `@oclif/core` - CLI framework
+- `simple-git` - Git operations
+- `chalk` - Terminal colors
+- `inquirer` - Interactive prompts
+- `ora` - Spinners
+
+### Dev Dependencies
+
+- `typescript` - Type checking
+- `vitest` - Testing
+- `@oclif/test` - CLI testing
+- `eslint` - Linting
+- `prettier` - Formatting
+
+## Task Management with Beads
+
+### Overview
+
+This project uses **Beads** (`bd`) for task management instead of traditional TODO tools. Beads is an AI-first, dependency-aware issue tracker designed specifically for AI coding agents with CLI-first interface and JSON output.
+
+### Why Beads?
+
+- **Agent Memory**: Treats issues as agent memory rather than planning artifacts
+- **Dependency Tracking**: Four dependency types (blocks, related, parent-child, discovered-from)
+- **Distributed State**: SQLite for local queries, JSONL files in git for distributed sharing
+- **JSON-First**: Every command has `--json` flag for programmatic use
+- **Git Integration**: Automatic sync with git hooks and `bd sync` command
+
+### Core Workflow
+
+#### 1. Finding Ready Work
+
+```bash
+# Get top 5 ready tasks (no blockers)
+bd ready --limit 5 --json
+
+# Filter by priority
+bd ready --priority 0 --json
+```
+
+**MCP Integration**:
+
+```python
+mcp__plugin_beads_beads__ready(limit=5, priority=0)
+```
+
+#### 2. Claiming Tasks
+
+```bash
+# Claim task by setting status to in_progress
+bd update pando-3 --status in_progress --json
+```
+
+**MCP Integration**:
+
+```python
+mcp__plugin_beads_beads__update(
+    issue_id="pando-3",
+    status="in_progress"
+)
+```
+
+#### 3. Creating Issues
+
+```bash
+# Create with explicit parameters
+bd create "Fix authentication bug" \
+  -d "Users getting 401 errors on login" \
+  -p 0 \
+  -t bug \
+  --json
+
+# Create with dependencies
+bd create "Add rate limiting" \
+  -t feature -p 1 \
+  --deps discovered-from:pando-1,blocks:pando-5 \
+  --json
+```
+
+**MCP Integration**:
+
+```python
+mcp__plugin_beads_beads__create(
+    title="Fix authentication bug",
+    description="Users getting 401 errors on login",
+    priority=0,
+    issue_type="bug"
+)
+```
+
+#### 4. Tracking Progress with Comments
+
+```bash
+# Add progress comment
+bd comments add pando-3 "Implemented core logic, testing edge cases" --json
+
+# View all comments
+bd comments pando-3 --json
+```
+
+#### 5. Completing Tasks
+
+```bash
+# Close when done
+bd close pando-3 --reason "Implemented and tested" --json
+```
+
+**MCP Integration**:
+
+```python
+mcp__plugin_beads_beads__close(
+    issue_id="pando-3",
+    reason="Implemented and tested"
+)
+```
+
+### Dependency Management
+
+#### Dependency Types
+
+1. **blocks**: Hard blocker (task cannot proceed until blocker is closed)
+2. **related**: Soft link (informational only)
+3. **parent-child**: Epic/subtask relationship (blocking propagates through hierarchy)
+4. **discovered-from**: Links discovered work back to parent task
+
+#### Adding Dependencies
+
+```bash
+# Add blocking dependency (pando-5 blocked by pando-3)
+bd dep add pando-5 pando-3 --type blocks --json
+
+# Link discovered work back to parent
+bd create "Add tests for auth module" -t task -p 1 --json
+bd dep add pando-10 pando-3 --type discovered-from --json
+```
+
+**MCP Integration**:
+
+```python
+mcp__plugin_beads_beads__dep(
+    issue_id="pando-5",
+    depends_on_id="pando-3",
+    dep_type="blocks"
+)
+```
+
+### Git Integration
+
+#### Automatic Sync
+
+```bash
+# Full sync workflow: export + commit + pull + import + push
+bd sync --json
+
+# Dry run to preview
+bd sync --dry-run
+```
+
+**Always run `bd sync` at the end of a coding session** to ensure all issues are committed and pushed.
+
+### AI Agent Best Practices
+
+#### 1. Start Each Session
+
+```bash
+# Check workspace context
+bd info --json
+
+# Find ready work
+bd ready --limit 10 --json
+```
+
+#### 2. During Work
+
+```bash
+# Claim task before starting
+bd update pando-3 --status in_progress --json
+
+# Add progress comments
+bd comments add pando-3 "Working on implementation" --json
+
+# Create discovered issues with links
+bd create "Add missing tests" -t task -p 1 --json
+bd dep add pando-11 pando-3 --type discovered-from --json
+```
+
+#### 3. End Each Session
+
+```bash
+# Close completed tasks
+bd close pando-3 --reason "Completed" --json
+
+# Sync with git
+bd sync --json
+```
+
+### MCP Server Usage
+
+**Workspace Context**: Always set context before operations:
+
+```python
+mcp__plugin_beads_beads__set_context(
+    workspace_root="/path/to/project"
+)
+```
+
+**Common Operations**:
+
+- `mcp__plugin_beads_beads__ready()` - Find ready work
+- `mcp__plugin_beads_beads__list()` - List issues with filters
+- `mcp__plugin_beads_beads__show()` - Get issue details
+- `mcp__plugin_beads_beads__create()` - Create new issue
+- `mcp__plugin_beads_beads__update()` - Update issue
+- `mcp__plugin_beads_beads__close()` - Close issue
+- `mcp__plugin_beads_beads__stats()` - Get project statistics
+- `mcp__plugin_beads_beads__blocked()` - Show blocked issues
+
+### Issue Lifecycle
+
+```
+open → in_progress → closed
+  ↓         ↓
+blocked ←───┘
+```
+
+**Status Values**:
+
+- `open`: Ready to work on (if no blockers)
+- `in_progress`: Currently being worked on
+- `blocked`: Has unresolved dependencies
+- `closed`: Completed
+
+### Querying Issues
+
+```bash
+# List all open issues
+bd list --status open --json
+
+# Filter by multiple criteria
+bd list --priority 1 --type feature --json
+
+# Show full issue details with dependencies
+bd show pando-3 --json
+
+# Find blocked issues
+bd blocked --json
+
+# Get project statistics
+bd stats --json
+```
+
+### Labels and Organization
+
+```bash
+# Add labels
+bd label add pando-3 backend urgent --json
+
+# Filter by labels
+bd list --label backend,urgent --json
+
+# List all labels
+bd label list-all --json
+```
+
+## Project Status
+
+### Current Phase
+
+**Scaffolding Complete** - All stubs in place, ready for implementation
+
+### Ready for Implementation
+
+- All command files have TODOs with step-by-step guidance
+- Test files are scaffolded
+- GitHelper has method signatures defined
+- Documentation is complete
+
+### Next Steps (Managed in Beads)
+
+Use `bd ready --json` to see current ready tasks. Track implementation progress through beads issues.
+
+## Resources
+
+- [oclif Documentation](https://oclif.io/docs/introduction)
+- [simple-git Documentation](https://github.com/steveukx/git-js)
+- [Git Worktree Docs](https://git-scm.com/docs/git-worktree)
+- [Project README](./README.md)
+- [Architecture Doc](./ARCHITECTURE.md)
+- [Design Doc](./DESIGN.md)
+
+## When in Doubt
+
+1. **Follow existing patterns** - Look at similar code
+2. **Check the docs** - ARCHITECTURE.md and DESIGN.md explain rationale
+3. **Keep it simple** - Don't over-engineer
+4. **Write tests** - Test as you implement
+5. **Ask questions** - Add comments or TODOs if uncertain
+
+## AI Assistant Notes
+
+### This codebase is optimized for AI collaboration:
+
+- **Clear structure**: Predictable file organization
+- **Focused files**: Single responsibility, easy to understand
+- **Type safety**: TypeScript provides guardrails
+- **TODO comments**: Step-by-step implementation guides
+- **Tests first**: Test structure guides implementation
+- **Beads integration**: AI-first task management with dependency tracking
+
+### When implementing:
+
+1. **Start session**: Check `bd ready --json` for available work
+2. **Claim task**: Update task status to `in_progress` before starting
+3. Read related docs (ARCHITECTURE.md, DESIGN.md)
+4. Follow existing patterns in similar files
+5. Implement incrementally (one function at a time)
+6. Write tests alongside implementation
+7. **Track discoveries**: Create new issues for discovered work and link with `discovered-from`
+8. **Add comments**: Use `bd comments add` to track progress
+9. Keep changes focused and atomic
+10. **Complete task**: Close issue when done
+11. **End session**: Run `bd sync` to commit all changes
+
+### Code Review Checklist:
+
+- [ ] TypeScript strict mode passes
+- [ ] Tests pass
+- [ ] Follows naming conventions
+- [ ] Has JSDoc comments
+- [ ] Handles errors appropriately
+- [ ] Supports --json flag (for commands)
+- [ ] **Documentation updated** (README.md, ARCHITECTURE.md, DESIGN.md, CLAUDE.md as needed)
+- [ ] **DESIGN.md exists** in feature directories with 2+ files
+- [ ] **ARCHITECTURE.md updated** if architectural changes were made
+- [ ] Documentation is synchronized with code changes
+- [ ] **Beads issue updated** with progress and completion status
+- [ ] **New issues created** for discovered work with proper dependencies
+- [ ] **Beads synced** with `bd sync` at end of session
+
+
+================================================================================
+
+# File: ARCHITECTURE.md
+
+# Pando Architecture
+
+This document describes the technical architecture, design patterns, and technical decisions for the Pando CLI project.
+
+## Overview
+
+Pando is built on a **modular, command-oriented architecture** using the oclif framework. The design emphasizes:
+
+- **Separation of concerns**: Commands, business logic, and git operations are clearly separated
+- **Type safety**: Strict TypeScript throughout
+- **Testability**: Each layer is independently testable
+- **Extensibility**: New commands can be added with minimal effort
+- **AI-friendly**: Clear structure, focused files, predictable patterns
+
+## Technology Stack
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **CLI Framework** | [oclif](https://oclif.io) v4 | Command parsing, help generation, plugin system |
+| **Language** | TypeScript 5.5+ | Type safety, modern JavaScript features |
+| **Git Operations** | [simple-git](https://github.com/steveukx/git-js) v3 | Promise-based Git wrapper |
+| **User Interface** | chalk, ora, inquirer | Terminal colors, spinners, interactive prompts |
+| **Testing** | Vitest + @oclif/test | Fast unit tests, CLI integration tests |
+| **Build** | TypeScript compiler + ts-node | Production builds and fast dev iteration |
+
+## Architecture Layers
+
+### 1. Command Layer (`src/commands/`)
+
+**Purpose**: Entry points for CLI operations
+
+Each command:
+- Extends `@oclif/core Command` class
+- Defines flags using `@oclif/core Flags`
+- Validates inputs
+- Delegates to utility layer for business logic
+- Formats and outputs results
+
+**Structure**:
+```
+commands/
+├── worktree/
+│   ├── add.ts      # pando worktree add
+│   ├── list.ts     # pando worktree list
+│   ├── remove.ts   # pando worktree remove
+│   └── navigate.ts # pando worktree navigate
+└── branch/
+    ├── create.ts   # pando branch create
+    └── delete.ts   # pando branch delete
+```
+
+**Design Pattern**: **Command Pattern**
+- Each file represents one executable command
+- Commands are self-contained and independently testable
+- Follows oclif conventions for discovery and help generation
+
+### 2. Utility Layer (`src/utils/`)
+
+**Purpose**: Business logic and Git abstractions
+
+**Key Components**:
+
+#### `GitHelper` Class (`src/utils/git.ts`)
+Wraps simple-git with domain-specific operations:
+
+```typescript
+class GitHelper {
+  // Repository validation
+  isRepository(): Promise<boolean>
+
+  // Worktree operations
+  addWorktree(path, options): Promise<WorktreeInfo>
+  listWorktrees(): Promise<WorktreeInfo[]>
+  removeWorktree(path, force): Promise<void>
+  findWorktreeByBranch(name): Promise<WorktreeInfo | null>
+
+  // Branch operations
+  createBranch(name, startPoint): Promise<BranchInfo>
+  deleteBranch(name, force): Promise<void>
+  listBranches(): Promise<BranchInfo[]>
+  branchExists(name): Promise<boolean>
+  isBranchMerged(name, target): Promise<boolean>
+  getCurrentBranch(): Promise<string>
+}
+```
+
+**Design Pattern**: **Facade Pattern**
+- Provides simplified interface to complex git operations
+- Handles error transformation and type safety
+- Encapsulates simple-git implementation details
+
+### 3. Type Definitions
+
+**Purpose**: Strong typing for all data structures
+
+Key types:
+```typescript
+interface WorktreeInfo {
+  path: string
+  branch: string | null
+  commit: string
+  isPrunable: boolean
+}
+
+interface BranchInfo {
+  name: string
+  current: boolean
+  commit: string
+  label: string
+}
+```
+
+### 4. Entry Points
+
+#### Production (`bin/run.js`)
+```javascript
+import { execute } from '@oclif/core'
+await execute({ development: false, dir: import.meta.url })
+```
+- Executes compiled JavaScript from `dist/`
+- Used when installed globally or in production
+
+#### Development (`bin/dev.js`)
+```javascript
+import { execute } from '@oclif/core'
+await execute({ development: true, dir: import.meta.url })
+```
+- Executes TypeScript source directly via ts-node
+- Faster iteration during development
+
+## Module Organization
+
+### Vertical Slice Architecture
+
+Pando follows **feature-based organization** (vertical slices):
+
+```
+Feature: Worktree Management
+├── Commands:    src/commands/worktree/*.ts
+├── Logic:       src/utils/git.ts (worktree methods)
+├── Types:       WorktreeInfo, etc.
+└── Tests:       test/commands/worktree/*.test.ts
+```
+
+**Benefits**:
+- Related code stays together
+- Easier to reason about features
+- Reduces coupling between features
+- Simplifies adding new features
+
+### Dependency Flow
+
+```
+Commands ──→ GitHelper ──→ simple-git ──→ Git CLI
+   ↓            ↓
+  Flags       Types
+```
+
+**Rules**:
+- Commands depend on utils, never vice versa
+- Utils are pure business logic (no CLI concerns)
+- No circular dependencies
+
+## Command Lifecycle
+
+1. **Parse**: oclif parses args/flags
+2. **Validate**: Command validates required inputs
+3. **Execute**: Command calls GitHelper methods
+4. **Format**: Command formats output (text or JSON)
+5. **Output**: Command logs to stdout/stderr
+
+```
+User Input → oclif → Command.run() → GitHelper → simple-git → git
+                ↓                                              ↑
+              Output ←────────────────────────────────────────┘
+```
+
+## Error Handling Strategy
+
+### Layers
+
+1. **Git Layer** (simple-git)
+   - Throws on git command failures
+   - Raw error messages from git
+
+2. **Utility Layer** (GitHelper)
+   - Catches git errors
+   - Transforms to domain-specific errors
+   - Adds context (e.g., "Worktree not found")
+
+3. **Command Layer**
+   - Catches utility errors
+   - Formats user-friendly messages
+   - Uses `this.error()` for oclif error handling
+
+### Example Flow
+
+```typescript
+// Command
+try {
+  await gitHelper.addWorktree(path, { branch })
+} catch (error) {
+  this.error(`Failed to add worktree: ${error.message}`)
+}
+
+// GitHelper
+async addWorktree(path, options) {
+  try {
+    await this.git.raw(['worktree', 'add', ...])
+  } catch (error) {
+    throw new WorktreeError(`Cannot add worktree at ${path}`, error)
+  }
+}
+```
+
+## Testing Strategy
+
+### Unit Tests
+- Test GitHelper methods with mocked simple-git
+- Fast, isolated tests for business logic
+
+### Integration Tests
+- Test commands with @oclif/test
+- Validate flag parsing, help output
+- Can use temporary git repositories
+
+### Test Structure
+```
+test/
+├── commands/        # Command integration tests
+├── utils/           # Utility unit tests
+└── helpers/         # Test utilities and mocks
+```
+
+## Extension Points
+
+### Adding New Commands
+
+1. Create file in `src/commands/topic/name.ts`
+2. Extend `Command` and define flags
+3. Implement `run()` method
+4. Add tests in `test/commands/topic/name.test.ts`
+
+oclif automatically discovers and registers the command.
+
+### Adding New Git Operations
+
+1. Add method to `GitHelper` class
+2. Define return types as needed
+3. Add unit tests in `test/utils/git.test.ts`
+4. Use in command layer
+
+### Adding Output Formats
+
+Commands support `--json` flag. To add new formats:
+
+1. Add flag definition to command
+2. Check flag in `run()` method
+3. Format output accordingly
+
+## Configuration
+
+### oclif Configuration (`package.json`)
+
+```json
+{
+  "oclif": {
+    "bin": "pando",
+    "dirname": "pando",
+    "commands": "./dist/commands",
+    "topicSeparator": ":",
+    "topics": {
+      "worktree": { "description": "Manage git worktrees" },
+      "branch": { "description": "Manage branches" }
+    }
+  }
+}
+```
+
+### TypeScript Configuration (`tsconfig.json`)
+
+- **Strict mode**: Enabled for maximum type safety
+- **Target**: ES2022 (modern Node.js features)
+- **Module**: Node16 (native ESM support)
+- **Path aliases**: `@/*` maps to `./src/*`
+
+## Performance Considerations
+
+1. **Git Operations**: Minimal git calls, batch when possible
+2. **Async/Await**: All I/O is non-blocking
+3. **Lazy Loading**: Commands loaded on-demand by oclif
+4. **Type Checking**: Development only (runtime uses compiled JS)
+
+## Security Considerations
+
+1. **Path Traversal**: Validate all path inputs
+2. **Command Injection**: simple-git handles escaping
+3. **Sensitive Data**: Never log full git objects (may contain secrets)
+4. **Force Operations**: Require explicit flags with warnings
+
+## Future Enhancements
+
+### Planned Features
+- Fuzzy matching for branch/worktree names
+- Editor integration helpers (VSCode, etc.)
+- Remote repository operations
+- Worktree templates
+- Custom hooks/plugins
+
+### Architectural Changes
+- Plugin system for custom commands
+- Configuration file support (.pandorc)
+- Telemetry/analytics (opt-in)
+- Interactive TUI mode
+
+## References
+
+- [oclif Documentation](https://oclif.io/docs/introduction)
+- [simple-git Documentation](https://github.com/steveukx/git-js)
+- [Git Worktree Documentation](https://git-scm.com/docs/git-worktree)
+- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
+
+---
+
+For design rationale and decisions, see [DESIGN.md](./DESIGN.md).
+For usage instructions, see [README.md](./README.md).
+
+
+================================================================================
+
+# File: README.md
+
+# Pando
+
+> A TypeScript-based CLI for managing Git worktrees with automation-first design
+
+Pando makes it effortless to work on multiple branches simultaneously using Git worktrees. Built for modern developer workflows, it provides both human-friendly commands and machine-readable output for CI/CD automation.
+
+## Features
+
+- 🌳 **Worktree Management**: Create, list, remove, and navigate git worktrees with ease
+- 🔀 **Branch Operations**: Streamlined branch creation and deletion with worktree integration
+- 🤖 **Automation-First**: Every command supports `--json` flag for scripting and AI agents
+- 🎯 **Developer-Friendly**: Interactive prompts when flags aren't provided
+- ⚡ **Fast**: Built with TypeScript for type safety and performance
+- 🔧 **Extensible**: Clean architecture makes adding new commands simple
+
+## Installation
+
+### Using pnpm (recommended)
+```bash
+pnpm install -g pando
+```
+
+### Using npm
+```bash
+npm install -g pando
+```
+
+### From source
+```bash
+git clone https://github.com/zpyoung/pando.git
+cd pando
+pnpm install
+pnpm build
+pnpm link
+```
+
+## Quick Start
+
+```bash
+# Create a new worktree for a feature branch
+pando worktree add --path ../feature-x --branch feature-x
+
+# List all worktrees
+pando worktree list
+
+# Navigate to a worktree (outputs path for shell evaluation)
+cd $(pando worktree navigate --branch feature-x --output-path)
+
+# Remove a worktree (interactive selection or direct with --path)
+pando worktree remove
+pando worktree remove --path ../feature-x
+
+# Create a branch with a worktree in one command
+pando branch create --name feature-y --worktree ../feature-y
+```
+
+## Commands
+
+### Worktree Commands
+
+#### `pando worktree add`
+Create a new git worktree (supports both creating new branches and checking out existing branches)
+
+**Flags:**
+- `-p, --path`: Path for the new worktree (optional if `worktree.defaultPath` is configured)
+- `-b, --branch`: Branch to checkout or create
+- `-c, --commit`: Commit hash to base the new branch on
+- `-f, --force`: Force create branch even if it exists (uses git worktree add -B)
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+```bash
+# Create new branch in worktree
+pando worktree add --path ../feature-x --branch feature-x
+
+# Checkout existing branch into worktree
+pando worktree add --path ../existing --branch existing-branch
+
+# Using config default path (if worktree.defaultPath is set in .pando.toml)
+pando worktree add --branch feature-x
+
+# From specific commit
+pando worktree add --path ../hotfix --branch hotfix --commit abc123
+
+# Force reset existing branch to commit
+pando worktree add --path ../feature --branch feature-x --commit abc123 --force
+```
+
+#### `pando worktree list`
+List all git worktrees
+
+**Flags:**
+- `-v, --verbose`: Show detailed information
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+```bash
+pando worktree list
+pando worktree list --json
+```
+
+#### `pando worktree remove`
+Remove a git worktree
+
+**Flags:**
+- `-p, --path`: Path to the worktree to remove (optional - will prompt interactively if omitted)
+- `-f, --force`: Force removal even with uncommitted changes
+- `-j, --json`: Output in JSON format (requires --path)
+
+**Examples:**
+```bash
+# Interactive selection (select from list)
+pando worktree remove
+
+# Direct removal with path
+pando worktree remove --path ../feature-x
+pando worktree remove --path ../feature-x --force
+
+# Interactive multi-select with force flag
+pando worktree remove --force
+```
+
+#### `pando worktree navigate`
+Navigate to a git worktree
+
+**Flags:**
+- `-b, --branch`: Branch name to navigate to
+- `-p, --path`: Worktree path to navigate to
+- `--output-path`: Output only the path (for shell evaluation)
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+```bash
+pando worktree navigate --branch feature-x
+cd $(pando worktree navigate --branch feature-x --output-path)
+```
+
+### Branch Commands
+
+#### `pando branch create`
+Create a new git branch
+
+**Flags:**
+- `-n, --name` (required): Name of the branch to create
+- `-f, --from`: Base branch or commit (default: main)
+- `-w, --worktree`: Automatically create a worktree at this path
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+```bash
+pando branch create --name feature-x
+pando branch create --name feature-x --worktree ../feature-x
+```
+
+#### `pando branch delete`
+Delete a git branch
+
+**Flags:**
+- `-n, --name` (required): Name of the branch to delete
+- `-f, --force`: Force deletion even if not fully merged
+- `-w, --remove-worktree`: Also remove associated worktree
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+```bash
+pando branch delete --name feature-x
+pando branch delete --name feature-x --remove-worktree
+```
+
+## Configuration
+
+Pando can be configured using a `.pando.toml` file in your project root:
+
+```toml
+# Rsync Configuration
+[rsync]
+enabled = true
+flags = ["--archive", "--exclude", ".git"]
+exclude = ["dist/", "node_modules/"]
+
+# Symlink Configuration
+[symlink]
+patterns = ["package.json", ".env*"]
+relative = true
+beforeRsync = true
+
+# Worktree Configuration
+[worktree]
+defaultPath = "../worktrees"  # Default parent directory for worktrees
+```
+
+### Worktree Default Path
+
+The `worktree.defaultPath` setting allows you to specify a default parent directory for worktrees:
+
+- **Relative paths** are resolved from the git repository root
+- **Absolute paths** are used as-is
+- When creating a worktree with `--branch` but no `--path`, the branch name is appended to the default path
+- **Branch name sanitization**: Forward slashes (`/`) in branch names are automatically converted to underscores (`_`) for filesystem safety
+
+**Example:**
+```toml
+[worktree]
+defaultPath = "../worktrees"
+```
+
+```bash
+# Creates worktree at ../worktrees/feature-x (relative to git root)
+pando worktree add --branch feature-x
+
+# Branch names with slashes are sanitized
+pando worktree add --branch feature/auth
+# Creates: ../worktrees/feature_auth
+```
+
+### Environment Variables
+
+All configuration options can be set via environment variables using the `PANDO_` prefix:
+
+```bash
+# Set default worktree path
+export PANDO_WORKTREE_DEFAULT_PATH="../worktrees"
+
+# Now you can omit --path
+pando worktree add --branch feature-x
+```
+
+**Environment variable format:**
+- Prefix: `PANDO_`
+- Pattern: `PANDO_SECTION_KEY`
+- Example: `PANDO_WORKTREE_DEFAULT_PATH` → `worktree.defaultPath`
+
+Environment variables override file-based configuration but are overridden by explicit command-line flags.
+
+## Automation & JSON Output
+
+All commands support the `--json` flag for machine-readable output:
+
+```bash
+# Use in scripts
+worktrees=$(pando worktree list --json)
+
+# Parse with jq
+pando worktree list --json | jq '.[] | select(.branch == "feature-x")'
+```
+
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Run in development mode
+pnpm dev worktree list
+
+# Build
+pnpm build
+
+# Run tests
+pnpm test
+
+# Lint & format
+pnpm lint
+pnpm format
+```
+
+## Project Structure
+
+```
+pando/
+├── src/
+│   ├── commands/       # Command implementations
+│   ├── utils/          # Shared utilities
+│   └── index.ts        # Main entry point
+├── test/               # Tests
+├── bin/                # Executable scripts
+└── dist/               # Compiled output
+```
+
+## Requirements
+
+- Node.js >= 18.0.0
+- Git >= 2.5.0 (for worktree support)
+
+## Troubleshooting
+
+### Error Messages and Stack Traces
+
+Pando uses clean error messages for expected errors (like "file already exists" or "not a git repository"). You should **not** see stack traces for these errors.
+
+**If you see a stack trace for a validation error**, this indicates a bug - please report it!
+
+Common error types:
+- **Validation Errors**: Clean error messages without stack traces (use `--force`, missing files, invalid arguments)
+- **Operation Errors**: Runtime failures with context (network errors, permission issues, git command failures)
+- **Internal Errors**: Stack traces indicating bugs that should be reported
+
+### JSON Output for Scripts
+
+All commands support `--json` flag for machine-readable output:
+
+```bash
+# Get structured error output
+pando config init --json
+# Output: {"status":"error","error":"Configuration file already exists..."}
+
+# Check exit codes in scripts
+pando worktree add --path ../feature --branch feature --json
+if [ $? -ne 0 ]; then
+  echo "Command failed"
+fi
+```
+
+### Debug Mode
+
+For detailed debugging, run commands with Node.js debug environment:
+
+```bash
+# Enable debug output
+NODE_DEBUG=pando pnpm dev worktree list
+
+# Or with node inspector
+node --inspect bin/dev.js worktree list
+```
+
+### Common Issues
+
+**"Not a git repository"**
+- Make sure you're running pando from within a git repository
+- Check `git status` works in your current directory
+
+**"Worktree path already exists"**
+- The target path already has a directory/file
+- Use a different path or remove the existing path first
+
+**"Worktree has uncommitted changes"**
+- The worktree you're trying to remove has uncommitted changes
+- Commit or stash changes first, or use `--force` to remove anyway (WARNING: will lose changes)
+
+**"rsync is not installed"**
+- Install rsync for file syncing features
+- macOS: `brew install rsync`
+- Ubuntu/Debian: `apt install rsync`
+- Or use `--skip-rsync` to disable file syncing
+
+## Contributing
+
+Contributions are welcome! Please read [ARCHITECTURE.md](./ARCHITECTURE.md) and [DESIGN.md](./DESIGN.md) to understand the project structure and design decisions.
+
+## License
+
+MIT © zpyoung
+
+## Why "Pando"?
+
+[Pando](https://en.wikipedia.org/wiki/Pando_(tree)) is a clonal colony of aspen trees that shares a single root system - much like how git worktrees share a single repository!
+
+
+================================================================================
+
+# File: package.json
+
+{
+  "name": "pando",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "A TypeScript-based CLI for managing Git worktrees with automation-first design",
+  "author": "zpyoung <zach@fabledfreedom.com>",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "pando": "./bin/run.js"
+  },
+  "files": [
+    "/bin",
+    "/dist",
+    "/oclif.manifest.json"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "node --loader ts-node/esm --no-warnings=ExperimentalWarning ./bin/dev.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "validate": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test:run",
+    "ci": "pnpm run format:check && pnpm run lint && pnpm run test:run",
+    "postpack": "rm -f oclif.manifest.json",
+    "prepack": "pnpm build && oclif manifest",
+    "prepare": "pnpm build",
+    "ai:context": "node --loader ts-node/esm scripts/ai-context.ts",
+    "ai:validate": "node --loader ts-node/esm scripts/validate-docs.ts"
+  },
+  "keywords": [
+    "git",
+    "worktree",
+    "cli",
+    "developer-tools",
+    "workflow",
+    "automation"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "oclif": {
+    "bin": "pando",
+    "dirname": "pando",
+    "commands": "./dist/commands",
+    "topicSeparator": " ",
+    "topics": {
+      "worktree": {
+        "description": "Manage git worktrees"
+      },
+      "branch": {
+        "description": "Manage branches"
+      },
+      "config": {
+        "description": "Manage pando configuration"
+      }
+    }
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "@oclif/core": "^4.0.0",
+    "chalk": "^5.3.0",
+    "fs-extra": "^11.2.0",
+    "globby": "^14.0.0",
+    "inquirer": "^10.0.0",
+    "ora": "^8.0.0",
+    "simple-git": "^3.25.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@oclif/test": "^4.0.0",
+    "@types/fs-extra": "^11.0.4",
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "oclif": "^4.0.0",
+    "prettier": "^3.3.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
+
+
+================================================================================
+
+# File: ai-docs/SPEC.md
+
+# Pando Specification
+
+## 1. Project Overview
+
+**Pando** is a TypeScript-based CLI for managing Git worktrees with an automation-first design. It aims to make working with multiple branches simultaneously effortless for developers while providing machine-readable outputs for AI agents and CI/CD pipelines.
+
+## 2. Core Goals
+
+- **Effortless Worktree Management**: Simplify creation, removal, and navigation of git worktrees.
+- **Automation-First**: Ensure every command supports JSON output for easy integration with scripts and AI agents.
+- **Developer Experience**: Provide interactive prompts, clear error messages, and "wow" aesthetics.
+- **Performance**: Fast execution using TypeScript and efficient git operations.
+
+## 3. User Stories
+
+- **As a developer**, I want to create a new feature branch and worktree in one command so I can start coding immediately without context switching.
+- **As a developer**, I want to list all my active worktrees to see what I'm working on.
+- **As a developer**, I want to easily remove old worktrees to keep my workspace clean.
+- **As an AI agent**, I want to query the state of worktrees in JSON format so I can understand the environment.
+- **As a user**, I want to configure default paths so I don't have to type long paths every time.
+
+## 4. Functional Requirements
+
+### Worktree Management
+
+- `add`: Create a new worktree, optionally checking out a new or existing branch.
+- `list`: Show all worktrees with details (branch, path, commit).
+- `remove`: Delete a worktree, with safety checks for uncommitted changes.
+- `navigate`: Output the path to a worktree for shell navigation.
+
+### Branch Management
+
+- `create`: Create a branch, optionally with a worktree.
+- `delete`: Delete a branch, optionally removing its worktree.
+
+### Configuration
+
+- Support `.pando.toml` for project-specific settings.
+- Support environment variables for overrides.
+- `config init`: Generate a default configuration file.
+- `config show`: Display current configuration.
+
+## 5. Non-Functional Requirements
+
+- **Type Safety**: 100% TypeScript codebase.
+- **Error Handling**: Clear distinction between validation errors (user-fixable) and operation errors (system issues).
+- **Documentation**: Comprehensive `README.md` and internal `DESIGN.md` files.
+
+
+================================================================================
+
+# File: ai-docs/PLAN.md
+
+# Pando Technical Plan
+
+## 1. Architecture Overview
+
+Pando uses a modular, command-oriented architecture based on the **oclif** framework.
+
+- **Language**: TypeScript
+- **Core Libraries**: `simple-git` (git operations), `inquirer` (prompts), `chalk` (styling).
+
+## 2. Component Design
+
+### Command Layer (`src/commands/`)
+
+- Handles user interaction, argument parsing, and output formatting.
+- Delegates business logic to the Utility Layer.
+- **Pattern**: Command Pattern (each command is a class).
+
+### Utility Layer (`src/utils/`)
+
+- **GitHelper**: Facade for `simple-git` operations.
+- **ErrorHelper**: Centralized error handling (validation vs operation errors).
+- **ConfigLoader**: Manages `.pando.toml` and environment variables.
+
+## 3. Data Flow
+
+1. **Input**: User runs command -> `oclif` parses flags.
+2. **Validation**: Command validates inputs (e.g., path existence).
+3. **Execution**: Command calls `GitHelper` methods.
+4. **Output**: Command formats result (JSON or human-readable) and prints to stdout.
+
+## 4. Current Status
+
+- [x] Basic worktree commands (add, list, remove, navigate)
+- [x] Basic branch commands (create, delete)
+- [x] Configuration support
+- [ ] AI Context generation scripts (In Progress)
+- [ ] Documentation coverage enforcement (In Progress)
+
+
+================================================================================
+
+# File: ai-docs/TASKS.md
+
+# Pando Tasks
+
+## Active Sprint: AI First Transformation
+
+- [ ] **Documentation Coverage**
+  - [ ] Create `src/commands/config/DESIGN.md` <!-- id: 1 -->
+  - [ ] Verify all other directories have `DESIGN.md` <!-- id: 2 -->
+
+- [ ] **Automation Tools**
+  - [ ] Create `scripts/ai-context.ts` to generate `llm.txt` <!-- id: 3 -->
+  - [ ] Create `scripts/validate-docs.ts` to enforce documentation rules <!-- id: 4 -->
+  - [ ] Add npm scripts to `package.json` (`ai:context`, `ai:validate`) <!-- id: 5 -->
+
+- [ ] **Project Configuration**
+  - [ ] Update `.gitignore` to exclude AI artifacts <!-- id: 6 -->
+  - [ ] Update `CLAUDE.md` to reflect new workflow <!-- id: 7 -->
+
+## Backlog
+
+- [ ] Implement fuzzy matching for branch names
+- [ ] Add remote repository operations
+
+
+================================================================================
+
+# File: ai-docs/CONTEXT.md
+
+# Pando Domain Context
+
+## Glossary
+
+- **Worktree**: A linked copy of the git repository that allows checking out a different branch. Pando manages these to allow parallel development.
+- **Main Worktree**: The primary directory where the repo was cloned. Contains the `.git` directory.
+- **Linked Worktree**: Additional worktrees created via `git worktree add`. They reference the main worktree's object database.
+- **Pando**: The CLI tool this project implements.
+- **Beads**: A task management system integrated into the project (files in `.beads/`).
+
+## Key Constraints
+
+- **Symlinks**: Pando supports symlinking files (like `.env`, `node_modules`) from the main worktree to linked worktrees to save space and setup time.
+- **JSON Output**: ALL commands must support `--json` for automation.
+- **Error Handling**: Must distinguish between `validation` (user error) and `operation` (system error) to avoid showing stack traces to users for simple mistakes.
+
+## Directory Structure
+
+- `src/commands/`: CLI command implementations.
+- `src/utils/`: Shared logic and git wrappers.
+- `ai-docs/`: Spec-Driven Development files (`SPEC.md`, `PLAN.md`, etc.).
+
+
+================================================================================
+
+# File: ai-docs/LESSONS.md
+
+# Pando Lessons & Patterns
+
+## Patterns That Work
+
+### 1. Facade Pattern for Git
+
+**Description**: Wrapping `simple-git` in a `GitHelper` class.
+**Why**: Allows us to normalize errors, add logging, and mock git operations easily in tests.
+
+### 2. Config-First Initialization
+
+**Description**: Loading configuration before validating command arguments.
+**Why**: Allows defaults (like `defaultPath`) to be applied, reducing the need for user arguments.
+
+### 3. Strict Type Separation
+
+**Description**: Defining interfaces like `WorktreeInfo` separately from the implementation.
+**Why**: Ensures data structures are consistent across the application and easy to mock.
+
+## Patterns to Avoid
+
+### 1. Direct `console.log` for Errors
+
+**Description**: Using `console.error` or `console.log` for errors.
+**Why**: Bypasses the `ErrorHelper` and inconsistent with the `--json` output requirement.
+**Better Approach**: Use `ErrorHelper.validation()` or `ErrorHelper.operation()`.
+
+### 2. Logic in Command Classes
+
+**Description**: Putting complex business logic inside the `run()` method of a command.
+**Why**: Harder to test and reuse.
+**Better Approach**: Move logic to `src/utils/` and keep commands as thin controllers.
+
+
+================================================================================
+
+# File: DESIGN.md
+
+# Pando Design Document
+
+This document explains the design decisions, trade-offs, and rationale behind Pando's implementation.
+
+## Design Principles
+
+### 1. **Automation-First Design**
+
+**Decision**: Every command must support both interactive and non-interactive modes
+
+**Rationale**:
+- Modern development increasingly involves AI agents and automation
+- Scripts and CI/CD pipelines need reliable, parseable output
+- Humans and machines have different interface needs
+
+**Implementation**:
+- All flags are optional with interactive prompts as fallback
+- `--json` flag on every command for machine-readable output
+- Consistent exit codes for scripting
+
+**Example**:
+```bash
+# Interactive (human)
+pando worktree add
+# Prompts: Path? Branch?
+
+# Scripted (machine)
+pando worktree add --path ../feature-x --branch feature-x --json
+# {"path": "../feature-x", "branch": "feature-x", "commit": "abc123"}
+```
+
+### 2. **Predictable Command Structure**
+
+**Decision**: Use oclif's topic:command pattern
+
+**Rationale**:
+- Scales well (can add topics without conflicts)
+- Self-documenting (`worktree add` is clearer than `add-worktree`)
+- Follows industry conventions (Heroku CLI, Salesforce CLI)
+- Built-in help generation
+
+**Trade-off**:
+- Slightly more typing than flat commands
+- But: Better organization for 10+ commands
+
+### 3. **Focused, Single-Responsibility Files**
+
+**Decision**: One command per file, one utility class
+
+**Rationale**:
+- AI tools work better with focused files
+- Easier code navigation and maintenance
+- Clear boundaries reduce coupling
+- Supports vertical slice architecture
+
+**Implementation**:
+```
+src/commands/worktree/add.ts     # Only handles worktree add
+src/commands/worktree/remove.ts  # Only handles worktree remove
+```
+
+Each file is ~100-200 lines, highly focused.
+
+### 4. **Type Safety Throughout**
+
+**Decision**: Strict TypeScript with no `any` types
+
+**Rationale**:
+- Catch bugs at compile time
+- Better IDE support (autocomplete, refactoring)
+- Self-documenting code
+- Easier refactoring with confidence
+
+**Configuration**:
+```json
+{
+  "strict": true,
+  "noImplicitAny": true,
+  "strictNullChecks": true,
+  "noUncheckedIndexedAccess": true
+}
+```
+
+## Key Design Decisions
+
+### Why oclif?
+
+**Alternatives Considered**:
+1. **Commander.js**: Popular, lightweight
+2. **Yargs**: Feature-rich, flexible
+3. **Ink (React)**: For TUIs
+4. **Custom parser**: Maximum control
+
+**Why oclif Won**:
+- Production-ready plugin system
+- Built-in testing utilities (@oclif/test)
+- Automatic help generation
+- Used by major CLIs (Heroku, Salesforce)
+- TypeScript-first design
+- Excellent documentation
+
+**Trade-off**:
+- Heavier than Commander
+- But: Worth it for the features we get
+
+### Why simple-git?
+
+**Alternatives Considered**:
+1. **child_process.exec**: Direct git commands
+2. **nodegit**: libgit2 bindings
+3. **isomorphic-git**: Pure JavaScript git
+
+**Why simple-git Won**:
+- Promise-based (async/await friendly)
+- Maintained and popular
+- Good balance of abstraction and control
+- Handles edge cases (escaping, errors)
+- Small bundle size
+
+**Trade-off**:
+- Still shells out to git binary
+- But: Simplest and most reliable approach
+
+### Command vs. Utility Separation
+
+**Decision**: Commands handle CLI concerns, utilities handle git logic
+
+**Rationale**:
+```
+Command Layer:
+- Parses flags
+- Validates user input
+- Formats output
+- Handles interactive prompts
+
+Utility Layer:
+- Pure business logic
+- Git operations
+- No CLI concerns
+- Independently testable
+```
+
+**Benefit**: Can reuse GitHelper in other contexts (programmatic usage)
+
+**Example**:
+```typescript
+// Command: CLI concerns
+async run() {
+  const { flags } = await this.parse(AddWorktree)
+
+  // Interactive fallback
+  if (!flags.path) {
+    flags.path = await prompt('Path?')
+  }
+
+  // Delegate to utility
+  const result = await gitHelper.addWorktree(flags.path, flags)
+
+  // Format output
+  if (flags.json) {
+    this.log(JSON.stringify(result))
+  } else {
+    this.log(chalk.green(`Created worktree at ${result.path}`))
+  }
+}
+
+// Utility: Pure logic
+async addWorktree(path, options) {
+  await this.git.raw(['worktree', 'add', path, ...])
+  return { path, branch: options.branch, ... }
+}
+```
+
+### Flag-Driven vs. Argument-Based
+
+**Decision**: Use flags (`--path`) instead of positional arguments
+
+**Rationale**:
+- More explicit and self-documenting
+- Order-independent
+- Easier to add optional parameters
+- Better for automation (named parameters)
+
+**Example**:
+```bash
+# Flag-based (chosen)
+pando worktree add --path ../feature-x --branch feature-x
+
+# Argument-based (rejected)
+pando worktree add ../feature-x feature-x
+# What if branch is optional? Order matters!
+```
+
+**Trade-off**:
+- More typing for humans
+- But: Clearer and more maintainable
+
+### JSON Output Format
+
+**Decision**: Consistent structure across all commands
+
+**Format**:
+```typescript
+// Success (single result)
+{ "status": "success", "data": { ... } }
+
+// Success (list)
+{ "status": "success", "data": [ ... ] }
+
+// Error
+{ "status": "error", "message": "...", "code": "ERR_CODE" }
+```
+
+**Rationale**:
+- Easy to parse programmatically
+- Consistent across commands
+- Supports error handling in scripts
+
+### Safety-First Defaults
+
+**Decision**: Require explicit flags for destructive operations
+
+**Examples**:
+```bash
+# Safe by default
+pando worktree remove --path ../feature-x
+# → Warns about uncommitted changes
+
+# Explicit force
+pando worktree remove --path ../feature-x --force
+# → Removes even with changes
+
+# Branch deletion
+pando branch delete --name feature-x
+# → Checks if merged
+
+pando branch delete --name feature-x --force
+# → Forces deletion
+```
+
+**Rationale**:
+- Prevent accidental data loss
+- Make dangerous operations obvious
+- Follow git's own conventions
+
+### Worktree Navigation Pattern
+
+**Decision**: Output paths for shell evaluation
+
+**Problem**: CLI can't change parent shell's directory
+
+**Solution**: Output commands/paths for evaluation
+
+```bash
+# Output path for cd
+cd $(pando worktree navigate --branch feature-x --output-path)
+
+# Or create shell alias
+alias goto-worktree='cd $(pando worktree navigate --output-path --branch $1)'
+goto-worktree feature-x
+```
+
+**Rationale**:
+- Works across shells (bash, zsh, fish)
+- Composable with other commands
+- Standard Unix pattern
+
+**Alternative Considered**: Shell integration scripts
+- **Rejected**: Too complex, shell-specific
+
+## AI-Friendly Design Patterns
+
+### Consistent File Organization
+
+```
+src/commands/topic/verb.ts    # Always verb-based names
+test/commands/topic/verb.test.ts  # Mirrors src structure
+```
+
+**Benefit**: Predictable paths for AI code navigation
+
+### Verbose, Descriptive Names
+
+```typescript
+// Good (explicit)
+async addWorktree(path: string, options: AddWorktreeOptions)
+
+// Avoid (ambiguous)
+async add(p: string, opts: any)
+```
+
+**Benefit**: AI can infer purpose without context
+
+### TODO Comments for Stubs
+
+```typescript
+async run() {
+  // TODO: Implement worktree add logic
+  // 1. Validate the repository is a git repo
+  // 2. Check if path already exists
+  // 3. Validate branch/commit if provided
+  // ...
+}
+```
+
+**Benefit**: Clear implementation roadmap for AI completion
+
+### Type-First Development
+
+```typescript
+// Define types first
+interface WorktreeInfo { ... }
+
+// Then implement
+async listWorktrees(): Promise<WorktreeInfo[]> { ... }
+```
+
+**Benefit**: Type system guides implementation
+
+## Future Design Considerations
+
+### Plugin System
+
+**Idea**: Allow community-contributed commands
+
+```bash
+pando plugins:install worktree-backup
+pando worktree:backup --to s3://...
+```
+
+**Challenges**:
+- Security (arbitrary code execution)
+- Versioning and compatibility
+- Discovery and distribution
+
+**oclif Support**: Built-in plugin system available
+
+### Configuration Files
+
+**Idea**: `.pandorc` for defaults and preferences
+
+```json
+{
+  "defaultBranch": "main",
+  "worktreeDir": "../worktrees",
+  "editor": "code",
+  "format": "json"
+}
+```
+
+**Challenges**:
+- Where to look for config (repo, home, global)
+- Schema versioning
+- Overriding via flags
+
+### Editor Integration
+
+**Idea**: Helper commands for editor navigation
+
+```bash
+# Open worktree in VSCode
+pando worktree:open --branch feature-x --editor code
+
+# Generate workspace file
+pando worktree:workspace --output pando.code-workspace
+```
+
+**Benefit**: Seamless workflow integration
+
+### Template System
+
+**Idea**: Worktree templates with pre-configured setups
+
+```bash
+pando worktree add --template feature --path ../feature-x
+# Creates worktree + installs deps + runs setup
+```
+
+**Use Case**: Standardize team workflows
+
+## Testing Philosophy
+
+### Test What Matters
+
+1. **Command parsing**: Flags work correctly
+2. **Error handling**: Failures are graceful
+3. **Output format**: JSON is valid, text is readable
+4. **Business logic**: GitHelper methods behave correctly
+
+### Don't Test Internals
+
+- Don't test private methods
+- Don't mock too much (makes tests brittle)
+- Focus on public API
+
+### Use Real Git When Possible
+
+Integration tests with temporary repos are valuable:
+
+```typescript
+it('should create and list worktrees', async () => {
+  const repo = await createTempRepo()
+  await run(['worktree add', '--path', `${repo}/feature`, '--branch', 'test'])
+  const list = await run(['worktree list', '--json'])
+  expect(JSON.parse(list)).toHaveLength(2)
+  await cleanupTempRepo(repo)
+})
+```
+
+## Performance Philosophy
+
+### Optimize for Common Case
+
+**Common**: Single worktree operations
+**Rare**: Bulk operations on 100+ worktrees
+
+**Decision**: Optimize for clarity over bulk performance
+
+### Git is the Bottleneck
+
+JavaScript execution is negligible compared to git operations.
+
+**Focus**: Minimize git calls, not JavaScript optimizations
+
+## Accessibility & Usability
+
+### Help Text is First-Class
+
+Every command has:
+- Clear description
+- Examples
+- Flag documentation
+
+Generated automatically by oclif from code.
+
+### Progressive Disclosure
+
+```bash
+# Minimal command
+pando worktree add
+
+# Prompts guide user
+
+# Expert usage
+pando worktree add --path ../f --branch f --commit abc --json
+```
+
+Supports both learning and efficiency.
+
+## Evolution Strategy
+
+### Versioning
+
+Follow Semantic Versioning:
+- **Major**: Breaking CLI changes
+- **Minor**: New commands/flags (backward compatible)
+- **Patch**: Bug fixes
+
+### Deprecation Path
+
+When changing commands:
+1. Add new command/flag
+2. Deprecate old with warning
+3. Remove in next major version
+
+Example:
+```
+v0.x: --worktree flag
+v1.0: --worktree deprecated (use --path)
+v2.0: --worktree removed
+```
+
+## Summary
+
+Pando's design prioritizes:
+1. **Automation-first**: Scripts and AI agents are first-class users
+2. **Type safety**: Catch errors early with strict TypeScript
+3. **Clarity**: Predictable structure, descriptive names, focused files
+4. **Safety**: Explicit flags for destructive operations
+5. **Extensibility**: Clean architecture enables easy additions
+
+These principles guide all implementation decisions and ensure Pando remains maintainable and useful as it grows.
+
+---
+
+For architectural details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+For usage instructions, see [README.md](./README.md).
+
+
+================================================================================
+
+# File: src/config/DESIGN.md
+
+# Configuration System Design
+
+## Purpose
+
+This module provides a comprehensive configuration system for pando that supports multiple file formats, project types, and priority-based merging. It enables users to configure rsync and symlink behavior at the project or global level.
+
+## Files Overview
+
+- **schema.ts** - Configuration schemas, TypeScript interfaces, Zod validation
+- **loader.ts** - Multi-file configuration discovery, parsing, and merging
+- **env.ts** - Environment variable parser (PANDO_* prefix)
+
+## Key Design Decisions
+
+### Multi-File Support
+**Chosen**: Support 6+ configuration file formats
+**Rationale**:
+- Different projects use different ecosystems
+- Python projects have pyproject.toml
+- Rust projects have Cargo.toml
+- Node.js projects have package.json
+- Universal .pando.toml for any project type
+
+**Supported Files**:
+1. `.pando.toml` - Dedicated config (highest priority)
+2. `pyproject.toml` → `[tool.pando]` section
+3. `Cargo.toml` → `[package.metadata.pando]` section
+4. `package.json` → `"pando"` key
+5. `deno.json` → `"pando"` key
+6. `composer.json` → `"extra.pando"` section
+7. `~/.config/pando/config.toml` - Global config
+
+### TOML as Primary Format
+**Chosen**: TOML for all .toml files, JSON for .json files
+**Rationale**:
+- TOML is designed for configuration
+- More readable than JSON for humans
+- Better comments support
+- Standard in Rust and Python ecosystems
+
+### Configuration Schema
+
+**Supported Configuration Sections**:
+
+1. **`[rsync]`** - Controls file copying to new worktrees
+   - `enabled` (boolean) - Enable/disable rsync
+   - `flags` (array) - Rsync command flags
+   - `exclude` (array) - Patterns to exclude from sync
+
+2. **`[symlink]`** - Controls selective symlinking
+   - `patterns` (array) - Glob patterns for files to symlink
+   - `relative` (boolean) - Use relative vs absolute symlinks
+   - `beforeRsync` (boolean) - Create symlinks before or after rsync
+
+3. **`[worktree]`** - Worktree defaults (NEW)
+   - `defaultPath` (string, optional) - Default parent directory for worktrees
+     - Relative paths resolve from git repository root
+     - Absolute paths used as-is
+     - When used with `--branch` flag, branch name is appended
+
+**Example Configuration**:
+```toml
+[rsync]
+enabled = true
+flags = ["--archive", "--exclude", ".git"]
+exclude = ["dist/", "node_modules/"]
+
+[symlink]
+patterns = ["package.json", ".env*"]
+relative = true
+beforeRsync = true
+
+[worktree]
+defaultPath = "../worktrees"
+```
+
+### Priority-Based Merging
+**Configuration Discovery Order** (highest to lowest priority):
+```
+1. CLI flags (--rsync-flags, --symlink, --path, etc.)
+2. Environment variables (PANDO_*)
+3. .pando.toml (current directory)
+4. Project files (walk up to git root):
+   - pyproject.toml [tool.pando]
+   - Cargo.toml [package.metadata.pando]
+   - package.json "pando"
+   - deno.json "pando"
+   - composer.json "extra.pando"
+5. ~/.config/pando/config.toml (global)
+6. Built-in defaults
+```
+
+**Merge Strategy**:
+- Higher priority completely overrides lower priority
+- Arrays are replaced, not concatenated
+- Objects are deep merged
+- Source tracking for debugging
+
+### Validation with Zod
+**Chosen**: Zod for schema validation
+**Rationale**:
+- TypeScript-first design
+- Runtime validation
+- Excellent error messages
+- Type inference from schemas
+
+## Patterns Used
+
+### Schema-Driven Development
+Define schema first, infer types:
+```typescript
+const schema = z.object({
+  rsync: RsyncConfigSchema,
+  symlink: SymlinkConfigSchema,
+})
+
+type Config = z.infer<typeof schema>
+```
+
+### Parser Dispatcher Pattern
+Single entry point dispatches to file-specific parsers:
+```typescript
+switch (configFile.source) {
+  case ConfigSource.PANDO_TOML:
+    return parsePandoToml(path)
+  case ConfigSource.PYPROJECT_TOML:
+    return parsePyprojectToml(path)
+  // ...
+}
+```
+
+### Caching for Performance
+Load once, cache result:
+```typescript
+class ConfigLoader {
+  private cache: Map<string, Config> = new Map()
+
+  async load(options) {
+    if (!options.skipCache && this.cache.has(key)) {
+      return this.cache.get(key)
+    }
+    // Load and cache
+  }
+}
+```
+
+## Dependencies
+
+### External
+- `@iarna/toml` - TOML parsing
+- `zod` - Schema validation
+- `fs-extra` - Enhanced file operations
+
+### Internal
+- None (config is the foundation layer)
+
+## Usage Examples
+
+### Load Configuration
+```typescript
+import { loadConfig } from './config/loader'
+
+const config = await loadConfig({
+  cwd: process.cwd(),
+  gitRoot: '/path/to/repo'
+})
+
+console.log(config.rsync.enabled) // true
+console.log(config.symlink.patterns) // ['package.json']
+```
+
+### Load with Source Tracking
+```typescript
+import { configLoader } from './config/loader'
+
+const result = await configLoader.loadWithSources({
+  cwd: process.cwd(),
+  gitRoot: '/path/to/repo'
+})
+
+console.log(result.config) // Merged config
+console.log(result.sources) // Where each setting came from
+```
+
+### Parse Environment Variables
+```typescript
+import { getEnvConfig } from './config/env'
+
+// With PANDO_RSYNC_ENABLED=false in environment
+const envConfig = getEnvConfig()
+console.log(envConfig.rsync?.enabled) // false
+```
+
+### Validate Configuration
+```typescript
+import { validateConfig } from './config/schema'
+
+try {
+  const validated = validateConfig(userConfig)
+  // Use validated config
+} catch (error) {
+  // Handle validation errors
+  console.error(error.issues)
+}
+```
+
+## Testing Approach
+
+### Unit Tests
+- Test each parser independently
+- Test config merging with various priority scenarios
+- Test environment variable parsing
+- Test schema validation with valid/invalid inputs
+
+### Integration Tests
+- Test full config loading with real files
+- Test directory walking to git root
+- Test caching behavior
+- Test error handling for malformed files
+
+## Error Handling
+
+### Parse Errors
+- Gracefully handle malformed TOML/JSON
+- Log warning and skip file
+- Continue with other config sources
+
+### Validation Errors
+- Provide detailed Zod error messages
+- Show which file had the error
+- Suggest fixes
+
+### Missing Files
+- Silently skip missing optional files
+- Only error if no config found anywhere
+
+## Known Issues and Solutions
+
+### Issue 1: Zod Schema `.default()` Overriding Parsed Config
+
+**Problem**: Using `.default({})` on a nested schema in the main config schema caused parsed configuration to be overridden with an empty object.
+
+**Example of Bug**:
+```typescript
+// BUG: This overrides parsed config
+export const PandoConfigSchema = z.object({
+  worktree: WorktreeConfigSchema.default({}),  // ❌ Overrides parsed values
+})
+```
+
+**Root Cause**: Zod's `.default()` applies the default value AFTER parsing completes, overriding any values that were successfully parsed from the config file.
+
+**Solution**: Remove `.default()` from nested schemas in the main schema:
+```typescript
+// FIXED: Let parser handle defaults through partial schemas
+export const PandoConfigSchema = z.object({
+  worktree: WorktreeConfigSchema,  // ✅ Preserves parsed values
+})
+```
+
+**Lesson**: Only use `.default()` on:
+- Primitive fields (strings, numbers, booleans, arrays)
+- Top-level schemas that won't be nested
+- NOT on nested object schemas that will be composed into a parent schema
+
+### Issue 2: fs-extra ES Module Import
+
+**Problem**: Using namespace import (`import * as fs from 'fs-extra'`) caused all fs-extra methods to be undefined in ES modules.
+
+**Example of Bug**:
+```typescript
+// BUG: fs methods are undefined
+import * as fs from 'fs-extra'
+await fs.access(filePath, fs.constants.R_OK)  // ❌ TypeError: fs.access is not a function
+```
+
+**Root Cause**: fs-extra is a CommonJS module that doesn't properly export named members through namespace imports in ES modules. The package provides a default export that contains all methods.
+
+**Solution**: Use default import instead:
+```typescript
+// FIXED: Use default import for CommonJS packages
+import fs from 'fs-extra'
+await fs.access(filePath, fs.constants.R_OK)  // ✅ Works correctly
+```
+
+**Lesson**: When importing CommonJS packages in ES modules:
+- Use default import (`import fs from 'fs-extra'`) instead of namespace import
+- Check package documentation for ESM compatibility
+- If methods are undefined, try switching import style
+
+## Future Considerations
+
+### Planned Features
+1. **Schema Versioning** - Support config format versions
+2. **Config Migration** - Auto-upgrade old configs
+3. **Config Validation Command** - `pando config:validate`
+4. **Watch Mode** - Auto-reload on config changes
+5. **Merge Strategies** - Allow array concatenation vs replacement
+
+### Additional File Formats
+- `.pando.json` - JSON alternative to TOML
+- `.pando.yaml` - YAML support
+- `.pando.js` - JavaScript config with logic
+
+### Environment Variable Enhancements
+- Support for nested objects: `PANDO_RSYNC__FLAGS__0=--archive`
+- Support for JSON values: `PANDO_RSYNC_CONFIG='{"enabled":true}'`
+
+## Related Documentation
+
+- [Root ARCHITECTURE.md](../../ARCHITECTURE.md) - System architecture
+- [Root DESIGN.md](../../DESIGN.md) - High-level design decisions
+- [.pando.toml.example](../../.pando.toml.example) - Example configuration
+
+
+================================================================================
+
+# File: src/utils/DESIGN.md
+
+# Utilities Design
+
+## Purpose
+
+This module provides core utility functions for git operations, file operations (rsync/symlink), and worktree setup orchestration. These utilities form the business logic layer between commands and external tools.
+
+## Files Overview
+
+- **git.ts** - Git operations wrapper using simple-git
+- **fileOps.ts** - Rsync and symlink operations with transaction support
+- **worktreeSetup.ts** - Post-worktree-creation orchestrator
+
+## Key Design Decisions
+
+### Transaction-Based File Operations
+**Chosen**: All file operations tracked in transactions with rollback support
+**Rationale**:
+- Prevents partial failures leaving broken worktrees
+- Users never left in bad state
+- Clear error recovery path
+- Professional-grade reliability
+
+**Implementation**:
+```typescript
+transaction.record(OperationType.CREATE_SYMLINK, path)
+// ... do operation ...
+// On error:
+await transaction.rollback() // Undoes all operations
+```
+
+### Rsync for File Copying
+**Chosen**: Use rsync instead of native Node.js file copying
+**Rationale**:
+- Rsync is standard on Unix systems
+- Efficient for large file trees
+- Respects permissions and timestamps
+- Battle-tested and reliable
+- Progress streaming support
+
+**Trade-off**: Requires rsync to be installed
+
+### Separate Concerns
+**Chosen**: Separate helpers for rsync, symlink, and orchestration
+**Rationale**:
+- Single responsibility principle
+- Easier to test independently
+- Can be used separately if needed
+- Clear dependencies
+
+## Patterns Used
+
+### Helper Factory Pattern
+Create helpers with dependencies injected:
+```typescript
+const transaction = new FileOperationTransaction()
+const rsyncHelper = createRsyncHelper(transaction)
+const symlinkHelper = createSymlinkHelper(transaction)
+```
+
+### Orchestrator Pattern
+High-level coordinator that uses multiple helpers:
+```typescript
+class WorktreeSetupOrchestrator {
+  constructor(gitHelper, config) {
+    this.rsyncHelper = createRsyncHelper(transaction)
+    this.symlinkHelper = createSymlinkHelper(transaction)
+  }
+
+  async setupNewWorktree(path, options) {
+    // Coordinate all steps
+  }
+}
+```
+
+### Progress Callback Pattern
+Report progress without coupling to UI:
+```typescript
+await orchestrator.setupNewWorktree(path, {
+  onProgress: (phase, message) => {
+    spinner.text = message
+  }
+})
+```
+
+### Custom Error Classes
+Specific errors for better handling:
+```typescript
+throw new RsyncNotInstalledError()
+throw new SymlinkConflictError(message, conflicts)
+throw new SetupError(message, result, cause)
+```
+
+## Dependencies
+
+### External
+- `simple-git` - Git operations
+- `globby` - Glob pattern matching
+- `fs-extra` - Enhanced file operations
+- `child_process` - For rsync execution
+
+### Internal
+- `../config/schema` - Configuration types
+
+## Usage Examples
+
+### Git Operations
+```typescript
+import { createGitHelper } from './utils/git'
+
+const git = createGitHelper()
+
+// Check if git repo
+const isRepo = await git.isRepository()
+
+// Get repository root
+const root = await git.getRepositoryRoot()
+
+// Get main worktree path
+const mainPath = await git.getMainWorktreePath()
+
+// Add worktree
+const info = await git.addWorktree('../feature', {
+  branch: 'feature-x',
+  skipPostCreate: true
+})
+```
+
+### File Operations
+```typescript
+import {
+  FileOperationTransaction,
+  createRsyncHelper,
+  createSymlinkHelper
+} from './utils/fileOps'
+
+const transaction = new FileOperationTransaction()
+const rsync = createRsyncHelper(transaction)
+const symlink = createSymlinkHelper(transaction)
+
+try {
+  // Rsync files
+  const rsyncResult = await rsync.rsync(
+    '/source',
+    '/dest',
+    config.rsync,
+    { excludePatterns: ['*.log'] }
+  )
+
+  // Create symlinks
+  const symlinkResult = await symlink.createSymlinks(
+    '/source',
+    '/dest',
+    config.symlink
+  )
+} catch (error) {
+  // Rollback on error
+  await transaction.rollback()
+  throw error
+}
+```
+
+### Worktree Setup
+```typescript
+import { createWorktreeSetupOrchestrator } from './utils/worktreeSetup'
+
+const orchestrator = createWorktreeSetupOrchestrator(gitHelper, config)
+
+const result = await orchestrator.setupNewWorktree(
+  '/path/to/worktree',
+  {
+    rsyncOverride: { exclude: ['tmp/'] },
+    onProgress: (phase, message) => {
+      console.log(`[${phase}] ${message}`)
+    }
+  }
+)
+
+console.log(`Files synced: ${result.rsyncResult?.filesTransferred}`)
+console.log(`Symlinks created: ${result.symlinkResult?.created}`)
+```
+
+## Testing Approach
+
+### Unit Tests
+- Mock simple-git for git operations
+- Mock child_process for rsync
+- Mock fs for file operations
+- Test transaction rollback logic
+- Test error handling
+
+### Integration Tests
+- Use temporary git repositories
+- Test with real rsync (if available)
+- Test real symlink creation
+- Test full orchestration workflow
+- Test rollback with actual operations
+
+## Error Handling
+
+### Rsync Not Installed
+```typescript
+if (!(await rsyncHelper.isInstalled())) {
+  throw new RsyncNotInstalledError()
+}
+```
+
+Command layer catches and shows:
+```
+Error: rsync is not installed
+
+Pando uses rsync to copy files between worktrees.
+Please install rsync:
+  - macOS: brew install rsync
+  - Ubuntu/Debian: apt install rsync
+  - Fedora: dnf install rsync
+
+Or skip rsync: pando worktree add --skip-rsync
+```
+
+### Symlink Conflicts
+```typescript
+const conflicts = await symlinkHelper.detectConflicts(links)
+if (conflicts.length > 0) {
+  throw new SymlinkConflictError('Conflicts detected', conflicts)
+}
+```
+
+Shows which files conflict and why.
+
+### Transaction Rollback
+On any error during setup:
+1. Log the error
+2. Execute transaction.rollback()
+3. Remove worktree completely
+4. Report what was rolled back
+5. Suggest next steps
+
+## Future Considerations
+
+### Planned Features
+1. **Incremental Rsync** - Only sync changed files
+2. **Parallel Operations** - Rsync and symlink in parallel when safe
+3. **Dry Run Mode** - Preview what would be done
+4. **Progress Estimation** - Better progress for large rsyncs
+5. **Conflict Resolution** - Interactive prompts for conflicts
+
+### Alternative Copy Methods
+- Native Node.js copying (fallback if no rsync)
+- Hard links instead of copies (save space)
+- Copy-on-write for supported filesystems
+
+### Enhanced Transaction System
+- Nested transactions
+- Savepoints for partial rollback
+- Transaction log export
+- Replay transactions
+
+## Related Documentation
+
+- [Root ARCHITECTURE.md](../../ARCHITECTURE.md) - System architecture
+- [Worktree Commands DESIGN.md](../commands/worktree/DESIGN.md) - Command integration
+- [Config DESIGN.md](../config/DESIGN.md) - Configuration system
+
+
+================================================================================
+
+# File: src/commands/branch/DESIGN.md
+
+# Branch Commands Design
+
+## Purpose
+
+This module provides CLI commands for managing git branches with integrated worktree support. While git provides basic branch operations, pando enhances them by understanding the relationship between branches and worktrees, enabling coordinated management of both.
+
+## Files Overview
+
+- **create.ts** - Creates new branches with optional worktree creation
+  - Creates branch from specified base (default: main)
+  - Optionally creates worktree for the branch in one step
+  - Validates branch doesn't already exist
+
+- **delete.ts** - Safely deletes branches with worktree cleanup
+  - Checks if branch is merged before deletion
+  - Optionally removes associated worktree
+  - Force flag for unmerged branches
+
+## Key Design Decisions
+
+### Integrated Worktree Operations
+**Chosen**: Branch commands understand and coordinate with worktrees
+**Rationale**:
+- Common workflow: Create branch → Create worktree
+- Cleanup workflow: Delete worktree → Delete branch
+- Reduces cognitive overhead and command count
+- Prevents orphaned branches or worktrees
+
+**Example**:
+```bash
+# Traditional (2 commands)
+git branch feature-x
+pando worktree add --path ../feature-x --branch feature-x
+
+# Integrated (1 command)
+pando branch create --name feature-x --worktree ../feature-x
+```
+
+### Safety-First Defaults
+**Chosen**: Require explicit `--force` for destructive operations
+**Rationale**:
+- Prevent accidental data loss
+- Follow git's own safety conventions
+- Make dangerous operations obvious
+- Educate users about risks
+
+**Implementation**:
+```bash
+# Safe (checks if merged)
+pando branch delete --name feature-x
+
+# Unsafe (requires explicit flag)
+pando branch delete --name feature-x --force
+```
+
+### Default Base Branch
+**Chosen**: Default to 'main' for new branches
+**Rationale**:
+- Modern git convention (main vs master)
+- Most common use case
+- Still allows override with `--from` flag
+
+**Configurable in Future**: Could read from git config or .pandorc
+
+## Patterns Used
+
+### Command Pattern
+Each command follows oclif conventions with static configuration and async execution.
+
+### Validation Before Execution
+Commands validate all inputs before calling GitHelper:
+```typescript
+async run() {
+  const { flags } = await this.parse(CreateBranch)
+
+  // Validate first
+  if (await gitHelper.branchExists(flags.name)) {
+    this.error(`Branch ${flags.name} already exists`)
+  }
+
+  // Then execute
+  await gitHelper.createBranch(flags.name, flags.from)
+}
+```
+
+### Coordinated Operations
+Branch operations coordinate with worktree operations when needed:
+```typescript
+// Delete branch
+await gitHelper.deleteBranch(flags.name, flags.force)
+
+// Also cleanup worktree if requested
+if (flags['remove-worktree']) {
+  const worktree = await gitHelper.findWorktreeByBranch(flags.name)
+  if (worktree) {
+    await gitHelper.removeWorktree(worktree.path, flags.force)
+  }
+}
+```
+
+## Dependencies
+
+### External
+- `@oclif/core` - Command framework
+- `chalk` - Terminal colors (planned)
+- `inquirer` - Interactive prompts (planned)
+
+### Internal
+- `GitHelper` from `src/utils/git.ts` - Git operations
+- `BranchInfo`, `WorktreeInfo` types
+- Worktree commands (for coordinated operations)
+
+## Usage Examples
+
+### Creating Branches
+
+```bash
+# Simple branch creation
+pando branch create --name feature-x
+
+# From specific base
+pando branch create --name feature-x --from develop
+
+# With worktree in one step
+pando branch create --name feature-x --worktree ../feature-x
+
+# JSON output for scripts
+pando branch create --name feature-x --json
+```
+
+### Deleting Branches
+
+```bash
+# Safe deletion (checks if merged)
+pando branch delete --name feature-x
+
+# Force delete unmerged branch
+pando branch delete --name feature-x --force
+
+# Delete branch and its worktree
+pando branch delete --name feature-x --remove-worktree
+
+# Force delete both
+pando branch delete --name feature-x --force --remove-worktree
+```
+
+### Scripting Example
+
+```bash
+# Create feature branch with worktree
+pando branch create --name "feature-$TICKET" --worktree "../feature-$TICKET" --json
+
+# Cleanup after merge
+pando branch delete --name "feature-$TICKET" --remove-worktree --json
+```
+
+## Testing Approach
+
+### Unit Tests
+Test command logic with mocked GitHelper:
+```typescript
+describe('branch create', () => {
+  it('should create branch', async () => {
+    const gitHelper = createMockGitHelper()
+    gitHelper.createBranch.mockResolvedValue({ name: 'test', ... })
+
+    await run(['branch create', '--name', 'test'])
+
+    expect(gitHelper.createBranch).toHaveBeenCalledWith('test', 'main')
+  })
+})
+```
+
+### Integration Tests
+Test with real git operations in temp repositories:
+```typescript
+test
+  .stdout()
+  .command(['branch create', '--name', 'test-branch'])
+  .it('creates a new branch', ctx => {
+    expect(ctx.stdout).to.contain('Created branch: test-branch')
+  })
+```
+
+### Error Cases to Test
+- Branch already exists
+- Invalid base branch
+- Currently checked out branch deletion
+- Unmerged branch deletion without --force
+- Missing worktree for --remove-worktree
+
+## Error Handling
+
+### Validation Errors
+```typescript
+// Branch exists
+if (await gitHelper.branchExists(flags.name)) {
+  this.error(`Branch '${flags.name}' already exists`)
+}
+
+// Invalid base
+if (!(await gitHelper.branchExists(flags.from))) {
+  this.error(`Base branch '${flags.from}' does not exist`)
+}
+```
+
+### Git Operation Errors
+```typescript
+try {
+  await gitHelper.deleteBranch(flags.name, flags.force)
+} catch (error) {
+  if (error.message.includes('not fully merged')) {
+    this.error(
+      `Branch '${flags.name}' is not fully merged. Use --force to delete anyway.`
+    )
+  } else {
+    this.error(`Failed to delete branch: ${error.message}`)
+  }
+}
+```
+
+### Coordinated Operation Errors
+Handle partial failures gracefully:
+```typescript
+try {
+  await gitHelper.deleteBranch(flags.name, flags.force)
+
+  if (flags['remove-worktree']) {
+    try {
+      await gitHelper.removeWorktree(worktreePath, flags.force)
+    } catch (worktreeError) {
+      this.warn(`Branch deleted but worktree removal failed: ${worktreeError.message}`)
+    }
+  }
+} catch (branchError) {
+  this.error(`Failed to delete branch: ${branchError.message}`)
+}
+```
+
+## Future Considerations
+
+### Planned Features
+1. **Branch Templates** - Create branches with predefined structure
+   ```bash
+   pando branch create --name feature-x --template feature
+   # Creates branch, worktree, runs setup scripts
+   ```
+
+2. **Branch Status** - Show merge status, tracking info
+   ```bash
+   pando branch:list --status
+   # Shows: merged, unmerged, tracking remote, behind/ahead
+   ```
+
+3. **Interactive Selection** - Select branch from list
+   ```bash
+   pando branch delete
+   # Shows list of branches to choose from
+   ```
+
+4. **Bulk Operations** - Create/delete multiple branches
+   ```bash
+   pando branch delete --pattern "feature/*" --merged
+   # Deletes all merged feature branches
+   ```
+
+### Configuration Support
+Future `.pandorc` support:
+```json
+{
+  "branch": {
+    "defaultBase": "develop",
+    "autoWorktree": true,
+    "worktreeDir": "../worktrees"
+  }
+}
+```
+
+### Additional Commands
+- `branch:rename` - Rename branch and update worktree
+- `branch:list` - List branches with worktree info
+- `branch:checkout` - Create worktree if doesn't exist
+- `branch:merge` - Merge and cleanup worktree
+
+### Remote Operations
+- `branch:push` - Push with tracking setup
+- `branch:pull` - Pull and update worktrees
+- `branch:sync` - Sync remote tracking branches
+
+## Branch-Worktree Relationship
+
+### Mapping
+- One branch can have **at most one** worktree
+- One worktree always has **exactly one** branch checked out
+- Main worktree (repository root) is special case
+
+### Lifecycle Coordination
+```
+Create:
+  branch create --name X
+  └─> Branch X exists
+
+  branch create --name X --worktree PATH
+  ├─> Branch X exists
+  └─> Worktree at PATH with branch X
+
+Delete:
+  branch delete --name X
+  └─> Branch X deleted (worktree remains)
+
+  branch delete --name X --remove-worktree
+  ├─> Branch X deleted
+  └─> Worktree removed if found
+```
+
+## Related Documentation
+
+- [Worktree Commands DESIGN.md](../worktree/DESIGN.md) - Related worktree operations
+- [Root ARCHITECTURE.md](../../../ARCHITECTURE.md) - System architecture
+- [Root DESIGN.md](../../../DESIGN.md) - High-level design decisions
+- [README.md](../../../README.md) - User documentation
+
+
+================================================================================
+
+# File: src/commands/config/DESIGN.md
+
+# Config Commands Design
+
+## Purpose
+
+The `config` commands allow users to manage their Pando configuration, including initializing a default configuration file and viewing the current configuration state.
+
+## Files in This Module
+
+- `init.ts`: Command to generate a `.pando.toml` configuration file.
+- `show.ts`: Command to display the current configuration (merged from file and env vars).
+
+## Implementation Approach
+
+- **Init**: Checks if a config file already exists to prevent accidental overwrites. Uses `fs-extra` to write a template TOML file.
+- **Show**: Uses the shared `ConfigLoader` utility to resolve the final configuration and prints it. Supports `--json` for machine readability.
+
+## Key Functions/Classes
+
+- `InitConfig`: Extends `Command`. Handles the creation of `.pando.toml`.
+- `ShowConfig`: Extends `Command`. Handles the display of resolved configuration.
+
+## Dependencies
+
+- `@oclif/core`: Command framework.
+- `fs-extra`: File system operations.
+- `../../config/loader`: `ConfigLoader` for resolving configuration.
+
+## Usage Examples
+
+```bash
+# Initialize config
+pando config init
+
+# Show current config
+pando config show
+pando config show --json
+```
+
+## Testing Approach
+
+- **Integration Tests**: Verify that `init` creates the file and `show` outputs the expected values.
+- **Mocking**: Mock `fs-extra` to avoid writing to disk during tests.
+
+## Future Improvements
+
+- Add `config set <key> <value>` command to modify config via CLI.
+- Add validation for config values during `init`.
+
+
+================================================================================
+
+# File: src/commands/worktree/DESIGN.md
+
+# Worktree Commands Design
+
+## Purpose
+
+This module provides CLI commands for managing git worktrees. Git worktrees allow developers to check out multiple branches simultaneously in different directories, enabling parallel development without branch switching overhead.
+
+## Files Overview
+
+- **add.ts** - Creates new worktrees linked to the repository
+  - Handles path, branch, and commit specification
+  - Validates inputs and delegates to GitHelper
+
+- **list.ts** - Displays all worktrees with their metadata
+  - Supports verbose mode for detailed information
+  - Provides JSON output for scripting
+
+- **remove.ts** - Safely removes worktrees with interactive selection
+  - Interactive multi-select when --path not provided
+  - Confirmation step before removal
+  - Batch removal with error resilience
+  - Safety checks for uncommitted changes
+  - Force flag for overriding safety checks
+
+- **navigate.ts** - Helps users navigate to worktrees
+  - Supports lookup by branch name or path
+  - Outputs paths for shell evaluation (`cd $(pando worktree navigate ...)`)
+
+## Key Design Decisions
+
+### Branch Handling: Create vs. Checkout
+**Chosen**: Automatically detect whether to create or checkout branches based on existence
+**Rationale**:- Simplifies user experience - same command works for both cases
+- Reduces cognitive load - users don't need to remember different flags
+- Matches git worktree's natural behavior
+- Enables force-reset workflows with `--force`
+
+**Implementation**:
+- **New branch**: Uses `git worktree add -b <branch>` (create new)
+- **Existing branch**: Uses `git worktree add <path> <branch>` (checkout existing)
+- **Force reset**: Uses `git worktree add -B <branch>` (force create/reset)
+
+**Logic Flow**:
+```typescript
+if (options.branch) {
+  const branchExists = await gitHelper.branchExists(options.branch)
+
+  if (options.force) {
+    // Always use -B to force create/reset
+    args.push('-B', options.branch)
+  } else if (!branchExists) {
+    // Use -b to create new branch
+    args.push('-b', options.branch)
+  }
+  // If branch exists and no force: checkout existing (no flag)
+}
+```
+
+**Examples**:
+```bash
+# Create new branch
+pando worktree add --branch new-feature ../feature
+# → git worktree add -b new-feature ../feature
+
+# Checkout existing branch
+pando worktree add --branch existing-feature ../feature
+# → git worktree add ../feature existing-feature
+
+# Force reset branch to current HEAD/commit
+pando worktree add --branch feature --force ../feature
+# → git worktree add -B feature ../feature
+```
+
+**Validation**:- `--force` requires `--branch` to be specified
+- When using `--branch` and `--commit` together without `--force`, validates branch doesn't already exist
+
+### Flag-Driven Interface with Config Defaults
+**Chosen**: All parameters passed via named flags (`--path`, `--branch`) with optional config defaults
+**Rationale**:
+- More explicit and self-documenting
+- Order-independent
+- Easier to extend with optional parameters
+- Better for automation and scripting
+- Config defaults reduce repetitive flag usage
+
+**Path Resolution Priority**:
+1. CLI flag (`--path`) - Highest priority
+2. Config default (`worktree.defaultPath` in `.pando.toml`) - Used if no flag provided
+3. Error - Required if neither flag nor config provided
+
+**Path Resolution Logic**:
+- When using config default with `--branch` flag, branch name is appended to default path
+- Relative paths resolve from git repository root
+- Absolute paths are used as-is
+- **Branch name sanitization**: Forward slashes (`/`) are converted to underscores (`_`) for filesystem safety
+
+**Example**:
+```toml
+# .pando.toml
+[worktree]
+defaultPath = "../worktrees"
+```
+
+```bash
+# Creates ../worktrees/feature-x (relative to git root)
+pando worktree add --branch feature-x
+
+# Branch names with slashes are sanitized: feature/auth becomes feature_auth
+pando worktree add --branch feature/auth
+# Creates: ../worktrees/feature_auth
+
+# Explicit path overrides config
+pando worktree add --path /custom/path --branch feature-x
+```
+
+**Alternative Rejected**: Positional arguments
+- Would require fixed order
+- Less clear what each argument represents
+- Harder to add optional parameters
+
+### JSON Output Support
+**Chosen**: Every command supports `--json` flag for machine-readable output
+**Rationale**:
+- Enables scripting and automation
+- Supports AI agent integration
+- Consistent with automation-first design philosophy
+
+**Structure**:
+```json
+{
+  "status": "success",
+  "data": { /* command-specific data */ }
+}
+```
+
+### Interactive Prompts as Fallback
+**Chosen**: Prompt for missing required flags instead of erroring
+**Rationale**:
+- Better user experience for interactive use
+- Teaches users what flags are available
+- Doesn't sacrifice scriptability (flags still work)
+
+**Trade-off**: Slightly more complex command logic, but much better UX
+
+**Implementation**: `worktree remove` uses this pattern:
+- When `--path` omitted: Interactive multi-select from available worktrees
+- Excludes main worktree from selection
+- Shows prunable worktrees with indicator (🗑️)
+- Requires confirmation before removal
+- Supports batch removal with error resilience (continues on individual failures)
+- JSON mode still requires `--path` to maintain scriptability
+
+### Navigation Pattern
+**Chosen**: Output paths/commands for shell evaluation
+**Rationale**:
+- CLI can't change parent shell's directory
+- Standard Unix pattern for navigation helpers
+- Works across all shells (bash, zsh, fish)
+
+**Usage**:
+```bash
+cd $(pando worktree navigate --branch feature-x --output-path)
+```
+
+## Post-Creation Setup (New Feature)
+
+### Rsync Operation
+After creating a worktree, pando can automatically copy files from the main worktree:
+
+**Purpose**: Copy gitignored files that aren't tracked by git
+- `node_modules/` for Node.js projects
+- `.env` files with environment variables
+- Build artifacts from previous builds
+- Any other gitignored files
+
+**Configuration**: Via `.pando.toml` or other config files
+```toml
+[rsync]
+enabled = true
+flags = ["--archive", "--exclude", ".git"]
+exclude = ["*.log", "tmp/"]
+```
+
+**CLI Overrides**:
+- `--skip-rsync` - Disable rsync for this worktree
+- `--rsync-flags` - Override rsync flags
+- `--rsync-exclude` - Add exclude patterns
+
+### Selective Symlinks
+Instead of copying certain files, create symlinks that point back to the main worktree:
+
+**Purpose**: Share files that should be synchronized across worktrees
+- `package.json` - Keep dependencies in sync
+- `pnpm-lock.yaml` / `yarn.lock` - Shared lockfiles
+- `.env*` - Shared environment configuration
+- `tsconfig.json` - Shared TypeScript config
+
+**Configuration**: Via `.pando.toml` or other config files
+```toml
+[symlink]
+patterns = ["package.json", "pnpm-lock.yaml", ".env*"]
+relative = true
+beforeRsync = true
+```
+
+**CLI Overrides**:
+- `--skip-symlink` - Disable symlink creation
+- `--symlink` - Override symlink patterns
+- `--absolute-symlinks` - Use absolute instead of relative paths
+
+### Transactional Guarantees
+If any post-creation step fails:
+1. Remove newly created worktree (`git worktree remove --force`)
+2. Clean up any partial symlinks
+3. Report what failed and why
+4. Suggest corrective action
+
+Users are **never** left with broken worktrees.
+
+### Workflow Integration
+```
+pando worktree add --path ../feature --branch feature
+  ↓
+1. Create git worktree (git worktree add)
+  ↓
+2. Load configuration (.pando.toml, env vars, flags)
+  ↓
+3. Create symlinks (if beforeRsync = true)
+  ↓
+4. Execute rsync (copy files from main worktree)
+  ↓
+5. Create symlinks (if beforeRsync = false)
+  ↓
+6. Validate setup
+  ↓
+Success! Worktree ready to use.
+
+(On error: Rollback everything)
+```
+
+## Patterns Used
+
+### Command Pattern
+Each command is a self-contained class following oclif conventions:
+- Static `description` for help text
+- Static `examples` for documentation
+- Static `flags` for argument parsing (using common flags from `src/utils/common-flags.ts`)
+- `async run()` for execution
+
+### Common Flags Pattern
+Shared flags are centralized in `src/utils/common-flags.ts`:
+```typescript
+// Import common flags
+import { pathFlag, jsonFlag } from '../../utils/common-flags.js'
+
+// Use in command
+static flags = {
+  path: pathFlag,  // Reusable, consistent definition
+  json: jsonFlag,
+}
+```
+
+**Benefits**:
+- Consistent flag definitions across commands
+- Single source of truth for flag behavior
+- Easier to update flag descriptions or defaults globally
+
+### Config-First Initialization Pattern
+Commands that use config defaults must load config before validation:
+```typescript
+async run() {
+  // 1. Initialize git helper to get repository root
+  const gitHelper = createGitHelper()
+  const gitRoot = await gitHelper.getRepositoryRoot()
+
+  // 2. Load config before validating path
+  const config = await this.loadAndMergeConfig(...)
+
+  // 3. Validate with config awareness
+  const { resolvedPath } = await this.validateAndInitialize(flags, config, gitRoot)
+}
+```
+
+### Delegation Pattern
+Commands delegate business logic to utilities:
+```typescript
+// Command: CLI concerns only
+const result = await gitHelper.addWorktree(flags.path, flags)
+const setup = await orchestrator.setupNewWorktree(flags.path, options)
+
+// Utilities: Business logic and operations
+```
+
+### Output Formatting Strategy
+Conditional formatting based on `--json` flag:
+```typescript
+if (flags.json) {
+  this.log(JSON.stringify({ status: 'success', data: result }))
+} else {
+  this.log(chalk.green(`✓ Worktree created at ${result.path}`))
+}
+```
+
+## Dependencies
+
+### External
+- `@oclif/core` - Command framework, flag parsing
+- `chalk` - Terminal colors (planned for non-JSON output)
+- `inquirer` - Interactive prompts (planned for missing flags)
+- `ora` - Spinners for long operations (planned)
+
+### Internal
+- `GitHelper` from `src/utils/git.ts` - All git operations
+- `WorktreeInfo`, `BranchInfo` types
+
+## Usage Examples
+
+### Adding a Worktree
+```typescript
+// Interactive
+pando worktree add
+// Prompts: Path? Branch?
+
+// Scripted
+pando worktree add --path ../feature-x --branch feature-x
+
+// From specific commit
+pando worktree add --path ../hotfix --branch hotfix --commit abc123
+
+// JSON output
+pando worktree add --path ../feature-x --branch feature-x --json
+```
+
+### Listing Worktrees
+```typescript
+// Simple list
+pando worktree list
+
+// Verbose
+pando worktree list --verbose
+
+// For scripts
+pando worktree list --json | jq '.data[] | select(.branch == "main")'
+```
+
+### Removing Worktrees
+```typescript
+// Interactive selection (multi-select)
+pando worktree remove
+
+// Interactive selection with force flag
+pando worktree remove --force
+
+// Direct removal with path
+pando worktree remove --path ../feature-x
+
+// Force removal with path
+pando worktree remove --path ../feature-x --force
+
+// JSON output (requires --path)
+pando worktree remove --path ../feature-x --json
+```
+
+### Navigating to Worktrees
+```typescript
+# By branch name
+cd $(pando worktree navigate --branch feature-x --output-path)
+
+# By path
+cd $(pando worktree navigate --path ../feature-x --output-path)
+
+# With shell alias
+alias goto='cd $(pando worktree navigate --output-path --branch $1)'
+goto feature-x
+```
+
+## Testing Approach
+
+### Integration Tests
+Use `@oclif/test` to test command behavior:
+```typescript
+test
+  .stdout()
+  .command(['worktree add', '--path', '../test', '--branch', 'test'])
+  .it('creates a new worktree', ctx => {
+    expect(ctx.stdout).to.contain('Worktree created')
+  })
+```
+
+### Mock Strategy
+Mock GitHelper methods to test command logic without git operations:
+```typescript
+vi.mock('../../utils/git', () => ({
+  createGitHelper: () => ({
+    addWorktree: vi.fn().mockResolvedValue({ path: '../test', branch: 'test' })
+  })
+}))
+```
+
+## Error Handling
+
+### Input Validation
+- Check for required flag combinations
+- Validate paths are not already worktrees
+- Ensure branches/commits exist
+
+### Git Operation Errors
+- Catch errors from GitHelper
+- Transform to user-friendly messages
+- Use `this.error()` for oclif error handling
+
+### Example
+```typescript
+try {
+  await gitHelper.addWorktree(flags.path, { branch: flags.branch })
+} catch (error) {
+  if (error.message.includes('already exists')) {
+    this.error(`Worktree already exists at ${flags.path}`)
+  } else {
+    this.error(`Failed to create worktree: ${error.message}`)
+  }
+}
+```
+
+## Future Considerations
+
+### Planned Enhancements
+1. **Fuzzy Branch Matching** - `navigate --branch feat` finds `feature-x`
+2. **Worktree Templates** - Pre-configured setups for new worktrees
+3. ~~**Interactive Selection**~~ - ✅ Implemented in `worktree remove`
+4. **Worktree Status** - Show uncommitted changes, behind/ahead status
+5. ~~**Bulk Operations**~~ - ✅ Multi-select removal implemented in `worktree remove`
+6. **Interactive Navigation** - Use inquirer to select worktree to navigate to
+
+### Possible Commands
+- `worktree:sync` - Sync with remote
+- `worktree:status` - Show status of all worktrees
+- `worktree:clean` - Remove prunable worktrees
+- `worktree:switch` - Output cd command to switch between worktrees
+
+### Editor Integration
+Potential commands for IDE integration:
+- `worktree:open --editor code` - Open worktree in VSCode
+- `worktree:workspace` - Generate multi-root workspace file
+
+## Related Documentation
+
+- [Root ARCHITECTURE.md](../../../ARCHITECTURE.md) - Overall system architecture
+- [Root DESIGN.md](../../../DESIGN.md) - High-level design decisions
+- [README.md](../../../README.md) - User-facing documentation
