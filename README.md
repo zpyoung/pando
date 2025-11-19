@@ -16,16 +16,19 @@ Pando makes it effortless to work on multiple branches simultaneously using Git 
 ## Installation
 
 ### Using pnpm (recommended)
+
 ```bash
 pnpm install -g pando
 ```
 
 ### Using npm
+
 ```bash
 npm install -g pando
 ```
 
 ### From source
+
 ```bash
 git clone https://github.com/zpyoung/pando.git
 cd pando
@@ -59,9 +62,11 @@ pando branch create --name feature-y --worktree ../feature-y
 ### Worktree Commands
 
 #### `pando worktree add`
+
 Create a new git worktree (supports both creating new branches and checking out existing branches)
 
 **Flags:**
+
 - `-p, --path`: Path for the new worktree (optional if `worktree.defaultPath` is configured)
 - `-b, --branch`: Branch to checkout or create
 - `-c, --commit`: Commit hash to base the new branch on
@@ -69,6 +74,7 @@ Create a new git worktree (supports both creating new branches and checking out 
 - `-j, --json`: Output in JSON format
 
 **Examples:**
+
 ```bash
 # Create new branch in worktree
 pando worktree add --path ../feature-x --branch feature-x
@@ -78,6 +84,8 @@ pando worktree add --path ../existing --branch existing-branch
 
 # Using config default path (if worktree.defaultPath is set in .pando.toml)
 pando worktree add --branch feature-x
+# OR using shorthand (positional argument)
+pando worktree add feature-x
 
 # From specific commit
 pando worktree add --path ../hotfix --branch hotfix --commit abc123
@@ -87,27 +95,33 @@ pando worktree add --path ../feature --branch feature-x --commit abc123 --force
 ```
 
 #### `pando worktree list`
+
 List all git worktrees
 
 **Flags:**
+
 - `-v, --verbose`: Show detailed information
 - `-j, --json`: Output in JSON format
 
 **Examples:**
+
 ```bash
 pando worktree list
 pando worktree list --json
 ```
 
 #### `pando worktree remove`
+
 Remove a git worktree
 
 **Flags:**
+
 - `-p, --path`: Path to the worktree to remove (optional - will prompt interactively if omitted)
 - `-f, --force`: Force removal even with uncommitted changes
 - `-j, --json`: Output in JSON format (requires --path)
 
 **Examples:**
+
 ```bash
 # Interactive selection (select from list)
 pando worktree remove
@@ -121,15 +135,18 @@ pando worktree remove --force
 ```
 
 #### `pando worktree navigate`
+
 Navigate to a git worktree
 
 **Flags:**
+
 - `-b, --branch`: Branch name to navigate to
 - `-p, --path`: Worktree path to navigate to
 - `--output-path`: Output only the path (for shell evaluation)
 - `-j, --json`: Output in JSON format
 
 **Examples:**
+
 ```bash
 pando worktree navigate --branch feature-x
 cd $(pando worktree navigate --branch feature-x --output-path)
@@ -138,30 +155,36 @@ cd $(pando worktree navigate --branch feature-x --output-path)
 ### Branch Commands
 
 #### `pando branch create`
+
 Create a new git branch
 
 **Flags:**
+
 - `-n, --name` (required): Name of the branch to create
 - `-f, --from`: Base branch or commit (default: main)
 - `-w, --worktree`: Automatically create a worktree at this path
 - `-j, --json`: Output in JSON format
 
 **Examples:**
+
 ```bash
 pando branch create --name feature-x
 pando branch create --name feature-x --worktree ../feature-x
 ```
 
 #### `pando branch delete`
+
 Delete a git branch
 
 **Flags:**
+
 - `-n, --name` (required): Name of the branch to delete
 - `-f, --force`: Force deletion even if not fully merged
 - `-w, --remove-worktree`: Also remove associated worktree
 - `-j, --json`: Output in JSON format
 
 **Examples:**
+
 ```bash
 pando branch delete --name feature-x
 pando branch delete --name feature-x --remove-worktree
@@ -199,6 +222,7 @@ The `worktree.defaultPath` setting allows you to specify a default parent direct
 - **Branch name sanitization**: Forward slashes (`/`) in branch names are automatically converted to underscores (`_`) for filesystem safety
 
 **Example:**
+
 ```toml
 [worktree]
 defaultPath = "../worktrees"
@@ -226,6 +250,7 @@ pando worktree add --branch feature-x
 ```
 
 **Environment variable format:**
+
 - Prefix: `PANDO_`
 - Pattern: `PANDO_SECTION_KEY`
 - Example: `PANDO_WORKTREE_DEFAULT_PATH` → `worktree.defaultPath`
@@ -291,6 +316,7 @@ Pando uses clean error messages for expected errors (like "file already exists" 
 **If you see a stack trace for a validation error**, this indicates a bug - please report it!
 
 Common error types:
+
 - **Validation Errors**: Clean error messages without stack traces (use `--force`, missing files, invalid arguments)
 - **Operation Errors**: Runtime failures with context (network errors, permission issues, git command failures)
 - **Internal Errors**: Stack traces indicating bugs that should be reported
@@ -326,18 +352,22 @@ node --inspect bin/dev.js worktree list
 ### Common Issues
 
 **"Not a git repository"**
+
 - Make sure you're running pando from within a git repository
 - Check `git status` works in your current directory
 
 **"Worktree path already exists"**
+
 - The target path already has a directory/file
 - Use a different path or remove the existing path first
 
 **"Worktree has uncommitted changes"**
+
 - The worktree you're trying to remove has uncommitted changes
 - Commit or stash changes first, or use `--force` to remove anyway (WARNING: will lose changes)
 
 **"rsync is not installed"**
+
 - Install rsync for file syncing features
 - macOS: `brew install rsync`
 - Ubuntu/Debian: `apt install rsync`
@@ -353,4 +383,4 @@ MIT © zpyoung
 
 ## Why "Pando"?
 
-[Pando](https://en.wikipedia.org/wiki/Pando_(tree)) is a clonal colony of aspen trees that shares a single root system - much like how git worktrees share a single repository!
+[Pando](<https://en.wikipedia.org/wiki/Pando_(tree)>) is a clonal colony of aspen trees that shares a single root system - much like how git worktrees share a single repository!
