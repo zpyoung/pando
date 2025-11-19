@@ -84,6 +84,7 @@ branch refs/heads/feature
     it('should add a new worktree with branch', async () => {
       mockGit.raw = vi
         .fn()
+        .mockRejectedValueOnce(new Error('not a valid ref')) // branchExists returns false
         .mockResolvedValueOnce('') // worktree add
         .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
 
@@ -109,6 +110,7 @@ branch refs/heads/feature
     it('should add a worktree with commit reference', async () => {
       mockGit.raw = vi
         .fn()
+        .mockRejectedValueOnce(new Error('not a valid ref')) // branchExists returns false
         .mockResolvedValueOnce('') // worktree add
         .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
 
@@ -121,6 +123,81 @@ branch refs/heads/feature
         'worktree',
         'add',
         '-b',
+        'feature',
+        '/path/to/new',
+        'abc123',
+      ])
+    })
+
+    it('should checkout existing branch without -b flag', async () => {
+      // Mock branchExists to return true
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('abc123def456\n') // branchExists (rev-parse --verify)
+        .mockResolvedValueOnce('') // worktree add
+        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      const result = await gitHelper.addWorktree('/path/to/new', {
+        branch: 'existing-branch',
+      })
+
+      expect(result).toEqual({
+        path: '/path/to/new',
+        branch: 'existing-branch',
+        commit: 'abc123def456',
+        isPrunable: false,
+      })
+      // Should NOT use -b flag for existing branch
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'worktree',
+        'add',
+        '/path/to/new',
+        'existing-branch',
+      ])
+    })
+
+    it('should use -B flag when force is true', async () => {
+      // Mock branchExists to return true
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('abc123def456\n') // branchExists (rev-parse --verify)
+        .mockResolvedValueOnce('') // worktree add
+        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      await gitHelper.addWorktree('/path/to/new', {
+        branch: 'feature',
+        force: true,
+      })
+
+      // Should use -B flag when force is true
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'worktree',
+        'add',
+        '-B',
+        'feature',
+        '/path/to/new',
+      ])
+    })
+
+    it('should use -B flag with commit when force is true', async () => {
+      // Mock branchExists to return true
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('abc123def456\n') // branchExists (rev-parse --verify)
+        .mockResolvedValueOnce('') // worktree add
+        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      await gitHelper.addWorktree('/path/to/new', {
+        branch: 'feature',
+        commit: 'abc123',
+        force: true,
+      })
+
+      // Should use -B flag with commit when force is true
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'worktree',
+        'add',
+        '-B',
         'feature',
         '/path/to/new',
         'abc123',

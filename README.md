@@ -46,7 +46,8 @@ pando worktree list
 # Navigate to a worktree (outputs path for shell evaluation)
 cd $(pando worktree navigate --branch feature-x --output-path)
 
-# Remove a worktree
+# Remove a worktree (interactive selection or direct with --path)
+pando worktree remove
 pando worktree remove --path ../feature-x
 
 # Create a branch with a worktree in one command
@@ -58,24 +59,31 @@ pando branch create --name feature-y --worktree ../feature-y
 ### Worktree Commands
 
 #### `pando worktree add`
-Create a new git worktree
+Create a new git worktree (supports both creating new branches and checking out existing branches)
 
 **Flags:**
 - `-p, --path`: Path for the new worktree (optional if `worktree.defaultPath` is configured)
 - `-b, --branch`: Branch to checkout or create
 - `-c, --commit`: Commit hash to base the new branch on
+- `-f, --force`: Force create branch even if it exists (uses git worktree add -B)
 - `-j, --json`: Output in JSON format
 
 **Examples:**
 ```bash
-# With explicit path
+# Create new branch in worktree
 pando worktree add --path ../feature-x --branch feature-x
+
+# Checkout existing branch into worktree
+pando worktree add --path ../existing --branch existing-branch
 
 # Using config default path (if worktree.defaultPath is set in .pando.toml)
 pando worktree add --branch feature-x
 
 # From specific commit
 pando worktree add --path ../hotfix --branch hotfix --commit abc123
+
+# Force reset existing branch to commit
+pando worktree add --path ../feature --branch feature-x --commit abc123 --force
 ```
 
 #### `pando worktree list`
@@ -95,14 +103,21 @@ pando worktree list --json
 Remove a git worktree
 
 **Flags:**
-- `-p, --path`: Path to the worktree to remove (required)
+- `-p, --path`: Path to the worktree to remove (optional - will prompt interactively if omitted)
 - `-f, --force`: Force removal even with uncommitted changes
-- `-j, --json`: Output in JSON format
+- `-j, --json`: Output in JSON format (requires --path)
 
 **Examples:**
 ```bash
+# Interactive selection (select from list)
+pando worktree remove
+
+# Direct removal with path
 pando worktree remove --path ../feature-x
 pando worktree remove --path ../feature-x --force
+
+# Interactive multi-select with force flag
+pando worktree remove --force
 ```
 
 #### `pando worktree navigate`
