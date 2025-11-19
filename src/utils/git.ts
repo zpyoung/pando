@@ -71,16 +71,34 @@ export class GitHelper {
 
   /**
    * Add a new worktree
+   * Supports creating new branches (-b), checking out existing branches,
+   * and force-resetting branches (-B)
    */
   async addWorktree(
     path: string,
-    options?: { branch?: string; commit?: string; skipPostCreate?: boolean }
+    options?: {
+      branch?: string
+      commit?: string
+      force?: boolean
+      skipPostCreate?: boolean
+    }
   ): Promise<WorktreeInfo> {
     const args = ['worktree', 'add']
 
-    // Add branch option if specified
+    // Determine if branch exists when branch is specified
+    const branchExists =
+      options?.branch ? await this.branchExists(options.branch) : false
+
+    // Add branch option with appropriate flag
     if (options?.branch) {
-      args.push('-b', options.branch)
+      if (options?.force) {
+        // -B flag: Force create/reset branch
+        args.push('-B', options.branch)
+      } else if (!branchExists) {
+        // -b flag: Create new branch
+        args.push('-b', options.branch)
+      }
+      // If branch exists and no force: no flag needed, git will checkout existing branch
     }
 
     // Add path
@@ -89,6 +107,9 @@ export class GitHelper {
     // Add commit/branch reference if specified
     if (options?.commit) {
       args.push(options.commit)
+    } else if (options?.branch && branchExists && !options?.force) {
+      // When checking out existing branch without commit, explicitly pass branch name
+      args.push(options.branch)
     }
 
     // Execute worktree add command

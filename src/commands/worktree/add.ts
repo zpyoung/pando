@@ -36,6 +36,11 @@ export default class AddWorktree extends Command {
       description: 'Commit hash to base the new branch on',
       required: false,
     }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'Force create branch even if it exists (uses git worktree add -B)',
+      default: false,
+    }),
 
     // Rsync control flags
     'skip-rsync': Flags.boolean({
@@ -205,14 +210,23 @@ export default class AddWorktree extends Command {
       )
     }
 
-    // Validate branch/commit if provided
-    if (flags.branch && flags.commit) {
+    // Validate force flag requires branch
+    if (flags.force && !flags.branch) {
+      ErrorHelper.validation(
+        this,
+        'The --force flag requires --branch to be specified',
+        flags.json as boolean | undefined
+      )
+    }
+
+    // Validate branch/commit combination when force is NOT set
+    if (flags.branch && flags.commit && !flags.force) {
       // Check if branch already exists
       const branchExists = await gitHelper.branchExists(String(flags.branch))
       if (branchExists) {
         ErrorHelper.validation(
           this,
-          `Branch '${String(flags.branch)}' already exists. Choose a different branch name or omit --branch to checkout the commit in detached HEAD state.`,
+          `Branch '${String(flags.branch)}' already exists. Choose a different branch name, use --force to reset the branch, or omit --branch to checkout the commit in detached HEAD state.`,
           flags.json as boolean | undefined
         )
       }
@@ -288,6 +302,7 @@ export default class AddWorktree extends Command {
       return await gitHelper.addWorktree(resolvedPath, {
         branch: flags.branch as string | undefined,
         commit: flags.commit as string | undefined,
+        force: flags.force as boolean | undefined,
         skipPostCreate: true,
       })
     } catch (error) {

@@ -14,8 +14,11 @@ This module provides CLI commands for managing git worktrees. Git worktrees allo
   - Supports verbose mode for detailed information
   - Provides JSON output for scripting
 
-- **remove.ts** - Safely removes worktrees
-  - Includes safety checks for uncommitted changes
+- **remove.ts** - Safely removes worktrees with interactive selection
+  - Interactive multi-select when --path not provided
+  - Confirmation step before removal
+  - Batch removal with error resilience
+  - Safety checks for uncommitted changes
   - Force flag for overriding safety checks
 
 - **navigate.ts** - Helps users navigate to worktrees
@@ -23,6 +26,52 @@ This module provides CLI commands for managing git worktrees. Git worktrees allo
   - Outputs paths for shell evaluation (`cd $(pando worktree navigate ...)`)
 
 ## Key Design Decisions
+
+### Branch Handling: Create vs. Checkout
+**Chosen**: Automatically detect whether to create or checkout branches based on existence
+**Rationale**:- Simplifies user experience - same command works for both cases
+- Reduces cognitive load - users don't need to remember different flags
+- Matches git worktree's natural behavior
+- Enables force-reset workflows with `--force`
+
+**Implementation**:
+- **New branch**: Uses `git worktree add -b <branch>` (create new)
+- **Existing branch**: Uses `git worktree add <path> <branch>` (checkout existing)
+- **Force reset**: Uses `git worktree add -B <branch>` (force create/reset)
+
+**Logic Flow**:
+```typescript
+if (options.branch) {
+  const branchExists = await gitHelper.branchExists(options.branch)
+
+  if (options.force) {
+    // Always use -B to force create/reset
+    args.push('-B', options.branch)
+  } else if (!branchExists) {
+    // Use -b to create new branch
+    args.push('-b', options.branch)
+  }
+  // If branch exists and no force: checkout existing (no flag)
+}
+```
+
+**Examples**:
+```bash
+# Create new branch
+pando worktree add --branch new-feature ../feature
+# → git worktree add -b new-feature ../feature
+
+# Checkout existing branch
+pando worktree add --branch existing-feature ../feature
+# → git worktree add ../feature existing-feature
+
+# Force reset branch to current HEAD/commit
+pando worktree add --branch feature --force ../feature
+# → git worktree add -B feature ../feature
+```
+
+**Validation**:- `--force` requires `--branch` to be specified
+- When using `--branch` and `--commit` together without `--force`, validates branch doesn't already exist
 
 ### Flag-Driven Interface with Config Defaults
 **Chosen**: All parameters passed via named flags (`--path`, `--branch`) with optional config defaults
@@ -91,6 +140,14 @@ pando worktree add --path /custom/path --branch feature-x
 - Doesn't sacrifice scriptability (flags still work)
 
 **Trade-off**: Slightly more complex command logic, but much better UX
+
+**Implementation**: `worktree remove` uses this pattern:
+- When `--path` omitted: Interactive multi-select from available worktrees
+- Excludes main worktree from selection
+- Shows prunable worktrees with indicator (🗑️)
+- Requires confirmation before removal
+- Supports batch removal with error resilience (continues on individual failures)
+- JSON mode still requires `--path` to maintain scriptability
 
 ### Navigation Pattern
 **Chosen**: Output paths/commands for shell evaluation
@@ -287,11 +344,20 @@ pando worktree list --json | jq '.data[] | select(.branch == "main")'
 
 ### Removing Worktrees
 ```typescript
-// Safe removal
+// Interactive selection (multi-select)
+pando worktree remove
+
+// Interactive selection with force flag
+pando worktree remove --force
+
+// Direct removal with path
 pando worktree remove --path ../feature-x
 
-// Force removal
+// Force removal with path
 pando worktree remove --path ../feature-x --force
+
+// JSON output (requires --path)
+pando worktree remove --path ../feature-x --json
 ```
 
 ### Navigating to Worktrees
@@ -360,9 +426,10 @@ try {
 ### Planned Enhancements
 1. **Fuzzy Branch Matching** - `navigate --branch feat` finds `feature-x`
 2. **Worktree Templates** - Pre-configured setups for new worktrees
-3. **Interactive Selection** - Use inquirer to select from list
+3. ~~**Interactive Selection**~~ - ✅ Implemented in `worktree remove`
 4. **Worktree Status** - Show uncommitted changes, behind/ahead status
-5. **Bulk Operations** - Add/remove multiple worktrees at once
+5. ~~**Bulk Operations**~~ - ✅ Multi-select removal implemented in `worktree remove`
+6. **Interactive Navigation** - Use inquirer to select worktree to navigate to
 
 ### Possible Commands
 - `worktree:sync` - Sync with remote
