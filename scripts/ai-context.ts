@@ -1,5 +1,5 @@
 import fs from 'fs-extra';
-import path from 'path';
+
 import { globby } from 'globby';
 
 const OUTPUT_FILE = 'llm.txt';

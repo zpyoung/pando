@@ -1,4 +1,4 @@
-import { Command, Flags } from '@oclif/core'
+import { Args, Command, Flags } from '@oclif/core'
 import { createGitHelper } from '../../utils/git.js'
 import { loadConfig } from '../../config/loader.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../../utils/worktreeSetup.js'
@@ -16,12 +16,20 @@ export default class AddWorktree extends Command {
   static description = 'Add a new git worktree with optional rsync and symlink setup'
 
   static examples = [
+    '<%= config.bin %> <%= command.id %> feature-x',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --branch feature-x',
     '<%= config.bin %> <%= command.id %> --path ../hotfix --branch hotfix --commit abc123',
     '<%= config.bin %> <%= command.id %> --path ../feature-y --branch feature-y --json',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --branch feature-x --skip-rsync',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --branch feature-x --symlink "package.json"',
   ]
+
+  static args = {
+    branch: Args.string({
+      description: 'Branch name to checkout or create',
+      required: false,
+    }),
+  }
 
   static flags = {
     // Basic worktree flags
@@ -76,7 +84,13 @@ export default class AddWorktree extends Command {
   }
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(AddWorktree)
+    const { flags, args } = await this.parse(AddWorktree)
+    
+    // Use positional arg as branch if --branch is not provided
+    if (args.branch && !flags.branch) {
+      flags.branch = args.branch
+    }
+
     const startTime = Date.now()
 
     const { spinner, chalk } = await this.initializeUI(flags.json)
