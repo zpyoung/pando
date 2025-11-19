@@ -9,6 +9,7 @@ This file provides AI assistants with project-specific context, patterns, and gu
 ## Quick Reference
 
 ### Project Commands
+
 ```bash
 pnpm install       # Install dependencies
 pnpm build         # Compile TypeScript
@@ -19,6 +20,7 @@ pnpm format        # Format code
 ```
 
 ### Beads Commands (Task Management)
+
 ```bash
 bd ready --json           # Find ready work (no blockers)
 bd list --json            # List all issues
@@ -35,6 +37,7 @@ bd sync                   # Sync with git (run at session end)
 **Versioned State**: `.beads/issues.jsonl` (committed to git)
 
 ### Key Directories
+
 - `src/commands/` - Command implementations (CLI layer)
 - `src/utils/` - Business logic and git operations
 - `test/` - Test files (mirrors src structure)
@@ -53,9 +56,7 @@ import { Command, Flags } from '@oclif/core'
 export default class VerbTopic extends Command {
   static description = 'Clear description of what this does'
 
-  static examples = [
-    '<%= config.bin %> <%= command.id %> --required-flag value',
-  ]
+  static examples = ['<%= config.bin %> <%= command.id %> --required-flag value']
 
   static flags = {
     requiredFlag: Flags.string({
@@ -120,12 +121,8 @@ import { ErrorHelper } from '../../utils/errors.js'
 
 // 1. VALIDATION ERRORS (expected user errors)
 // Use for: file exists, invalid arguments, missing requirements
-if (await fs.pathExists(path) && !flags.force) {
-  ErrorHelper.validation(
-    this,
-    'File already exists. Use --force to overwrite.',
-    flags.json
-  )
+if ((await fs.pathExists(path)) && !flags.force) {
+  ErrorHelper.validation(this, 'File already exists. Use --force to overwrite.', flags.json)
 }
 
 // 2. OPERATION ERRORS (runtime failures)
@@ -133,33 +130,22 @@ if (await fs.pathExists(path) && !flags.force) {
 try {
   await gitHelper.operation()
 } catch (error) {
-  ErrorHelper.operation(
-    this,
-    error as Error,
-    'Failed to execute operation',
-    flags.json
-  )
+  ErrorHelper.operation(this, error as Error, 'Failed to execute operation', flags.json)
 }
 
 // 3. UNEXPECTED ERRORS (internal bugs)
 // Use for: missing initialization, invalid state, should-never-happen
 if (!chalk) {
-  ErrorHelper.unexpected(
-    this,
-    new Error('Chalk not initialized - this is a bug')
-  )
+  ErrorHelper.unexpected(this, new Error('Chalk not initialized - this is a bug'))
 }
 
 // 4. WARNINGS (non-fatal issues)
 // Use for: deprecated features, ignored config, potential issues
-ErrorHelper.warn(
-  this,
-  'This feature is deprecated. Use --new-feature instead.',
-  flags.json
-)
+ErrorHelper.warn(this, 'This feature is deprecated. Use --new-feature instead.', flags.json)
 ```
 
 **Key Differences:**
+
 - `validation()` - Clean errors without stack traces (expected)
 - `operation()` - Contextual errors for runtime failures
 - `unexpected()` - Shows stack traces for debugging bugs
@@ -167,6 +153,7 @@ ErrorHelper.warn(
 
 **JSON Support:**
 All error methods automatically support `--json` flag:
+
 - Validation errors: `{ status: 'error', error: 'message' }`
 - Operation errors: `{ status: 'error', error: 'message', context: '...', details: '...' }`
 - Warnings: `{ status: 'warning', warning: 'message' }`
@@ -226,6 +213,7 @@ Keep files under 250 lines. If longer, extract utilities.
 ### Adding a New Command
 
 1. **Create command file**:
+
    ```bash
    touch src/commands/topic/verb.ts
    ```
@@ -233,6 +221,7 @@ Keep files under 250 lines. If longer, extract utilities.
 2. **Implement command** (follow Command Pattern above)
 
 3. **Create test file**:
+
    ```bash
    touch test/commands/topic/verb.test.ts
    ```
@@ -247,6 +236,7 @@ Keep files under 250 lines. If longer, extract utilities.
 ### Adding Git Operations
 
 1. **Add method to GitHelper** in `src/utils/git.ts`:
+
    ```typescript
    async newOperation(params: Type): Promise<ResultType> {
      // Implementation with TODOs
@@ -261,11 +251,13 @@ Keep files under 250 lines. If longer, extract utilities.
 ### Implementing TODOs
 
 Look for `// TODO:` comments in stub files. Each TODO includes:
+
 - What needs to be done
 - Step-by-step implementation hints
 - Expected behavior
 
 Example:
+
 ```typescript
 // TODO: Implement worktree add logic
 // 1. Validate the repository is a git repo
@@ -285,11 +277,13 @@ Example:
 ### Documentation File Types
 
 #### 1. CLAUDE.md (Project Root Only)
+
 **Purpose**: AI assistant context and project-specific guidelines
 
 **Location**: Project root (`/CLAUDE.md`)
 
 **Update When**:
+
 - Project patterns or conventions change
 - New common tasks are established
 - Dependencies are added or removed
@@ -297,6 +291,7 @@ Example:
 - New workflows or development practices are adopted
 
 **Contents**:
+
 - Project overview and quick reference
 - Architecture patterns and coding conventions
 - Common tasks and workflows
@@ -306,10 +301,37 @@ Example:
 - Project status
 - Resources and references
 
+### AI Workflow (Spec-Driven Development)
+
+We follow a **Spec-Driven Development (SDD)** workflow to ensure AI agents have clear context.
+
+#### 1. Core Context Files (`ai-docs/`)
+
+- **`SPEC.md`**: High-level goals and user stories. **Start here.**
+- **`PLAN.md`**: Technical architecture and implementation plan.
+- **`TASKS.md`**: Atomic checklist of tasks.
+- **`CONTEXT.md`**: Domain glossary and constraints.
+- **`LESSONS.md`**: Feedback loop (patterns to keep/avoid).
+
+#### 2. Workflow Steps
+
+1. **Update Specs**: Before writing code, update `SPEC.md` and `PLAN.md`.
+2. **Define Tasks**: Break down work into `TASKS.md`.
+3. **Implement**: Execute tasks one by one.
+4. **Validate**: Run `pnpm ai:validate` to ensure docs are in sync.
+5. **Update Context**: Run `pnpm ai:context` to refresh `llm.txt`.
+
+#### 3. Automation
+
+- `pnpm ai:context`: Generates `llm.txt` (full project context).
+- `pnpm ai:validate`: Checks for missing `DESIGN.md` files.
+
 #### 2. ARCHITECTURE.md (Major/Important Folders)
+
 **Purpose**: High-level architectural decisions and system design
 
 **Placement Rules**:
+
 - **Always** in project root
 - In **major feature directories** (e.g., `src/plugins/`, `src/core/`)
 - In **significant subsystems** with multiple components
@@ -317,12 +339,14 @@ Example:
 - When introducing a new architectural pattern
 
 **Do NOT create in**:
+
 - Test directories
 - Single-file directories
 - Utility folders with simple helpers
 - Build/config directories
 
 **Update When**:
+
 - Adding new architectural layers or patterns
 - Changing module dependencies
 - Adding new major features or subsystems
@@ -331,47 +355,59 @@ Example:
 - Modifying data flow or execution patterns
 
 **Contents**:
+
 ```markdown
 # [Module/Feature] Architecture
 
 ## Overview
+
 High-level description of the module/subsystem
 
 ## Components
+
 Major components and their responsibilities
 
 ## Architecture Pattern
+
 What pattern is used (layered, plugin, event-driven, etc.)
 
 ## Dependencies
+
 What this module depends on and what depends on it
 
 ## Data Flow
+
 How data moves through the system
 
 ## Extension Points
+
 How to extend or modify this architecture
 
 ## Design Decisions
+
 Key architectural choices and rationale
 ```
 
 #### 3. DESIGN.md (Most Individual Folders)
+
 **Purpose**: Lower-level design decisions and implementation details
 
 **Placement Rules**:
+
 - In **feature directories** (e.g., `src/commands/worktree/`)
 - In **utility directories** (e.g., `src/utils/`)
 - In **any folder with 2+ implementation files**
 - When a folder represents a cohesive feature or concern
 
 **Do NOT create in**:
+
 - Test directories (tests document themselves)
 - Folders with only types/interfaces
 - Folders with single utility files
 - Parent folders that only contain subdirectories
 
 **Update When**:
+
 - Adding new files to the folder
 - Changing implementation approach
 - Adding new patterns or utilities
@@ -379,39 +415,49 @@ Key architectural choices and rationale
 - Adding new dependencies or integrations
 
 **Contents**:
+
 ```markdown
 # [Feature/Module] Design
 
 ## Purpose
+
 What this module does and why it exists
 
 ## Files Overview
+
 Brief description of each file in this directory
 
 ## Key Design Decisions
+
 - Why this approach was chosen
 - Trade-offs considered
 - Alternative approaches rejected
 
 ## Patterns Used
+
 Specific patterns or techniques used in this module
 
 ## Dependencies
+
 Libraries or modules this depends on
 
 ## Usage Examples
+
 How to use the main exports from this module
 
 ## Future Considerations
+
 Potential improvements or extensions
 ```
 
 #### 4. README.md
+
 **Purpose**: User-facing documentation
 
 **Location**: Project root (and optionally in major subdirectories)
 
 **Update When**:
+
 - Adding new commands or features
 - Changing command flags or behavior
 - Adding new installation methods
@@ -419,6 +465,7 @@ Potential improvements or extensions
 - Adding new examples or use cases
 
 **Contents**:
+
 - Project description
 - Installation instructions
 - Quick start guide
@@ -431,6 +478,7 @@ Potential improvements or extensions
 When making code changes, AI assistants MUST follow this workflow:
 
 #### Step 1: Identify Affected Documentation
+
 ```
 Code Change → Check:
 ├─ Does this change affect user-facing behavior? → Update README.md
@@ -440,6 +488,7 @@ Code Change → Check:
 ```
 
 #### Step 2: Update Documentation Files
+
 **Do this automatically WITHOUT asking the user**
 
 ```typescript
@@ -453,6 +502,7 @@ Code Change → Check:
 ```
 
 #### Step 3: Commit Documentation with Code
+
 **Include documentation updates in the same commit**
 
 ```bash
@@ -474,6 +524,7 @@ git commit -m "feat(worktree): add sync command
 **Code Change**: Create `src/commands/worktree/sync.ts`
 
 **Required Documentation Updates**:
+
 1. **README.md**: Add command to reference section with examples
 2. **src/commands/worktree/DESIGN.md**: Add description of sync command
 3. **CLAUDE.md**: Update if new patterns are introduced (e.g., new git operation)
@@ -483,6 +534,7 @@ git commit -m "feat(worktree): add sync command
 **Code Change**: Create `src/utils/config.ts` for configuration management
 
 **Required Documentation Updates**:
+
 1. **src/utils/DESIGN.md**: Create or update with config utility details
 2. **ARCHITECTURE.md** (root): Update "Utility Layer" section
 3. **CLAUDE.md**: Add to "Common Patterns" if it's a new pattern
@@ -492,6 +544,7 @@ git commit -m "feat(worktree): add sync command
 **Code Change**: Split GitHelper into separate classes per concern
 
 **Required Documentation Updates**:
+
 1. **ARCHITECTURE.md** (root): Update architecture layers and patterns
 2. **src/utils/DESIGN.md**: Update with new structure
 3. **CLAUDE.md**: Update patterns and common tasks
@@ -500,85 +553,107 @@ git commit -m "feat(worktree): add sync command
 ### Documentation Structure Guidelines
 
 #### ARCHITECTURE.md Structure
+
 ```markdown
 # [Name] Architecture
 
 ## Overview
+
 2-3 paragraphs: What is this, why it exists, high-level approach
 
 ## Technology Stack
+
 Table or list of technologies and their purposes
 
 ## Architecture Layers/Components
+
 Detailed breakdown of major components
 
 ## Module Organization
+
 How code is organized (vertical slice, layered, etc.)
 
 ## Key Patterns
+
 Design patterns used (Command, Factory, etc.)
 
 ## Data Flow
+
 How data moves through the system
 
 ## Extension Points
+
 How to add new features or modify behavior
 
 ## Design Decisions
+
 Major decisions and their rationale
 ```
 
 #### DESIGN.md Structure
+
 ```markdown
 # [Name] Design
 
 ## Purpose
+
 1-2 paragraphs: What this does and why
 
 ## Files in This Module
+
 - file1.ts - Description
 - file2.ts - Description
 
 ## Implementation Approach
+
 Why this approach over alternatives
 
 ## Key Functions/Classes
+
 Brief description of main exports
 
 ## Dependencies
+
 What this module uses
 
 ## Usage
+
 Code examples of common usage
 
 ## Testing Approach
+
 How this module is tested
 
 ## Future Improvements
+
 Potential enhancements
 ```
 
 ### When to Create New Documentation Files
 
 #### Create ARCHITECTURE.md when:
+
 - [ ] Creating a new major directory (src/plugins/, src/integrations/)
 - [ ] Directory has 5+ files or 3+ subdirectories
 - [ ] Introducing a new architectural pattern
 - [ ] Creating a subsystem with multiple interacting components
 
 #### Create DESIGN.md when:
+
 - [ ] Creating a feature directory with 2+ files
 - [ ] Adding utility modules that others will use
 - [ ] Implementing a complex algorithm or pattern
 - [ ] Creating reusable components
 
 #### Update README.md when:
+
 - [ ] Adding user-facing commands
 - [ ] Changing installation or setup
 - [ ] Adding new features or capabilities
 - [ ] Changing CLI behavior
 
 #### Update CLAUDE.md when:
+
 - [ ] Establishing new coding patterns
 - [ ] Adding common tasks or workflows
 - [ ] Changing project structure significantly
@@ -587,6 +662,7 @@ Potential enhancements
 ### Documentation Quality Standards
 
 #### All documentation files MUST:
+
 - Use clear, concise language
 - Include code examples where relevant
 - Be kept synchronized with code
@@ -595,12 +671,14 @@ Potential enhancements
 - Be up-to-date (no stale information)
 
 #### ARCHITECTURE.md files MUST:
+
 - Explain high-level structure and patterns
 - Show component relationships
 - Document key design decisions
 - Explain extension points
 
 #### DESIGN.md files MUST:
+
 - Describe implementation details
 - List all files in the directory
 - Explain design choices
@@ -609,6 +687,7 @@ Potential enhancements
 ### Enforcement
 
 **AI assistants MUST**:
+
 - Check for missing documentation files when creating new directories
 - Update affected documentation files automatically when making code changes
 - Create DESIGN.md files for new feature directories
@@ -616,6 +695,7 @@ Potential enhancements
 - Never ask the user "should I update documentation?" - just do it
 
 **AI assistants SHOULD**:
+
 - Suggest documentation improvements when reading outdated files
 - Flag inconsistencies between code and documentation
 - Offer to create missing documentation files proactively
@@ -647,7 +727,7 @@ describe('worktree add', () => {
   test
     .stdout()
     .command(['worktree add', '--path', '../test', '--branch', 'test'])
-    .it('creates a new worktree', ctx => {
+    .it('creates a new worktree', (ctx) => {
       expect(ctx.stdout).to.contain('Worktree created')
     })
 })
@@ -673,6 +753,7 @@ pnpm test:coverage       # With coverage
 ### Commits
 
 Follow conventional commits:
+
 ```
 feat(worktree): add navigation command
 fix(branch): handle deleted branches correctly
@@ -710,10 +791,12 @@ async run(): Promise<void> {
 
 ```typescript
 if (flags.json) {
-  this.log(JSON.stringify({
-    status: 'success',
-    data: result
-  }))
+  this.log(
+    JSON.stringify({
+      status: 'success',
+      data: result,
+    })
+  )
 } else {
   // Human-readable output with chalk
   this.log(chalk.green(`✓ Operation completed`))
@@ -756,15 +839,13 @@ if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
 }
 
 // Now execute rsync - it will skip symlink-intended files
-rsyncResult = await this.rsyncHelper.rsync(
-  sourceTreePath,
-  worktreePath,
-  rsyncConfig,
-  { excludePatterns }
-)
+rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
+  excludePatterns,
+})
 ```
 
 **Why This Matters**:
+
 - **Efficiency**: Prevents wasted rsync operations copying files that will be symlinked
 - **No Conflicts**: Eliminates conflicts between rsync and symlink operations
 - **Works Regardless of Timing**: Functions correctly whether symlinks are created before or after rsync
@@ -773,6 +854,7 @@ rsyncResult = await this.rsyncHelper.rsync(
 **Location**: `src/utils/worktreeSetup.ts` (Phase 4: Rsync)
 
 **Best Practices for Symlink Patterns**:
+
 - **Good**: Non-tracked files that should sync across worktrees
   - `node_modules/` (after install in main worktree)
   - `.env` files (local configuration)
@@ -841,6 +923,7 @@ if (process.env.NODE_DEBUG?.includes('pando')) {
 ## Dependencies
 
 ### Core Dependencies
+
 - `@oclif/core` - CLI framework
 - `simple-git` - Git operations
 - `chalk` - Terminal colors
@@ -848,6 +931,7 @@ if (process.env.NODE_DEBUG?.includes('pando')) {
 - `ora` - Spinners
 
 ### Dev Dependencies
+
 - `typescript` - Type checking
 - `vitest` - Testing
 - `@oclif/test` - CLI testing
@@ -881,6 +965,7 @@ bd ready --priority 0 --json
 ```
 
 **MCP Integration**:
+
 ```python
 mcp__plugin_beads_beads__ready(limit=5, priority=0)
 ```
@@ -893,6 +978,7 @@ bd update pando-3 --status in_progress --json
 ```
 
 **MCP Integration**:
+
 ```python
 mcp__plugin_beads_beads__update(
     issue_id="pando-3",
@@ -918,6 +1004,7 @@ bd create "Add rate limiting" \
 ```
 
 **MCP Integration**:
+
 ```python
 mcp__plugin_beads_beads__create(
     title="Fix authentication bug",
@@ -945,6 +1032,7 @@ bd close pando-3 --reason "Implemented and tested" --json
 ```
 
 **MCP Integration**:
+
 ```python
 mcp__plugin_beads_beads__close(
     issue_id="pando-3",
@@ -973,6 +1061,7 @@ bd dep add pando-10 pando-3 --type discovered-from --json
 ```
 
 **MCP Integration**:
+
 ```python
 mcp__plugin_beads_beads__dep(
     issue_id="pando-5",
@@ -1034,6 +1123,7 @@ bd sync --json
 ### MCP Server Usage
 
 **Workspace Context**: Always set context before operations:
+
 ```python
 mcp__plugin_beads_beads__set_context(
     workspace_root="/path/to/project"
@@ -1041,6 +1131,7 @@ mcp__plugin_beads_beads__set_context(
 ```
 
 **Common Operations**:
+
 - `mcp__plugin_beads_beads__ready()` - Find ready work
 - `mcp__plugin_beads_beads__list()` - List issues with filters
 - `mcp__plugin_beads_beads__show()` - Get issue details
@@ -1059,6 +1150,7 @@ blocked ←───┘
 ```
 
 **Status Values**:
+
 - `open`: Ready to work on (if no blockers)
 - `in_progress`: Currently being worked on
 - `blocked`: Has unresolved dependencies
@@ -1099,9 +1191,11 @@ bd label list-all --json
 ## Project Status
 
 ### Current Phase
+
 **Scaffolding Complete** - All stubs in place, ready for implementation
 
 ### Ready for Implementation
+
 - All command files have TODOs with step-by-step guidance
 - Test files are scaffolded
 - GitHelper has method signatures defined
@@ -1131,6 +1225,7 @@ Use `bd ready --json` to see current ready tasks. Track implementation progress 
 ## AI Assistant Notes
 
 ### This codebase is optimized for AI collaboration:
+
 - **Clear structure**: Predictable file organization
 - **Focused files**: Single responsibility, easy to understand
 - **Type safety**: TypeScript provides guardrails
@@ -1139,6 +1234,7 @@ Use `bd ready --json` to see current ready tasks. Track implementation progress 
 - **Beads integration**: AI-first task management with dependency tracking
 
 ### When implementing:
+
 1. **Start session**: Check `bd ready --json` for available work
 2. **Claim task**: Update task status to `in_progress` before starting
 3. Read related docs (ARCHITECTURE.md, DESIGN.md)
@@ -1152,6 +1248,7 @@ Use `bd ready --json` to see current ready tasks. Track implementation progress 
 11. **End session**: Run `bd sync` to commit all changes
 
 ### Code Review Checklist:
+
 - [ ] TypeScript strict mode passes
 - [ ] Tests pass
 - [ ] Follows naming conventions

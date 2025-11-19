@@ -45,3 +45,8 @@ temp/
 
 # oclif
 oclif.manifest.json
+
+# AI Artifacts
+.aider*
+.cursor/
+*.log
