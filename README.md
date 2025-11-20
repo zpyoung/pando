@@ -121,7 +121,17 @@ Remove a git worktree
 
 - `-p, --path`: Path to the worktree to remove (optional - will prompt interactively if omitted)
 - `-f, --force`: Force removal even with uncommitted changes
+- `-d, --delete-branch`: Delete associated branch after removing worktree (`none`|`local`|`remote`)
+  - `none`: Don't delete any branches (default)
+  - `local`: Delete local branch only
+  - `remote`: Delete both local and remote branches
 - `-j, --json`: Output in JSON format (requires --path)
+
+**Branch Deletion Safety:**
+- Before deleting, checks if branch is merged (use `--force` to skip this check)
+- Remote branch deletion requires confirmation unless `--force` is used
+- If branch doesn't exist on remote, only local is deleted
+- Use `worktree.deleteBranchOnRemove` in config to set default behavior
 
 **Examples:**
 
@@ -132,6 +142,12 @@ pando worktree remove
 # Direct removal with path
 pando worktree remove --path ../feature-x
 pando worktree remove --path ../feature-x --force
+
+# Remove worktree and delete local branch
+pando worktree remove --path ../feature-x --delete-branch local
+
+# Remove worktree and delete both local and remote branches
+pando worktree remove --path ../feature-x --delete-branch remote --force
 
 # Interactive multi-select with force flag
 pando worktree remove --force
@@ -213,6 +229,8 @@ beforeRsync = true
 # Worktree Configuration
 [worktree]
 defaultPath = "../worktrees"  # Default parent directory for worktrees
+rebaseOnAdd = true            # Rebase existing branches when adding worktree
+deleteBranchOnRemove = "none" # Delete branch on worktree remove: "none", "local", "remote"
 ```
 
 ### Worktree Default Path
@@ -250,6 +268,9 @@ export PANDO_WORKTREE_DEFAULT_PATH="../worktrees"
 
 # Disable automatic rebase on existing branches
 export PANDO_WORKTREE_REBASE_ON_ADD=false
+
+# Delete local branch when removing worktree
+export PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE=local
 
 # Now you can omit --path
 pando worktree add --branch feature-x

@@ -49,11 +49,18 @@ export const SymlinkConfigSchemaPartial = z.object({
 })
 
 /**
+ * Branch deletion options for worktree remove
+ */
+export const DeleteBranchOptionSchema = z.enum(['none', 'local', 'remote'])
+export type DeleteBranchOption = z.infer<typeof DeleteBranchOptionSchema>
+
+/**
  * Worktree configuration schema
  */
 export const WorktreeConfigSchema = z.object({
   defaultPath: z.string().optional(),
   rebaseOnAdd: z.boolean().default(true),
+  deleteBranchOnRemove: DeleteBranchOptionSchema.default('none'),
 })
 
 /**
@@ -62,6 +69,7 @@ export const WorktreeConfigSchema = z.object({
 export const WorktreeConfigSchemaPartial = z.object({
   defaultPath: z.string().optional(),
   rebaseOnAdd: z.boolean().optional(),
+  deleteBranchOnRemove: DeleteBranchOptionSchema.optional(),
 })
 
 /**
@@ -157,6 +165,15 @@ export interface WorktreeConfig {
    * @default true
    */
   rebaseOnAdd?: boolean
+
+  /**
+   * Delete branch when removing worktree
+   * - 'none': Don't delete any branches (default)
+   * - 'local': Delete local branch only
+   * - 'remote': Delete both local and remote branches
+   * @default 'none'
+   */
+  deleteBranchOnRemove?: DeleteBranchOption
 }
 
 /**
@@ -241,6 +258,7 @@ export const DEFAULT_CONFIG: PandoConfig = {
   },
   worktree: {
     rebaseOnAdd: true,
+    deleteBranchOnRemove: 'none',
   },
 }
 

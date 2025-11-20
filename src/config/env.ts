@@ -38,6 +38,7 @@ const ENV_VAR_MAP: Record<string, string> = {
   // Worktree settings
   PANDO_WORKTREE_DEFAULT_PATH: 'worktree.defaultPath',
   PANDO_WORKTREE_REBASE_ON_ADD: 'worktree.rebaseOnAdd',
+  PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE: 'worktree.deleteBranchOnRemove',
 }
 
 /**
