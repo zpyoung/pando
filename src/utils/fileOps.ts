@@ -132,7 +132,7 @@ export class FileOperationTransaction {
           case OperationType.CREATE_SYMLINK:
             // Remove symlink if it exists
             if (await fs.pathExists(op.path)) {
-              const stats = await fs.lstat(op.path)
+              const stats = await fsLstat(op.path)
               if (stats.isSymbolicLink()) {
                 await fs.unlink(op.path)
               }
@@ -257,7 +257,11 @@ export class RsyncHelper {
     }
 
     // Add source and destination (quote them)
-    parts.push(`"${source}"`, `"${destination}"`)
+    // IMPORTANT: Source needs trailing slash to copy contents, not the directory itself
+    // Without trailing slash: rsync /src/dir /dest → /dest/dir/...
+    // With trailing slash: rsync /src/dir/ /dest → /dest/...
+    const sourceWithSlash = source.endsWith('/') ? source : `${source}/`
+    parts.push(`"${sourceWithSlash}"`, `"${destination}"`)
 
     return parts.join(' ')
   }
@@ -315,7 +319,9 @@ export class RsyncHelper {
 
       return result
     } catch (error) {
-      throw new FileOperationError('rsync command failed', error as Error)
+      const execError = error as any
+      const details = execError.stderr ? `: ${execError.stderr}` : ''
+      throw new FileOperationError(`rsync command failed${details}`, error as Error)
     }
   }
 
@@ -443,7 +449,7 @@ export class SymlinkHelper {
       try {
         // Check if target exists
         if (await fs.pathExists(link.target)) {
-          const stats = await fs.lstat(link.target)
+          const stats = await fsLstat(link.target)
 
           let reason: string
           if (stats.isSymbolicLink()) {
@@ -487,7 +493,7 @@ export class SymlinkHelper {
       if (await fs.pathExists(target)) {
         if (options.replaceExisting) {
           // Remove existing target
-          const stats = await fs.lstat(target)
+          const stats = await fsLstat(target)
           if (stats.isSymbolicLink() || stats.isFile()) {
             await fs.unlink(target)
           } else if (stats.isDirectory()) {
