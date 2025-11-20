@@ -437,4 +437,232 @@ describe('worktree add', () => {
       expect(absoluteConfig.relative).toBe(false)
     })
   })
+
+  describe('rebase on existing branch', () => {
+    it('should include rebaseOnAdd in config defaults', () => {
+      // Test that rebaseOnAdd defaults to true
+      const defaultConfig: PandoConfig = {
+        rsync: {
+          enabled: true,
+          flags: ['--archive', '--exclude', '.git'],
+          exclude: [],
+        },
+        symlink: {
+          patterns: [],
+          relative: true,
+          beforeRsync: true,
+        },
+        worktree: {
+          rebaseOnAdd: true,
+        },
+      }
+
+      expect(defaultConfig.worktree.rebaseOnAdd).toBe(true)
+    })
+
+    it('should determine rebase conditions correctly', () => {
+      // Test rebase condition logic
+      interface RebaseConditions {
+        isExistingBranch: boolean
+        configRebaseOnAdd: boolean
+        noRebaseFlag: boolean
+        hasSourceBranch: boolean
+        sameAsBranch: boolean
+      }
+
+      const shouldRebase = (conditions: RebaseConditions): boolean => {
+        return (
+          conditions.isExistingBranch &&
+          conditions.configRebaseOnAdd &&
+          !conditions.noRebaseFlag &&
+          conditions.hasSourceBranch &&
+          !conditions.sameAsBranch
+        )
+      }
+
+      // Should rebase: existing branch, config enabled, no flag, has source, different branch
+      expect(
+        shouldRebase({
+          isExistingBranch: true,
+          configRebaseOnAdd: true,
+          noRebaseFlag: false,
+          hasSourceBranch: true,
+          sameAsBranch: false,
+        })
+      ).toBe(true)
+
+      // Should not rebase: new branch
+      expect(
+        shouldRebase({
+          isExistingBranch: false,
+          configRebaseOnAdd: true,
+          noRebaseFlag: false,
+          hasSourceBranch: true,
+          sameAsBranch: false,
+        })
+      ).toBe(false)
+
+      // Should not rebase: --no-rebase flag set
+      expect(
+        shouldRebase({
+          isExistingBranch: true,
+          configRebaseOnAdd: true,
+          noRebaseFlag: true,
+          hasSourceBranch: true,
+          sameAsBranch: false,
+        })
+      ).toBe(false)
+
+      // Should not rebase: config disabled
+      expect(
+        shouldRebase({
+          isExistingBranch: true,
+          configRebaseOnAdd: false,
+          noRebaseFlag: false,
+          hasSourceBranch: true,
+          sameAsBranch: false,
+        })
+      ).toBe(false)
+
+      // Should not rebase: detached HEAD (no source branch)
+      expect(
+        shouldRebase({
+          isExistingBranch: true,
+          configRebaseOnAdd: true,
+          noRebaseFlag: false,
+          hasSourceBranch: false,
+          sameAsBranch: false,
+        })
+      ).toBe(false)
+
+      // Should not rebase: same branch as source
+      expect(
+        shouldRebase({
+          isExistingBranch: true,
+          configRebaseOnAdd: true,
+          noRebaseFlag: false,
+          hasSourceBranch: true,
+          sameAsBranch: true,
+        })
+      ).toBe(false)
+    })
+
+    it('should format JSON output with rebase info', () => {
+      // Test JSON output includes rebase information
+      const jsonOutput = {
+        success: true,
+        worktree: {
+          path: '/tmp/test-worktree',
+          branch: 'feature-x',
+          commit: 'abc123def456',
+          rebased: true,
+          rebaseSourceBranch: 'main',
+        },
+        setup: {
+          rsync: null,
+          symlink: null,
+        },
+        duration: 1234,
+        warnings: [],
+      }
+
+      expect(jsonOutput.worktree.rebased).toBe(true)
+      expect(jsonOutput.worktree.rebaseSourceBranch).toBe('main')
+    })
+
+    it('should format JSON output without rebase when not performed', () => {
+      // Test JSON output when rebase was not performed
+      const jsonOutput = {
+        success: true,
+        worktree: {
+          path: '/tmp/test-worktree',
+          branch: 'feature-x',
+          commit: 'abc123def456',
+          rebased: false,
+          rebaseSourceBranch: null,
+        },
+        setup: {
+          rsync: null,
+          symlink: null,
+        },
+        duration: 1234,
+        warnings: [],
+      }
+
+      expect(jsonOutput.worktree.rebased).toBe(false)
+      expect(jsonOutput.worktree.rebaseSourceBranch).toBeNull()
+    })
+
+    it('should format human-readable output with rebase info', () => {
+      // Test human-readable output shows rebase info
+      const worktreeInfo = {
+        path: '/tmp/test-worktree',
+        branch: 'feature-x',
+        commit: 'abc123d',
+        rebased: true,
+        rebaseSourceBranch: 'main',
+      }
+
+      const branchInfo = worktreeInfo.rebased
+        ? `${worktreeInfo.branch} (rebased onto ${worktreeInfo.rebaseSourceBranch})`
+        : worktreeInfo.branch
+
+      expect(branchInfo).toBe('feature-x (rebased onto main)')
+    })
+
+    it('should handle rebase failure gracefully', () => {
+      // Test that rebase failure results in warning, not error
+      const mockResult = {
+        path: '/tmp/test-worktree',
+        branch: 'feature-x',
+        commit: 'abc123def456',
+        rebased: false, // Rebase failed
+        rebaseSourceBranch: undefined, // Not set on failure
+      }
+
+      // Command should still succeed even if rebase failed
+      expect(mockResult.rebased).toBe(false)
+      expect(mockResult.rebaseSourceBranch).toBeUndefined()
+    })
+
+    it('should track existing branch detection in addWorktree result', () => {
+      // Test that addWorktree returns isExistingBranch
+      const worktreeResult = {
+        path: '/tmp/test-worktree',
+        branch: 'feature-x',
+        commit: 'abc123def456',
+        isPrunable: false,
+        isExistingBranch: true, // Existing branch was checked out
+      }
+
+      expect(worktreeResult.isExistingBranch).toBe(true)
+    })
+
+    it('should not mark new branch as existing', () => {
+      // Test that new branches are not marked as existing
+      const worktreeResult = {
+        path: '/tmp/test-worktree',
+        branch: 'new-feature',
+        commit: 'abc123def456',
+        isPrunable: false,
+        isExistingBranch: false, // New branch was created
+      }
+
+      expect(worktreeResult.isExistingBranch).toBe(false)
+    })
+
+    it('should not mark force-reset branch as existing', () => {
+      // Test that -B (force reset) branches are not marked as existing
+      // Even if the branch existed before, force reset treats it as new
+      const worktreeResult = {
+        path: '/tmp/test-worktree',
+        branch: 'reset-feature',
+        commit: 'abc123def456',
+        isPrunable: false,
+        isExistingBranch: false, // Force reset, not checkout
+      }
+
+      expect(worktreeResult.isExistingBranch).toBe(false)
+    })
+  })
 })

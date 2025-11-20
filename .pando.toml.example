@@ -77,6 +77,26 @@ relative = true
 beforeRsync = true
 
 # ============================================================================
+# Worktree Configuration
+# ============================================================================
+# Controls default behavior for worktree operations
+
+[worktree]
+# Default parent directory for new worktrees
+# When --path is not provided, worktrees are created at: defaultPath/branchName
+# Relative paths resolve from git root, branch names are auto-sanitized (/ → _)
+# Default: undefined (--path is required)
+# Example: "../worktrees" with --branch feat/login → ../worktrees/feat_login
+# defaultPath = "../worktrees"
+
+# Automatically rebase existing branches onto source branch when adding worktree
+# When checking out an existing branch, rebase it onto the current branch
+# If rebase fails (conflicts), shows warning but continues with worktree creation
+# Use --no-rebase flag to skip for a single command
+# Default: true
+rebaseOnAdd = true
+
+# ============================================================================
 # Project-Specific Examples
 # ============================================================================
 
@@ -115,14 +135,17 @@ beforeRsync = true
 #   PANDO_SYMLINK_PATTERNS=package.json,pnpm-lock.yaml
 #   PANDO_SYMLINK_RELATIVE=false
 #   PANDO_SYMLINK_BEFORE_RSYNC=true
+#   PANDO_WORKTREE_DEFAULT_PATH=../worktrees
+#   PANDO_WORKTREE_REBASE_ON_ADD=false
 
 # ============================================================================
 # CLI Flag Overrides
 # ============================================================================
 # All settings can be overridden via CLI flags:
 #
-#   pando worktree:add --path ../feature --branch feature --skip-rsync
-#   pando worktree:add --path ../feature --branch feature --skip-symlink
-#   pando worktree:add --path ../feature --branch feature --rsync-exclude "*.log"
-#   pando worktree:add --path ../feature --branch feature --symlink "package.json"
-#   pando worktree:add --path ../feature --branch feature --absolute-symlinks
+#   pando worktree add --path ../feature --branch feature --skip-rsync
+#   pando worktree add --path ../feature --branch feature --skip-symlink
+#   pando worktree add --path ../feature --branch feature --rsync-exclude "*.log"
+#   pando worktree add --path ../feature --branch feature --symlink "package.json"
+#   pando worktree add --path ../feature --branch feature --absolute-symlinks
+#   pando worktree add --branch existing-feature --no-rebase

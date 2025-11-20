@@ -71,7 +71,10 @@ Create a new git worktree (supports both creating new branches and checking out 
 - `-b, --branch`: Branch to checkout or create
 - `-c, --commit`: Commit hash to base the new branch on
 - `-f, --force`: Force create branch even if it exists (uses git worktree add -B)
+- `--no-rebase`: Skip automatic rebase of existing branch onto source branch
 - `-j, --json`: Output in JSON format
+
+**Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
 
 **Examples:**
 
@@ -244,6 +247,9 @@ All configuration options can be set via environment variables using the `PANDO_
 ```bash
 # Set default worktree path
 export PANDO_WORKTREE_DEFAULT_PATH="../worktrees"
+
+# Disable automatic rebase on existing branches
+export PANDO_WORKTREE_REBASE_ON_ADD=false
 
 # Now you can omit --path
 pando worktree add --branch feature-x

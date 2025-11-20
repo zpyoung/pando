@@ -37,6 +37,7 @@ const ENV_VAR_MAP: Record<string, string> = {
 
   // Worktree settings
   PANDO_WORKTREE_DEFAULT_PATH: 'worktree.defaultPath',
+  PANDO_WORKTREE_REBASE_ON_ADD: 'worktree.rebaseOnAdd',
 }
 
 /**
@@ -131,7 +132,12 @@ export function parseEnvValue(key: string, value: string): unknown {
   }
 
   // Boolean fields
-  if (key.includes('ENABLED') || key.includes('RELATIVE') || key.includes('BEFORE')) {
+  if (
+    key.includes('ENABLED') ||
+    key.includes('RELATIVE') ||
+    key.includes('BEFORE') ||
+    key.includes('REBASE')
+  ) {
     return parseBoolean(value)
   }
 

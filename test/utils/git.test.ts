@@ -97,6 +97,7 @@ branch refs/heads/feature
         branch: 'feature-branch',
         commit: 'abc123def456',
         isPrunable: false,
+        isExistingBranch: false,
       })
       expect(mockGit.raw).toHaveBeenCalledWith([
         'worktree',
@@ -146,6 +147,7 @@ branch refs/heads/feature
         branch: 'existing-branch',
         commit: 'abc123def456',
         isPrunable: false,
+        isExistingBranch: true,
       })
       // Should NOT use -b flag for existing branch
       expect(mockGit.raw).toHaveBeenCalledWith([

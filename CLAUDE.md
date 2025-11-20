@@ -248,6 +248,46 @@ Keep files under 250 lines. If longer, extract utilities.
 
 3. **Use in command layer**
 
+### Adding Config Values
+
+When adding a new configuration option, update all integration points:
+
+1. **Update schema** in `src/config/schema.ts`:
+   - Add to Zod schema (e.g., `WorktreeConfigSchema`)
+   - Add to TypeScript interface
+   - Add to `DEFAULT_CONFIG` with default value
+
+2. **Add environment variable** in `src/config/env.ts`:
+   - Add to `ENV_VAR_MAP` (e.g., `PANDO_WORKTREE_REBASE_ON_ADD: 'worktree.rebaseOnAdd'`)
+   - Update `parseEnvValue()` if needed for type detection
+
+3. **Update config init** in `src/commands/config/init.ts`:
+   - Add description to the relevant section comment in `generateTomlContent()`
+
+4. **Update example config** in `.pando.toml.example`:
+   - Add the new option with documentation
+   - Update environment variable examples
+   - Update CLI flag examples if applicable
+
+5. **Update README.md**:
+   - Add flag documentation if applicable
+   - Add environment variable example
+
+6. **Add tests** for the new config option
+
+**Example (adding `worktree.rebaseOnAdd`):**
+
+```typescript
+// schema.ts
+export const WorktreeConfigSchema = z.object({
+  defaultPath: z.string().optional(),
+  rebaseOnAdd: z.boolean().default(true),  // NEW
+})
+
+// env.ts
+PANDO_WORKTREE_REBASE_ON_ADD: 'worktree.rebaseOnAdd',
+```
+
 ### Implementing TODOs
 
 Look for `// TODO:` comments in stub files. Each TODO includes:

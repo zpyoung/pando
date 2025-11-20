@@ -53,6 +53,7 @@ export const SymlinkConfigSchemaPartial = z.object({
  */
 export const WorktreeConfigSchema = z.object({
   defaultPath: z.string().optional(),
+  rebaseOnAdd: z.boolean().default(true),
 })
 
 /**
@@ -60,6 +61,7 @@ export const WorktreeConfigSchema = z.object({
  */
 export const WorktreeConfigSchemaPartial = z.object({
   defaultPath: z.string().optional(),
+  rebaseOnAdd: z.boolean().optional(),
 })
 
 /**
@@ -149,6 +151,12 @@ export interface WorktreeConfig {
    * @example '../worktrees' or '/absolute/path/to/worktrees'
    */
   defaultPath?: string
+
+  /**
+   * Automatically rebase existing branches onto source branch when adding worktree
+   * @default true
+   */
+  rebaseOnAdd?: boolean
 }
 
 /**
@@ -231,7 +239,9 @@ export const DEFAULT_CONFIG: PandoConfig = {
     relative: true,
     beforeRsync: true,
   },
-  worktree: {},
+  worktree: {
+    rebaseOnAdd: true,
+  },
 }
 
 // ============================================================================
