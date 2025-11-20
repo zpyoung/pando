@@ -12,6 +12,7 @@ export interface WorktreeInfo {
   branch: string | null
   commit: string
   isPrunable: boolean
+  isExistingBranch?: boolean
 }
 
 export interface BranchInfo {
@@ -118,11 +119,15 @@ export class GitHelper {
     // Get the commit hash for the new worktree
     const commitHash = await this.git.raw(['rev-parse', 'HEAD'])
 
+    // Determine if this was an existing branch checkout (not new creation or force reset)
+    const isExistingBranch = branchExists && !options?.force
+
     return {
       path,
       branch: options?.branch || null,
       commit: commitHash.trim(),
       isPrunable: false,
+      isExistingBranch,
     }
   }
 
@@ -332,6 +337,31 @@ export class GitHelper {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`Unable to determine current branch: ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Rebase the current branch in a worktree onto a source branch
+   *
+   * @param worktreePath - Path to the worktree
+   * @param sourceBranch - Branch to rebase onto
+   * @returns True if rebase succeeded, false if failed (conflicts, etc.)
+   */
+  async rebaseBranchInWorktree(worktreePath: string, sourceBranch: string): Promise<boolean> {
+    try {
+      const gitInWorktree = simpleGit(worktreePath)
+      await gitInWorktree.rebase([sourceBranch])
+      return true
+    } catch {
+      // Rebase failed (conflicts, divergent histories, etc.)
+      // Abort the rebase to clean up the worktree state
+      try {
+        const gitInWorktree = simpleGit(worktreePath)
+        await gitInWorktree.rebase(['--abort'])
+      } catch {
+        // Ignore abort errors - rebase may not have started
+      }
+      return false
     }
   }
 }

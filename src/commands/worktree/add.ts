@@ -49,6 +49,10 @@ export default class AddWorktree extends Command {
       description: 'Force create branch even if it exists (uses git worktree add -B)',
       default: false,
     }),
+    'no-rebase': Flags.boolean({
+      description: 'Skip rebasing existing branch onto source branch',
+      default: false,
+    }),
 
     // Rsync control flags
     'skip-rsync': Flags.boolean({
@@ -129,7 +133,8 @@ export default class AddWorktree extends Command {
         flags as Record<string, unknown>,
         gitHelper,
         resolvedPath,
-        spinner
+        spinner,
+        config
       )
       const setupResult = await this.runSetup(
         flags as Record<string, unknown>,
@@ -306,14 +311,31 @@ export default class AddWorktree extends Command {
     flags: Record<string, unknown>,
     gitHelper: ReturnType<typeof createGitHelper>,
     resolvedPath: string,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
-  ): Promise<{ path: string; branch: string | null; commit: string }> {
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    config: Awaited<ReturnType<typeof loadConfig>>
+  ): Promise<{
+    path: string
+    branch: string | null
+    commit: string
+    rebased?: boolean
+    rebaseSourceBranch?: string
+  }> {
     if (spinner) {
       spinner.text = 'Creating worktree...'
     }
 
+    // Get source branch BEFORE creating worktree (we're on it now)
+    let sourceBranch: string | null = null
     try {
-      return await gitHelper.addWorktree(resolvedPath, {
+      sourceBranch = await gitHelper.getCurrentBranch()
+    } catch {
+      // In detached HEAD state, can't determine source branch
+      sourceBranch = null
+    }
+
+    let worktreeResult
+    try {
+      worktreeResult = await gitHelper.addWorktree(resolvedPath, {
         branch: flags.branch as string | undefined,
         commit: flags.commit as string | undefined,
         force: flags.force as boolean | undefined,
@@ -326,6 +348,46 @@ export default class AddWorktree extends Command {
         'Failed to create worktree',
         flags.json as boolean | undefined
       )
+    }
+
+    // Determine if we should rebase
+    const shouldRebase =
+      worktreeResult.isExistingBranch &&
+      config.worktree.rebaseOnAdd !== false &&
+      !flags['no-rebase'] &&
+      sourceBranch !== null &&
+      worktreeResult.branch !== sourceBranch // Don't rebase onto itself
+
+    let rebased = false
+    if (shouldRebase && worktreeResult.branch) {
+      if (spinner) {
+        spinner.text = `Rebasing ${worktreeResult.branch} onto ${sourceBranch}...`
+      }
+
+      const rebaseSuccess = await gitHelper.rebaseBranchInWorktree(resolvedPath, sourceBranch!)
+
+      if (rebaseSuccess) {
+        rebased = true
+        // Update commit hash after rebase
+        const gitInWorktree = (await import('simple-git')).simpleGit(resolvedPath)
+        const newCommit = await gitInWorktree.revparse(['HEAD'])
+        worktreeResult.commit = newCommit.trim()
+      } else {
+        // Warn but don't fail
+        ErrorHelper.warn(
+          this,
+          `Failed to rebase ${worktreeResult.branch} onto ${sourceBranch}. You may need to rebase manually.`,
+          flags.json as boolean | undefined
+        )
+      }
+    }
+
+    return {
+      path: worktreeResult.path,
+      branch: worktreeResult.branch,
+      commit: worktreeResult.commit,
+      rebased,
+      rebaseSourceBranch: rebased ? sourceBranch! : undefined,
     }
   }
 
@@ -408,7 +470,13 @@ export default class AddWorktree extends Command {
    */
   private formatOutput(
     flags: Record<string, unknown>,
-    worktreeInfo: { path: string; branch: string | null; commit: string },
+    worktreeInfo: {
+      path: string
+      branch: string | null
+      commit: string
+      rebased?: boolean
+      rebaseSourceBranch?: string
+    },
     setupResult: Awaited<
       ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>
     >,
@@ -425,6 +493,8 @@ export default class AddWorktree extends Command {
               path: worktreeInfo.path,
               branch: worktreeInfo.branch,
               commit: worktreeInfo.commit,
+              rebased: worktreeInfo.rebased || false,
+              rebaseSourceBranch: worktreeInfo.rebaseSourceBranch || null,
             },
             setup: {
               rsync: setupResult.rsyncResult
@@ -459,7 +529,10 @@ export default class AddWorktree extends Command {
       // Success header
       output.push(chalk.green(`✓ Worktree created at ${worktreeInfo.path}`))
       if (worktreeInfo.branch) {
-        output.push(chalk.gray(`  Branch: ${worktreeInfo.branch}`))
+        const branchInfo = worktreeInfo.rebased
+          ? `${worktreeInfo.branch} (rebased onto ${worktreeInfo.rebaseSourceBranch})`
+          : worktreeInfo.branch
+        output.push(chalk.gray(`  Branch: ${branchInfo}`))
       }
       output.push(chalk.gray(`  Commit: ${worktreeInfo.commit.substring(0, 7)}`))
       output.push('')

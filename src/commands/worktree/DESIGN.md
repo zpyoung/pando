@@ -79,6 +79,71 @@ pando worktree add --branch feature --force ../feature
 
 - When using `--branch` and `--commit` together without `--force`, validates branch doesn't already exist
 
+### Automatic Rebase on Existing Branch
+
+**Chosen**: Automatically rebase existing branches onto the source branch when creating a worktree
+**Rationale**:
+
+- Keeps branches up-to-date with the source branch automatically
+- Reduces manual rebase steps in typical workflows
+- Safe default that can be disabled via flag or config
+
+**Behavior**:
+
+- When checking out an **existing** branch (not creating new), rebase onto the source branch
+- If rebase fails (conflicts, etc.), warn but don't fail the command
+- User can complete rebase manually in the worktree
+
+**Configuration**: Via `.pando.toml`
+
+```toml
+[worktree]
+rebaseOnAdd = true  # default
+```
+
+**CLI Override**:
+
+- `--no-rebase` - Skip automatic rebase for this worktree
+
+**Conditions for Rebase**:
+
+1. Branch must already exist (not newly created)
+2. `worktree.rebaseOnAdd` config is not `false`
+3. `--no-rebase` flag is not set
+4. Source branch is determinable (not in detached HEAD)
+5. Branch is different from source branch
+
+**Output**:
+
+```bash
+# Human-readable
+✓ Worktree created at ../feature
+  Branch: feature-x (rebased onto main)
+  Commit: abc123d
+
+# JSON
+{
+  "worktree": {
+    "path": "../feature",
+    "branch": "feature-x",
+    "commit": "abc123d",
+    "rebased": true,
+    "rebaseSourceBranch": "main"
+  }
+}
+```
+
+**Failure Handling**:
+
+```bash
+# Warning on rebase failure
+⚠ Failed to rebase feature-x onto main. You may need to rebase manually.
+
+✓ Worktree created at ../feature
+  Branch: feature-x
+  Commit: abc123d
+```
+
 ### Flag-Driven Interface with Config Defaults
 
 **Chosen**: All parameters passed via named flags (`--path`, `--branch`) with optional config defaults

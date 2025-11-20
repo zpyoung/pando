@@ -165,8 +165,8 @@ export default class ConfigInit extends Command {
       '# defaultPath - Default parent directory for new worktrees',
       '#   Relative paths resolve from git root, branch names are auto-appended',
       '#   Example: "../worktrees" with --branch feat/login → ../worktrees/feat_login',
-      '# [worktree]',
-      '# defaultPath = "../worktrees"',
+      '# rebaseOnAdd - Automatically rebase existing branches onto source when adding worktree',
+      '#   Set to false to disable automatic rebase, or use --no-rebase flag',
       '',
     ].join('\n')
 
