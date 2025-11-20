@@ -1,8 +1,10 @@
-import { Command } from '@oclif/core'
+import { Command, Flags } from '@oclif/core'
 import * as path from 'node:path'
-import { createGitHelper, type WorktreeInfo } from '../../utils/git.js'
+import { createGitHelper, type WorktreeInfo, type GitHelper } from '../../utils/git.js'
 import { jsonFlag, forceFlag, pathFlag } from '../../utils/common-flags.js'
 import { ErrorHelper } from '../../utils/errors.js'
+import { loadConfig } from '../../config/loader.js'
+import type { DeleteBranchOption } from '../../config/schema.js'
 
 /**
  * Remove a git worktree
@@ -17,6 +19,8 @@ export default class RemoveWorktree extends Command {
     '<%= config.bin %> <%= command.id %> --path ../feature-x',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --force',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --json',
+    '<%= config.bin %> <%= command.id %> --path ../feature-x --delete-branch local',
+    '<%= config.bin %> <%= command.id %> --path ../feature-x --delete-branch remote --force',
     '<%= config.bin %> <%= command.id %> # Interactive selection',
   ]
 
@@ -24,6 +28,13 @@ export default class RemoveWorktree extends Command {
     path: pathFlag,
 
     force: forceFlag,
+
+    'delete-branch': Flags.string({
+      char: 'd',
+      description: 'Delete associated branch after removing worktree (none|local|remote)',
+      options: ['none', 'local', 'remote'],
+      default: undefined,
+    }),
 
     json: jsonFlag,
   }
@@ -103,6 +114,116 @@ export default class RemoveWorktree extends Command {
     return confirmed as boolean
   }
 
+  /**
+   * Confirm deletion of remote branch
+   * @param branchName - Name of the branch to delete
+   * @param remoteName - Name of the remote
+   * @returns True if user confirms, false otherwise
+   */
+  private async confirmRemoteBranchDeletion(branchName: string, remoteName: string): Promise<boolean> {
+    const chalk = (await import('chalk')).default
+    const inquirerModule = await import('inquirer')
+    const inquirer = inquirerModule.default as any
+
+    this.log(chalk.yellow(`\n⚠ You are about to delete branch '${branchName}' from remote '${remoteName}'`))
+    this.log(chalk.yellow('  This action cannot be undone.'))
+
+    const { confirmed } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirmed',
+        message: `Delete remote branch '${remoteName}/${branchName}'?`,
+        default: false,
+      },
+    ])
+
+    return confirmed as boolean
+  }
+
+  /**
+   * Delete branch (local and optionally remote)
+   * @param gitHelper - Git helper instance
+   * @param branchName - Name of the branch
+   * @param deleteOption - What to delete (none, local, remote)
+   * @param force - Force delete without confirmation
+   * @param isJson - Whether JSON output mode is enabled
+   * @returns Branch deletion results
+   */
+  private async deleteBranch(
+    gitHelper: GitHelper,
+    branchName: string,
+    deleteOption: DeleteBranchOption,
+    force: boolean,
+    isJson: boolean
+  ): Promise<{
+    localDeleted: boolean
+    remoteDeleted: boolean
+    localError?: string
+    remoteError?: string
+    skipped?: boolean
+  }> {
+    const result = {
+      localDeleted: false,
+      remoteDeleted: false,
+      localError: undefined as string | undefined,
+      remoteError: undefined as string | undefined,
+      skipped: false,
+    }
+
+    if (deleteOption === 'none') {
+      result.skipped = true
+      return result
+    }
+
+    // Check if branch is merged before deleting (unless force)
+    if (!force) {
+      const isMerged = await gitHelper.isBranchMerged(branchName)
+      if (!isMerged) {
+        result.localError = `Branch '${branchName}' is not fully merged. Use --force to delete anyway.`
+        return result
+      }
+    }
+
+    // Delete local branch
+    try {
+      await gitHelper.deleteBranch(branchName, force)
+      result.localDeleted = true
+    } catch (error) {
+      result.localError = error instanceof Error ? error.message : String(error)
+      return result
+    }
+
+    // Delete remote branch if requested
+    if (deleteOption === 'remote') {
+      const remote = await gitHelper.getBranchRemote(branchName) || 'origin'
+      const remoteBranchExists = await gitHelper.remoteBranchExists(branchName, remote)
+
+      if (!remoteBranchExists) {
+        // Remote branch doesn't exist, nothing to delete
+        result.remoteDeleted = false
+        return result
+      }
+
+      // Confirm remote deletion unless force or json
+      if (!force && !isJson) {
+        const confirmed = await this.confirmRemoteBranchDeletion(branchName, remote)
+        if (!confirmed) {
+          result.remoteError = 'Remote branch deletion cancelled by user'
+          return result
+        }
+      }
+
+      try {
+        await gitHelper.deleteRemoteBranch(branchName, remote)
+        result.remoteDeleted = true
+      } catch (error) {
+        result.remoteError = error instanceof Error ? error.message : String(error)
+      }
+    }
+
+    return result
+  }
+
   async run(): Promise<void> {
     const { flags } = await this.parse(RemoveWorktree)
 
@@ -134,7 +255,17 @@ export default class RemoveWorktree extends Command {
         }
       }
 
-      // 2. Get list of worktrees
+      // 2. Load config for branch deletion settings
+      const gitRoot = await gitHelper.getRepositoryRoot()
+      const config = await loadConfig({ gitRoot })
+
+      // Determine delete-branch option (flag overrides config)
+      const deleteBranchOption: DeleteBranchOption =
+        (flags['delete-branch'] as DeleteBranchOption) ||
+        config.worktree.deleteBranchOnRemove ||
+        'none'
+
+      // 3. Get list of worktrees
       const worktrees = await gitHelper.listWorktrees()
 
       // 3. Determine paths to remove (either from flag or interactive selection)
@@ -181,6 +312,13 @@ export default class RemoveWorktree extends Command {
         success: boolean
         error?: string
         branch?: string | null
+        branchDeletion?: {
+          localDeleted: boolean
+          remoteDeleted: boolean
+          localError?: string
+          remoteError?: string
+          skipped?: boolean
+        }
       }> = []
 
       for (const worktreePath of pathsToRemove) {
@@ -245,10 +383,23 @@ export default class RemoveWorktree extends Command {
           // Execute removal
           await gitHelper.removeWorktree(worktree.path, forceRemove as boolean | undefined)
 
+          // Delete branch if requested and branch exists
+          let branchDeletion
+          if (worktree.branch && deleteBranchOption !== 'none') {
+            branchDeletion = await this.deleteBranch(
+              gitHelper,
+              worktree.branch,
+              deleteBranchOption,
+              flags.force ?? false,
+              flags.json ?? false
+            )
+          }
+
           results.push({
             path: worktreePath,
             success: true,
             branch: worktree.branch,
+            branchDeletion,
           })
         } catch (error) {
           results.push({
@@ -274,6 +425,8 @@ export default class RemoveWorktree extends Command {
             path: result.path,
             branch: result.branch,
             forced: flags.force,
+            deleteBranchOption: deleteBranchOption,
+            branchDeletion: result.branchDeletion,
             error: result.error,
           })
         )
@@ -294,7 +447,24 @@ export default class RemoveWorktree extends Command {
             )
           )
           for (const result of results.filter((r) => r.success)) {
-            this.log(`  ${chalk.cyan(result.path)}${result.branch ? ` (${result.branch})` : ''}`)
+            let branchInfo = result.branch ? ` (${result.branch})` : ''
+            this.log(`  ${chalk.cyan(result.path)}${branchInfo}`)
+
+            // Show branch deletion results
+            if (result.branchDeletion && !result.branchDeletion.skipped) {
+              if (result.branchDeletion.localDeleted) {
+                this.log(chalk.green(`    ↳ Local branch '${result.branch}' deleted`))
+              }
+              if (result.branchDeletion.remoteDeleted) {
+                this.log(chalk.green(`    ↳ Remote branch '${result.branch}' deleted`))
+              }
+              if (result.branchDeletion.localError) {
+                this.log(chalk.yellow(`    ↳ Local branch: ${result.branchDeletion.localError}`))
+              }
+              if (result.branchDeletion.remoteError) {
+                this.log(chalk.yellow(`    ↳ Remote branch: ${result.branchDeletion.remoteError}`))
+              }
+            }
           }
         }
 

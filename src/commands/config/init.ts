@@ -167,6 +167,10 @@ export default class ConfigInit extends Command {
       '#   Example: "../worktrees" with --branch feat/login → ../worktrees/feat_login',
       '# rebaseOnAdd - Automatically rebase existing branches onto source when adding worktree',
       '#   Set to false to disable automatic rebase, or use --no-rebase flag',
+      '# deleteBranchOnRemove - Delete branch when removing worktree',
+      '#   none: Do not delete branches (default)',
+      '#   local: Delete local branch only',
+      '#   remote: Delete both local and remote branches',
       '',
     ].join('\n')
 

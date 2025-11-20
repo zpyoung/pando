@@ -96,6 +96,16 @@ beforeRsync = true
 # Default: true
 rebaseOnAdd = true
 
+# Delete branch when removing worktree
+# Options:
+#   - "none": Don't delete any branches (default)
+#   - "local": Delete local branch only
+#   - "remote": Delete both local and remote branches
+# Use --delete-branch flag to override for a single command
+# Remote branches require confirmation unless --force is used
+# Default: "none"
+deleteBranchOnRemove = "none"
+
 # ============================================================================
 # Project-Specific Examples
 # ============================================================================
@@ -137,6 +147,7 @@ rebaseOnAdd = true
 #   PANDO_SYMLINK_BEFORE_RSYNC=true
 #   PANDO_WORKTREE_DEFAULT_PATH=../worktrees
 #   PANDO_WORKTREE_REBASE_ON_ADD=false
+#   PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE=local
 
 # ============================================================================
 # CLI Flag Overrides
@@ -149,3 +160,5 @@ rebaseOnAdd = true
 #   pando worktree add --path ../feature --branch feature --symlink "package.json"
 #   pando worktree add --path ../feature --branch feature --absolute-symlinks
 #   pando worktree add --branch existing-feature --no-rebase
+#   pando worktree remove --path ../feature --delete-branch local
+#   pando worktree remove --path ../feature --delete-branch remote --force

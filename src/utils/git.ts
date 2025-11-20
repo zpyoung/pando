@@ -364,6 +364,57 @@ export class GitHelper {
       return false
     }
   }
+
+  /**
+   * Check if a branch exists on a remote
+   *
+   * @param branchName - Name of the branch to check
+   * @param remote - Remote name (default: 'origin')
+   * @returns True if branch exists on remote
+   */
+  async remoteBranchExists(branchName: string, remote: string = 'origin'): Promise<boolean> {
+    try {
+      await this.git.raw(['ls-remote', '--exit-code', '--heads', remote, branchName])
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Delete a remote branch
+   *
+   * @param branchName - Name of the branch to delete
+   * @param remote - Remote name (default: 'origin')
+   */
+  async deleteRemoteBranch(branchName: string, remote: string = 'origin'): Promise<void> {
+    try {
+      await this.git.push([remote, '--delete', branchName])
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+
+      if (errorMessage.includes('remote ref does not exist')) {
+        throw new Error(`Branch '${branchName}' does not exist on remote '${remote}'`)
+      }
+
+      throw new Error(`Failed to delete remote branch '${branchName}': ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Get the tracking remote for a branch
+   *
+   * @param branchName - Name of the branch
+   * @returns Remote name if branch has upstream, null otherwise
+   */
+  async getBranchRemote(branchName: string): Promise<string | null> {
+    try {
+      const remote = await this.git.raw(['config', `branch.${branchName}.remote`])
+      return remote.trim() || null
+    } catch {
+      return null
+    }
+  }
 }
 
 /**

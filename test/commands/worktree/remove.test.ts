@@ -12,9 +12,15 @@ import RemoveWorktree from '../../../src/commands/worktree/remove.js'
 vi.mock('../../../src/utils/git.js', () => {
   const mockGitHelper = {
     isRepository: vi.fn(),
+    getRepositoryRoot: vi.fn(),
     listWorktrees: vi.fn(),
     hasUncommittedChanges: vi.fn(),
     removeWorktree: vi.fn(),
+    deleteBranch: vi.fn(),
+    deleteRemoteBranch: vi.fn(),
+    remoteBranchExists: vi.fn(),
+    getBranchRemote: vi.fn(),
+    isBranchMerged: vi.fn(),
   }
 
   return {
@@ -22,6 +28,15 @@ vi.mock('../../../src/utils/git.js', () => {
     createGitHelper: vi.fn(() => mockGitHelper),
   }
 })
+
+// Mock the config loader
+vi.mock('../../../src/config/loader.js', () => ({
+  loadConfig: vi.fn().mockResolvedValue({
+    rsync: { enabled: true, flags: ['--archive'], exclude: [] },
+    symlink: { patterns: [], relative: true, beforeRsync: true },
+    worktree: { rebaseOnAdd: true, deleteBranchOnRemove: 'none' },
+  }),
+}))
 
 // Mock inquirer
 vi.mock('inquirer', () => ({
@@ -67,6 +82,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
     mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -87,6 +103,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
     mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -113,6 +130,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
 
     command.argv = ['--path', '/path/to/nonexistent']
@@ -127,6 +145,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(true)
 
@@ -148,6 +167,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.removeWorktree.mockResolvedValue(undefined)
 
@@ -166,6 +186,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.removeWorktree.mockResolvedValue(undefined)
 
@@ -181,6 +202,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(true)
 
@@ -203,6 +225,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
     mockGitHelper.removeWorktree.mockRejectedValue(new Error('git operation failed'))
@@ -219,6 +242,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
     mockGitHelper.removeWorktree.mockRejectedValue(new Error('git operation failed'))
@@ -242,6 +266,7 @@ describe('worktree remove', () => {
     ]
 
     mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
     mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -276,6 +301,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -300,6 +326,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -325,6 +352,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -350,6 +378,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -376,6 +405,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
 
       inquirerMock.prompt
@@ -397,6 +427,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges
         .mockResolvedValueOnce(false) // feature1 - no uncommitted changes
@@ -432,6 +463,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
 
@@ -458,6 +490,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
 
       command.argv = []
@@ -473,6 +506,7 @@ describe('worktree remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
