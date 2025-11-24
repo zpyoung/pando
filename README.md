@@ -15,7 +15,14 @@ Pando makes it effortless to work on multiple branches simultaneously using Git 
 
 ## Installation
 
-### Using pnpm (recommended)
+### Using Homebrew (macOS/Linux)
+
+```bash
+brew tap zpyoung/pando
+brew install pando
+```
+
+### Using pnpm
 
 ```bash
 pnpm install -g pando
