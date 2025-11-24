@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import NavigateWorktree from '../../../src/commands/worktree/navigate'
-import * as gitUtils from '../../../src/utils/git'
-import type { WorktreeInfo } from '../../../src/utils/git'
+import NavigateWorktree from '../../src/commands/navigate'
+import * as gitUtils from '../../src/utils/git'
+import type { WorktreeInfo } from '../../src/utils/git'
 
 /**
- * Tests for worktree navigate command
+ * Tests for navigate command
  *
  * These tests verify the command logic by mocking the GitHelper
  */
 
-describe('worktree navigate', () => {
+describe('navigate', () => {
   // Mock sample data
   const mockWorktrees: WorktreeInfo[] = [
     {

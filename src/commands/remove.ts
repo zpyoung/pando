@@ -1,10 +1,10 @@
 import { Command, Flags } from '@oclif/core'
 import * as path from 'node:path'
-import { createGitHelper, type WorktreeInfo, type GitHelper } from '../../utils/git.js'
-import { jsonFlag, forceFlag, pathFlag } from '../../utils/common-flags.js'
-import { ErrorHelper } from '../../utils/errors.js'
-import { loadConfig } from '../../config/loader.js'
-import type { DeleteBranchOption } from '../../config/schema.js'
+import { createGitHelper, type WorktreeInfo, type GitHelper } from '../utils/git.js'
+import { jsonFlag, forceFlag, pathFlag } from '../utils/common-flags.js'
+import { ErrorHelper } from '../utils/errors.js'
+import { loadConfig } from '../config/loader.js'
+import type { DeleteBranchOption } from '../config/schema.js'
 
 /**
  * Remove a git worktree

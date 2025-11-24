@@ -214,7 +214,7 @@ Please install rsync:
   - Ubuntu/Debian: apt install rsync
   - Fedora: dnf install rsync
 
-Or skip rsync: pando worktree add --skip-rsync
+Or skip rsync: pando add --skip-rsync
 ```
 
 ### Symlink Conflicts
@@ -258,5 +258,5 @@ On any error during setup:
 ## Related Documentation
 
 - [Root ARCHITECTURE.md](../../ARCHITECTURE.md) - System architecture
-- [Worktree Commands DESIGN.md](../commands/worktree/DESIGN.md) - Command integration
+- [Commands](../commands/) - Command implementations that use these utilities
 - [Config DESIGN.md](../config/DESIGN.md) - Configuration system

@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import * as path from 'path'
 import * as fs from 'fs-extra'
-import { createGitHelper } from '../../../src/utils/git'
-import type { PandoConfig } from '../../../src/config/schema'
+import { createGitHelper } from '../../src/utils/git'
+import type { PandoConfig } from '../../src/config/schema'
 
 /**
- * Tests for worktree add command
+ * Tests for add command
  *
  * Tests the complete workflow including:
  * - Basic worktree creation
@@ -15,7 +15,7 @@ import type { PandoConfig } from '../../../src/config/schema'
  * - JSON output format
  */
 
-describe('worktree add', () => {
+describe('add', () => {
   describe('initialization and validation', () => {
     it('should validate git repository', async () => {
       // Test that command validates git repository existence

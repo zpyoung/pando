@@ -1,9 +1,9 @@
 import { Args, Command, Flags } from '@oclif/core'
-import { createGitHelper } from '../../utils/git.js'
-import { loadConfig } from '../../config/loader.js'
-import { createWorktreeSetupOrchestrator, SetupPhase } from '../../utils/worktreeSetup.js'
-import { jsonFlag, pathFlag } from '../../utils/common-flags.js'
-import { ErrorHelper } from '../../utils/errors.js'
+import { createGitHelper } from '../utils/git.js'
+import { loadConfig } from '../config/loader.js'
+import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
+import { jsonFlag, pathFlag } from '../utils/common-flags.js'
+import { ErrorHelper } from '../utils/errors.js'
 
 /**
  * Add a new git worktree
@@ -89,7 +89,7 @@ export default class AddWorktree extends Command {
 
   async run(): Promise<void> {
     const { flags, args } = await this.parse(AddWorktree)
-    
+
     // Use positional arg as branch if --branch is not provided
     if (args.branch && !flags.branch) {
       flags.branch = args.branch
@@ -654,7 +654,7 @@ export default class AddWorktree extends Command {
     }
 
     // Handle RsyncNotInstalledError
-    const { RsyncNotInstalledError } = await import('../../utils/fileOps.js')
+    const { RsyncNotInstalledError } = await import('../utils/fileOps.js')
     if (error instanceof RsyncNotInstalledError) {
       if (flags.json) {
         this.log(
@@ -682,7 +682,7 @@ export default class AddWorktree extends Command {
     }
 
     // Handle SymlinkConflictError
-    const { SymlinkConflictError } = await import('../../utils/fileOps.js')
+    const { SymlinkConflictError } = await import('../utils/fileOps.js')
     if (
       error instanceof SymlinkConflictError &&
       'conflicts' in error &&
