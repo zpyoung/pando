@@ -21,27 +21,27 @@ This document explains the design decisions, trade-offs, and rationale behind Pa
 **Example**:
 ```bash
 # Interactive (human)
-pando worktree add
+pando add
 # Prompts: Path? Branch?
 
 # Scripted (machine)
-pando worktree add --path ../feature-x --branch feature-x --json
+pando add --path ../feature-x --branch feature-x --json
 # {"path": "../feature-x", "branch": "feature-x", "commit": "abc123"}
 ```
 
 ### 2. **Predictable Command Structure**
 
-**Decision**: Use oclif's topic:command pattern
+**Decision**: Use top-level commands for core worktree operations with oclif's topic:command pattern for configuration
 
 **Rationale**:
-- Scales well (can add topics without conflicts)
-- Self-documenting (`worktree add` is clearer than `add-worktree`)
-- Follows industry conventions (Heroku CLI, Salesforce CLI)
+- Minimal typing for most common operations (`pando add` vs `pando worktree add`)
+- Topics used for secondary features (config management)
+- `pando nav` alias for even faster navigation
 - Built-in help generation
 
 **Trade-off**:
-- Slightly more typing than flat commands
-- But: Better organization for 10+ commands
+- Less hierarchical organization
+- But: Faster workflow for common operations
 
 ### 3. **Focused, Single-Responsibility Files**
 
@@ -55,8 +55,8 @@ pando worktree add --path ../feature-x --branch feature-x --json
 
 **Implementation**:
 ```
-src/commands/worktree/add.ts     # Only handles worktree add
-src/commands/worktree/remove.ts  # Only handles worktree remove
+src/commands/add.ts      # Only handles worktree add
+src/commands/remove.ts   # Only handles worktree remove
 ```
 
 Each file is ~100-200 lines, highly focused.
@@ -184,10 +184,10 @@ async addWorktree(path, options) {
 **Example**:
 ```bash
 # Flag-based (chosen)
-pando worktree add --path ../feature-x --branch feature-x
+pando add --path ../feature-x --branch feature-x
 
 # Argument-based (rejected)
-pando worktree add ../feature-x feature-x
+pando add ../feature-x feature-x
 # What if branch is optional? Order matters!
 ```
 
@@ -223,18 +223,18 @@ pando worktree add ../feature-x feature-x
 **Examples**:
 ```bash
 # Safe by default
-pando worktree remove --path ../feature-x
+pando remove --path ../feature-x
 # → Warns about uncommitted changes
 
 # Explicit force
-pando worktree remove --path ../feature-x --force
+pando remove --path ../feature-x --force
 # → Removes even with changes
 
-# Branch deletion
-pando branch delete --name feature-x
+# Branch deletion with worktree removal
+pando remove --path ../feature-x --delete-branch local
 # → Checks if merged
 
-pando branch delete --name feature-x --force
+pando remove --path ../feature-x --delete-branch local --force
 # → Forces deletion
 ```
 
@@ -253,10 +253,13 @@ pando branch delete --name feature-x --force
 
 ```bash
 # Output path for cd
-cd $(pando worktree navigate --branch feature-x --output-path)
+cd $(pando navigate --branch feature-x --output-path)
+
+# Or use the shorter nav alias
+cd $(pando nav --branch feature-x --output-path)
 
 # Or create shell alias
-alias goto-worktree='cd $(pando worktree navigate --output-path --branch $1)'
+alias goto-worktree='cd $(pando nav --output-path --branch $1)'
 goto-worktree feature-x
 ```
 
@@ -295,7 +298,7 @@ async add(p: string, opts: any)
 
 ```typescript
 async run() {
-  // TODO: Implement worktree add logic
+  // TODO: Implement add logic
   // 1. Validate the repository is a git repo
   // 2. Check if path already exists
   // 3. Validate branch/commit if provided
@@ -359,10 +362,10 @@ pando worktree:backup --to s3://...
 
 ```bash
 # Open worktree in VSCode
-pando worktree:open --branch feature-x --editor code
+pando open --branch feature-x --editor code
 
 # Generate workspace file
-pando worktree:workspace --output pando.code-workspace
+pando workspace --output pando.code-workspace
 ```
 
 **Benefit**: Seamless workflow integration
@@ -372,7 +375,7 @@ pando worktree:workspace --output pando.code-workspace
 **Idea**: Worktree templates with pre-configured setups
 
 ```bash
-pando worktree add --template feature --path ../feature-x
+pando add --template feature --path ../feature-x
 # Creates worktree + installs deps + runs setup
 ```
 
@@ -400,8 +403,8 @@ Integration tests with temporary repos are valuable:
 ```typescript
 it('should create and list worktrees', async () => {
   const repo = await createTempRepo()
-  await run(['worktree add', '--path', `${repo}/feature`, '--branch', 'test'])
-  const list = await run(['worktree list', '--json'])
+  await run(['add', '--path', `${repo}/feature`, '--branch', 'test'])
+  const list = await run(['list', '--json'])
   expect(JSON.parse(list)).toHaveLength(2)
   await cleanupTempRepo(repo)
 })
@@ -437,12 +440,12 @@ Generated automatically by oclif from code.
 
 ```bash
 # Minimal command
-pando worktree add
+pando add
 
 # Prompts guide user
 
 # Expert usage
-pando worktree add --path ../f --branch f --commit abc --json
+pando add --path ../f --branch f --commit abc --json
 ```
 
 Supports both learning and efficiency.

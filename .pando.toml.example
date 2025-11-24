@@ -154,11 +154,11 @@ deleteBranchOnRemove = "none"
 # ============================================================================
 # All settings can be overridden via CLI flags:
 #
-#   pando worktree add --path ../feature --branch feature --skip-rsync
-#   pando worktree add --path ../feature --branch feature --skip-symlink
-#   pando worktree add --path ../feature --branch feature --rsync-exclude "*.log"
-#   pando worktree add --path ../feature --branch feature --symlink "package.json"
-#   pando worktree add --path ../feature --branch feature --absolute-symlinks
-#   pando worktree add --branch existing-feature --no-rebase
-#   pando worktree remove --path ../feature --delete-branch local
-#   pando worktree remove --path ../feature --delete-branch remote --force
+#   pando add --path ../feature --branch feature --skip-rsync
+#   pando add --path ../feature --branch feature --skip-symlink
+#   pando add --path ../feature --branch feature --rsync-exclude "*.log"
+#   pando add --path ../feature --branch feature --symlink "package.json"
+#   pando add --path ../feature --branch feature --absolute-symlinks
+#   pando add --branch existing-feature --no-rebase
+#   pando remove --path ../feature --delete-branch local
+#   pando remove --path ../feature --delete-branch remote --force

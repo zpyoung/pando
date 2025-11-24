@@ -39,14 +39,15 @@ Each command:
 **Structure**:
 ```
 commands/
-├── worktree/
-│   ├── add.ts      # pando worktree add
-│   ├── list.ts     # pando worktree list
-│   ├── remove.ts   # pando worktree remove
-│   └── navigate.ts # pando worktree navigate
-└── branch/
-    ├── create.ts   # pando branch create
-    └── delete.ts   # pando branch delete
+├── add.ts         # pando add (create worktree)
+├── list.ts        # pando list (list worktrees)
+├── remove.ts      # pando remove (remove worktree)
+├── navigate.ts    # pando navigate (navigate to worktree)
+├── nav.ts         # pando nav (alias for navigate)
+├── symlink.ts     # pando symlink (create symlinks)
+└── config/
+    ├── init.ts    # pando config init
+    └── show.ts    # pando config show
 ```
 
 **Design Pattern**: **Command Pattern**
@@ -136,10 +137,10 @@ Pando follows **feature-based organization** (vertical slices):
 
 ```
 Feature: Worktree Management
-├── Commands:    src/commands/worktree/*.ts
+├── Commands:    src/commands/*.ts (add, list, remove, navigate, symlink)
 ├── Logic:       src/utils/git.ts (worktree methods)
 ├── Types:       WorktreeInfo, etc.
-└── Tests:       test/commands/worktree/*.test.ts
+└── Tests:       test/commands/*.test.ts
 ```
 
 **Benefits**:
@@ -270,8 +271,7 @@ Commands support `--json` flag. To add new formats:
     "commands": "./dist/commands",
     "topicSeparator": ":",
     "topics": {
-      "worktree": { "description": "Manage git worktrees" },
-      "branch": { "description": "Manage branches" }
+      "config": { "description": "Manage pando configuration" }
     }
   }
 }

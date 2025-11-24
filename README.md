@@ -7,7 +7,6 @@ Pando makes it effortless to work on multiple branches simultaneously using Git 
 ## Features
 
 - 🌳 **Worktree Management**: Create, list, remove, and navigate git worktrees with ease
-- 🔀 **Branch Operations**: Streamlined branch creation and deletion with worktree integration
 - 🤖 **Automation-First**: Every command supports `--json` flag for scripting and AI agents
 - 🎯 **Developer-Friendly**: Interactive prompts when flags aren't provided
 - ⚡ **Fast**: Built with TypeScript for type safety and performance
@@ -48,27 +47,24 @@ pnpm link
 
 ```bash
 # Create a new worktree for a feature branch
-pando worktree add --path ../feature-x --branch feature-x
+pando add --path ../feature-x --branch feature-x
 
 # List all worktrees
-pando worktree list
+pando list
 
 # Navigate to a worktree (outputs path for shell evaluation)
-cd $(pando worktree navigate --branch feature-x --output-path)
+cd $(pando navigate --branch feature-x --output-path)
+# Or use the shorter alias
+cd $(pando nav --branch feature-x --output-path)
 
 # Remove a worktree (interactive selection or direct with --path)
-pando worktree remove
-pando worktree remove --path ../feature-x
-
-# Create a branch with a worktree in one command
-pando branch create --name feature-y --worktree ../feature-y
+pando remove
+pando remove --path ../feature-x
 ```
 
 ## Commands
 
-### Worktree Commands
-
-#### `pando worktree add`
+### `pando add`
 
 Create a new git worktree (supports both creating new branches and checking out existing branches)
 
@@ -87,24 +83,24 @@ Create a new git worktree (supports both creating new branches and checking out 
 
 ```bash
 # Create new branch in worktree
-pando worktree add --path ../feature-x --branch feature-x
+pando add --path ../feature-x --branch feature-x
 
 # Checkout existing branch into worktree
-pando worktree add --path ../existing --branch existing-branch
+pando add --path ../existing --branch existing-branch
 
 # Using config default path (if worktree.defaultPath is set in .pando.toml)
-pando worktree add --branch feature-x
+pando add --branch feature-x
 # OR using shorthand (positional argument)
-pando worktree add feature-x
+pando add feature-x
 
 # From specific commit
-pando worktree add --path ../hotfix --branch hotfix --commit abc123
+pando add --path ../hotfix --branch hotfix --commit abc123
 
 # Force reset existing branch to commit
-pando worktree add --path ../feature --branch feature-x --commit abc123 --force
+pando add --path ../feature --branch feature-x --commit abc123 --force
 ```
 
-#### `pando worktree list`
+### `pando list`
 
 List all git worktrees
 
@@ -116,11 +112,11 @@ List all git worktrees
 **Examples:**
 
 ```bash
-pando worktree list
-pando worktree list --json
+pando list
+pando list --json
 ```
 
-#### `pando worktree remove`
+### `pando remove`
 
 Remove a git worktree
 
@@ -144,23 +140,23 @@ Remove a git worktree
 
 ```bash
 # Interactive selection (select from list)
-pando worktree remove
+pando remove
 
 # Direct removal with path
-pando worktree remove --path ../feature-x
-pando worktree remove --path ../feature-x --force
+pando remove --path ../feature-x
+pando remove --path ../feature-x --force
 
 # Remove worktree and delete local branch
-pando worktree remove --path ../feature-x --delete-branch local
+pando remove --path ../feature-x --delete-branch local
 
 # Remove worktree and delete both local and remote branches
-pando worktree remove --path ../feature-x --delete-branch remote --force
+pando remove --path ../feature-x --delete-branch remote --force
 
 # Interactive multi-select with force flag
-pando worktree remove --force
+pando remove --force
 ```
 
-#### `pando worktree navigate`
+### `pando navigate` (alias: `pando nav`)
 
 Navigate to a git worktree
 
@@ -174,46 +170,12 @@ Navigate to a git worktree
 **Examples:**
 
 ```bash
-pando worktree navigate --branch feature-x
-cd $(pando worktree navigate --branch feature-x --output-path)
-```
+pando navigate --branch feature-x
+cd $(pando navigate --branch feature-x --output-path)
 
-### Branch Commands
-
-#### `pando branch create`
-
-Create a new git branch
-
-**Flags:**
-
-- `-n, --name` (required): Name of the branch to create
-- `-f, --from`: Base branch or commit (default: main)
-- `-w, --worktree`: Automatically create a worktree at this path
-- `-j, --json`: Output in JSON format
-
-**Examples:**
-
-```bash
-pando branch create --name feature-x
-pando branch create --name feature-x --worktree ../feature-x
-```
-
-#### `pando branch delete`
-
-Delete a git branch
-
-**Flags:**
-
-- `-n, --name` (required): Name of the branch to delete
-- `-f, --force`: Force deletion even if not fully merged
-- `-w, --remove-worktree`: Also remove associated worktree
-- `-j, --json`: Output in JSON format
-
-**Examples:**
-
-```bash
-pando branch delete --name feature-x
-pando branch delete --name feature-x --remove-worktree
+# Using the shorter alias
+pando nav --branch feature-x
+cd $(pando nav --branch feature-x --output-path)
 ```
 
 ## Configuration
@@ -258,10 +220,10 @@ defaultPath = "../worktrees"
 
 ```bash
 # Creates worktree at ../worktrees/feature-x (relative to git root)
-pando worktree add --branch feature-x
+pando add --branch feature-x
 
 # Branch names with slashes are sanitized
-pando worktree add --branch feature/auth
+pando add --branch feature/auth
 # Creates: ../worktrees/feature_auth
 ```
 
@@ -280,7 +242,7 @@ export PANDO_WORKTREE_REBASE_ON_ADD=false
 export PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE=local
 
 # Now you can omit --path
-pando worktree add --branch feature-x
+pando add --branch feature-x
 ```
 
 **Environment variable format:**
@@ -297,10 +259,10 @@ All commands support the `--json` flag for machine-readable output:
 
 ```bash
 # Use in scripts
-worktrees=$(pando worktree list --json)
+worktrees=$(pando list --json)
 
 # Parse with jq
-pando worktree list --json | jq '.[] | select(.branch == "feature-x")'
+pando list --json | jq '.[] | select(.branch == "feature-x")'
 ```
 
 ## Development
@@ -310,7 +272,7 @@ pando worktree list --json | jq '.[] | select(.branch == "feature-x")'
 pnpm install
 
 # Run in development mode
-pnpm dev worktree list
+pnpm dev list
 
 # Build
 pnpm build
@@ -365,7 +327,7 @@ pando config init --json
 # Output: {"status":"error","error":"Configuration file already exists..."}
 
 # Check exit codes in scripts
-pando worktree add --path ../feature --branch feature --json
+pando add --path ../feature --branch feature --json
 if [ $? -ne 0 ]; then
   echo "Command failed"
 fi
@@ -377,10 +339,10 @@ For detailed debugging, run commands with Node.js debug environment:
 
 ```bash
 # Enable debug output
-NODE_DEBUG=pando pnpm dev worktree list
+NODE_DEBUG=pando pnpm dev list
 
 # Or with node inspector
-node --inspect bin/dev.js worktree list
+node --inspect bin/dev.js list
 ```
 
 ### Common Issues

@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import ListWorktree from '../../../src/commands/worktree/list'
-import * as gitUtils from '../../../src/utils/git'
-import type { WorktreeInfo } from '../../../src/utils/git'
+import ListWorktree from '../../src/commands/list'
+import * as gitUtils from '../../src/utils/git'
+import type { WorktreeInfo } from '../../src/utils/git'
 
 /**
- * Tests for worktree list command
+ * Tests for list command
  *
  * These tests verify the command logic by mocking the GitHelper
  */
 
-describe('worktree list', () => {
+describe('list', () => {
   // Mock sample data
   const mockWorktrees: WorktreeInfo[] = [
     {

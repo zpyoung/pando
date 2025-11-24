@@ -48,12 +48,12 @@ bd sync                   # Sync with git (run at session end)
 
 ### Command Pattern
 
-Each command is a self-contained class in `src/commands/topic/verb.ts`:
+Each command is a self-contained class. Core worktree commands live at top-level `src/commands/verb.ts`, while grouped commands (like config) are nested in `src/commands/topic/verb.ts`:
 
 ```typescript
 import { Command, Flags } from '@oclif/core'
 
-export default class VerbTopic extends Command {
+export default class Add extends Command {
   static description = 'Clear description of what this does'
 
   static examples = ['<%= config.bin %> <%= command.id %> --required-flag value']
@@ -72,7 +72,7 @@ export default class VerbTopic extends Command {
   }
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(VerbTopic)
+    const { flags } = await this.parse(Add)
 
     // Implementation here
     // 1. Validate inputs
@@ -81,6 +81,19 @@ export default class VerbTopic extends Command {
   }
 }
 ```
+
+### Command Alias Pattern
+
+To create a command alias (like `pando nav` for `pando navigate`), use a simple re-export:
+
+```typescript
+// src/commands/nav.ts
+import NavigateCommand from './navigate.js'
+
+export default NavigateCommand
+```
+
+This ensures both commands share the same implementation and flags.
 
 ### Utility Pattern
 
@@ -117,7 +130,7 @@ describe('command-name', () => {
 All commands use the centralized `ErrorHelper` utility from `src/utils/errors.ts` for consistent error handling with proper JSON support:
 
 ```typescript
-import { ErrorHelper } from '../../utils/errors.js'
+import { ErrorHelper } from '../utils/errors.js'  // Use ../../ for nested commands like config/
 
 // 1. VALIDATION ERRORS (expected user errors)
 // Use for: file exists, invalid arguments, missing requirements
@@ -187,7 +200,7 @@ function getWorktrees(): any {
 
 ### Naming Conventions
 
-- **Commands**: `VerbNoun` (e.g., `AddWorktree`, `ListBranch`)
+- **Commands**: `Verb` for top-level (e.g., `Add`, `List`, `Navigate`) or `VerbTopic` for nested (e.g., `InitConfig`)
 - **Files**: `kebab-case.ts` (e.g., `add.ts`, `git-helper.ts`)
 - **Variables**: `camelCase`
 - **Types/Interfaces**: `PascalCase`
@@ -196,7 +209,11 @@ function getWorktrees(): any {
 ### File Organization
 
 ```
-src/commands/topic/verb.ts     # Command implementation
+src/commands/
+├── verb.ts                    # Top-level commands (add, list, remove, navigate, nav, symlink)
+└── topic/verb.ts              # Nested commands (config/init, config/show)
+
+# Each command file follows this structure:
    ├─ imports
    ├─ class definition
    │  ├─ static description
@@ -212,13 +229,38 @@ Keep files under 250 lines. If longer, extract utilities.
 
 ### Adding a New Command
 
+**For top-level commands** (core worktree operations like `pando add`):
+
+1. **Create command file**:
+
+   ```bash
+   touch src/commands/verb.ts
+   ```
+
+2. **Implement command** (follow Command Pattern above)
+
+3. **Create test file**:
+
+   ```bash
+   touch test/commands/verb.test.ts
+   ```
+
+4. **Add examples to README.md**
+
+5. **Run and verify**:
+   ```bash
+   pnpm dev verb --help
+   ```
+
+**For nested commands** (grouped operations like `pando config init`):
+
 1. **Create command file**:
 
    ```bash
    touch src/commands/topic/verb.ts
    ```
 
-2. **Implement command** (follow Command Pattern above)
+2. **Implement command** (follow Command Pattern above, using `../../` for imports)
 
 3. **Create test file**:
 
@@ -231,6 +273,22 @@ Keep files under 250 lines. If longer, extract utilities.
 5. **Run and verify**:
    ```bash
    pnpm dev topic:verb --help
+   ```
+
+**For command aliases** (like `pando nav` for `pando navigate`):
+
+1. **Create alias file** that re-exports the main command:
+
+   ```bash
+   # src/commands/alias.ts
+   import MainCommand from './main-command.js'
+   export default MainCommand
+   ```
+
+2. **Create test file** to verify alias works:
+
+   ```bash
+   touch test/commands/alias.test.ts
    ```
 
 ### Adding Git Operations
@@ -434,7 +492,7 @@ Key architectural choices and rationale
 
 **Placement Rules**:
 
-- In **feature directories** (e.g., `src/commands/worktree/`)
+- In **feature directories** (e.g., `src/commands/config/`)
 - In **utility directories** (e.g., `src/utils/`)
 - In **any folder with 2+ implementation files**
 - When a folder represents a cohesive feature or concern
@@ -547,12 +605,12 @@ Code Change → Check:
 
 ```bash
 # Good commit
-git add src/commands/worktree/sync.ts
-git add src/commands/worktree/DESIGN.md
+git add src/commands/sync.ts
+git add src/commands/DESIGN.md
 git add README.md
-git commit -m "feat(worktree): add sync command
+git commit -m "feat: add sync command
 
-- Implement worktree sync for syncing with remote
+- Implement sync for syncing with remote
 - Update DESIGN.md with sync implementation details
 - Add command to README.md reference"
 ```
@@ -561,12 +619,12 @@ git commit -m "feat(worktree): add sync command
 
 #### Example 1: Adding a New Command
 
-**Code Change**: Create `src/commands/worktree/sync.ts`
+**Code Change**: Create `src/commands/sync.ts`
 
 **Required Documentation Updates**:
 
 1. **README.md**: Add command to reference section with examples
-2. **src/commands/worktree/DESIGN.md**: Add description of sync command
+2. **src/commands/DESIGN.md**: Add description of sync command
 3. **CLAUDE.md**: Update if new patterns are introduced (e.g., new git operation)
 
 #### Example 2: Adding a New Utility Module
@@ -925,7 +983,7 @@ async run() {
 
 **Why**: Configuration may provide defaults (like `worktree.defaultPath`) that affect validation logic. Loading config first allows validation to account for these defaults.
 
-**Location**: Commands that use config defaults (e.g., `src/commands/worktree/add.ts`)
+**Location**: Commands that use config defaults (e.g., `src/commands/add.ts`)
 
 ## Debugging
 
@@ -933,7 +991,7 @@ async run() {
 
 ```bash
 # Run with Node debugger
-node --inspect bin/dev.js worktree list
+node --inspect bin/dev.js list
 
 # VS Code launch.json
 {

@@ -1,6 +1,6 @@
 import { Command, Flags } from '@oclif/core'
-import { jsonFlag } from '../../utils/common-flags.js'
-import { ErrorHelper } from '../../utils/errors.js'
+import { jsonFlag } from '../utils/common-flags.js'
+import { ErrorHelper } from '../utils/errors.js'
 
 /**
  * Navigate to a git worktree
@@ -50,7 +50,7 @@ export default class NavigateWorktree extends Command {
       )
     }
 
-    const { createGitHelper } = await import('../../utils/git.js')
+    const { createGitHelper } = await import('../utils/git.js')
     const git = createGitHelper()
 
     // Validate repository

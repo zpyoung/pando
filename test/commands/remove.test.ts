@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { WorktreeInfo } from '../../../src/utils/git.js'
-import RemoveWorktree from '../../../src/commands/worktree/remove.js'
+import { WorktreeInfo } from '../../src/utils/git.js'
+import RemoveWorktree from '../../src/commands/remove.js'
 
 /**
- * Tests for worktree remove command
+ * Tests for remove command
  *
  * These tests use mocking to avoid requiring a real git repository
  */
 
 // Mock the git module
-vi.mock('../../../src/utils/git.js', () => {
+vi.mock('../../src/utils/git.js', () => {
   const mockGitHelper = {
     isRepository: vi.fn(),
     getRepositoryRoot: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock('../../../src/utils/git.js', () => {
 })
 
 // Mock the config loader
-vi.mock('../../../src/config/loader.js', () => ({
+vi.mock('../../src/config/loader.js', () => ({
   loadConfig: vi.fn().mockResolvedValue({
     rsync: { enabled: true, flags: ['--archive'], exclude: [] },
     symlink: { patterns: [], relative: true, beforeRsync: true },
@@ -45,7 +45,7 @@ vi.mock('inquirer', () => ({
   },
 }))
 
-describe('worktree remove', () => {
+describe('remove', () => {
   let command: RemoveWorktree
   let mockGitHelper: any
   let logSpy: any
@@ -62,7 +62,7 @@ describe('worktree remove', () => {
     command = new RemoveWorktree([], mockConfig)
 
     // Get the mocked GitHelper instance
-    const { createGitHelper } = await import('../../../src/utils/git.js')
+    const { createGitHelper } = await import('../../src/utils/git.js')
     mockGitHelper = createGitHelper()
 
     // Spy on log and error methods

@@ -2,12 +2,12 @@ import { Command, Flags, Args } from '@oclif/core'
 import * as path from 'path'
 import * as fs from 'fs-extra'
 import { stat } from 'fs/promises'
-import { createGitHelper } from '../../utils/git.js'
+import { createGitHelper } from '../utils/git.js'
 import {
   FileOperationTransaction,
   createSymlinkHelper,
-} from '../../utils/fileOps.js'
-import { ErrorHelper } from '../../utils/errors.js'
+} from '../utils/fileOps.js'
+import { ErrorHelper } from '../utils/errors.js'
 
 export default class SymlinkWorktreeFile extends Command {
   static description = 'Move a file to the main worktree and replace it with a symlink'
@@ -57,7 +57,7 @@ export default class SymlinkWorktreeFile extends Command {
       // Simple check: if current dir is main worktree, warn or error
       // Note: gitRoot might be the .git dir in the main worktree or the worktree root.
       // Let's rely on mainWorktreePath comparison.
-      
+
       // Normalize paths for comparison
       const normalizedCurrent = path.resolve(currentDir)
       const normalizedMain = path.resolve(mainWorktreePath)
@@ -70,24 +70,24 @@ export default class SymlinkWorktreeFile extends Command {
 
       // 2. Resolve paths
       const sourceFilePath = path.resolve(currentDir, args.file)
-      
+
       // Verify source exists
       if (!(await fs.pathExists(sourceFilePath))) {
          ErrorHelper.validation(this, `Source file does not exist: ${sourceFilePath}`, flags.json)
       }
-      
+
       // Check if source is a file
       const sourceStats = await stat(sourceFilePath)
       if (!sourceStats.isFile()) {
           ErrorHelper.validation(this, `Source is not a regular file: ${sourceFilePath}`, flags.json)
       }
-      
+
       // Calculate relative path from current worktree root to the file
       // We need to find the root of the CURRENT worktree.
       // git rev-parse --show-toplevel gives the root of the current worktree.
       const currentWorktreeRoot = await gitHelper.getRepositoryRoot()
       const relativePath = path.relative(currentWorktreeRoot, sourceFilePath)
-      
+
       if (relativePath.startsWith('..')) {
           ErrorHelper.validation(this, `File ${args.file} is outside the current worktree`, flags.json)
       }
@@ -104,8 +104,8 @@ export default class SymlinkWorktreeFile extends Command {
         if (!flags.force) {
             if (spinner) spinner.fail('Destination exists')
             ErrorHelper.validation(
-                this, 
-                `Destination file already exists: ${destFilePath}\nUse --force to overwrite.`, 
+                this,
+                `Destination file already exists: ${destFilePath}\nUse --force to overwrite.`,
                 flags.json
             )
         }
@@ -127,39 +127,39 @@ export default class SymlinkWorktreeFile extends Command {
       try {
         // Ensure dest dir exists
         await fs.ensureDir(path.dirname(destFilePath))
-        
+
         // Copy file (we copy then delete to be safe, or move)
         // fs.move is atomic-ish on same fs, but across worktrees might be copy+unlink.
         // Let's use copy to main, then remove source, then symlink.
-        
+
         // If force is on and dest exists, we might need to remove it first or overwrite.
         // fs.copy with overwrite: true handles it.
-        
+
         await fs.copy(sourceFilePath, destFilePath, { overwrite: flags.force })
-        
+
         // Verify copy success? fs.copy throws if fails.
-        
+
         // Remove source file
         await fs.remove(sourceFilePath)
-        
+
         // Create symlink: Source (now deleted) -> Destination
         // We want the symlink at sourceFilePath to point to destFilePath.
         // Should it be absolute or relative?
         // Existing logic in add.ts uses config, but here let's default to relative for portability if possible,
-        // or absolute if it's across widely separated paths. 
+        // or absolute if it's across widely separated paths.
         // The `createSymlink` helper supports relative.
-        
+
         // Let's use absolute for now to be safe across worktrees, or calculate relative.
         // The user request didn't specify, but usually relative symlinks are better if the repo structure is fixed.
         // However, worktrees are often sibling directories.
         // Let's try relative.
-        
+
         await symlinkHelper.createSymlink(destFilePath, sourceFilePath, { relative: true })
-        
+
         if (spinner) {
             spinner.succeed('File moved and symlinked')
         }
-        
+
         if (flags.json) {
             this.log(JSON.stringify({
                 success: true,
@@ -179,19 +179,19 @@ export default class SymlinkWorktreeFile extends Command {
         if (spinner) spinner.fail('Operation failed, rolling back...')
         await transaction.rollback()
         // If we manually did fs.copy/remove outside transaction (which we did for the file move part),
-        // we need to handle that. 
+        // we need to handle that.
         // The FileOperationTransaction class in this codebase seems to require manual recording?
         // Looking at fileOps.ts: "TODO: Implement operation recording" in record().
         // Ah, the existing Transaction class is a bit of a skeleton or I need to use it correctly.
         // The `createSymlink` helper DOES record.
         // But my fs.copy and fs.remove were raw calls.
-        
+
         // To be proper, I should probably wrap the copy/delete in the transaction or just do best-effort manual rollback here
         // since I'm implementing the command.
-        // For now, I will just re-throw with a helpful message, as implementing full transaction logic 
+        // For now, I will just re-throw with a helpful message, as implementing full transaction logic
         // for copy/move might be out of scope for this single file change if the util isn't ready.
         // Wait, I see `transaction.record` in `fileOps.ts`.
-        
+
         throw error
       }
 
