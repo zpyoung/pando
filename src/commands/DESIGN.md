@@ -50,7 +50,7 @@ export default class CommandName extends Command {
 1. **JSON Output**: All commands support `--json` flag for machine-readable output
 2. **ErrorHelper Pattern**: All errors use `ErrorHelper` from `../utils/errors.js` for consistent error handling
 3. **GitHelper Dependency**: Commands use `createGitHelper()` for git operations
-4. **Lazy Loading**: Dynamic imports for UI libraries (ora, chalk, inquirer) to reduce startup time
+4. **Lazy Loading**: Dynamic imports for UI libraries (ora, chalk) to reduce startup time
 
 ## Command Details
 
@@ -168,9 +168,14 @@ if (spinner) spinner.succeed('Done')
 ### Interactive Prompts
 
 ```typescript
+import { checkbox, confirm } from '@inquirer/prompts'
+
 if (!flags.json && !flags.path) {
-  const inquirer = await import('inquirer')
-  const answers = await inquirer.default.prompt([...])
+  const selected = await checkbox({
+    message: 'Select items:',
+    choices: [{ name: 'Option A', value: 'a' }, { name: 'Option B', value: 'b' }],
+  })
+  const confirmed = await confirm({ message: 'Continue?', default: false })
 }
 ```
 
@@ -189,7 +194,7 @@ See `test/commands/add.test.ts` and `test/commands/symlink.test.ts` for examples
 - `@oclif/core`: CLI framework
 - `chalk`: Terminal colors (lazy loaded)
 - `ora`: Spinners (lazy loaded)
-- `inquirer`: Interactive prompts (lazy loaded)
+- `@inquirer/prompts`: Interactive prompts (checkbox, confirm, etc.)
 - `../utils/git.js`: Git operations
 - `../utils/fileOps.js`: File operations
 - `../utils/errors.js`: Error handling

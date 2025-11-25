@@ -22,8 +22,16 @@ beforeRsync = true
 
 # Worktree Configuration
 # Controls default behavior for worktree operations
+# defaultPath - Default parent directory for new worktrees
+#   Relative paths resolve from git root, branch names are auto-appended
+#   Example: "../worktrees" with --branch feat/login → ../worktrees/feat_login
+# rebaseOnAdd - Automatically rebase existing branches onto source when adding worktree
+#   Set to false to disable automatic rebase, or use --no-rebase flag
+# deleteBranchOnRemove - Delete branch when removing worktree
+#   none: Do not delete branches (default)
+#   local: Delete local branch only
+#   remote: Delete both local and remote branches
 [worktree]
- defaultPath = "../worktrees/pando"  # Default parent directory for worktrees
-                                # Relative paths resolve from git root
-                                # Absolute paths are used as-is
-                                # When using --branch without --path, branch name is appended
+rebaseOnAdd = true
+deleteBranchOnRemove = "none"
+defaultPath = "../worktrees/pando"
