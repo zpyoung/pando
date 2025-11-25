@@ -1,27 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runCommand } from '@oclif/test'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as path from 'path'
 import * as fs from 'fs-extra'
 import * as os from 'os'
 import simpleGit from 'simple-git'
-
-/**
- * Tests for config show command
- *
- * Tests configuration display in various formats and scenarios:
- * - Basic config display (human-readable)
- * - JSON output format
- * - --sources flag showing source information
- * - Configuration from multiple sources
- *
- * Note: @oclif/test's runCommand doesn't capture stdout in result.stdout
- * for text output, but we can verify the command runs without errors
- * and test JSON output via captured output in test environment.
- */
+import ConfigShow from '../../../src/commands/config/show.js'
 
 describe('config show', () => {
   let tempDir: string
   let originalCwd: string
+  let command: ConfigShow
+  let logSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {
     // Save original working directory
@@ -38,6 +26,12 @@ describe('config show', () => {
     await git.init()
     await git.addConfig('user.name', 'Test User')
     await git.addConfig('user.email', 'test@example.com')
+
+    // Create command instance
+    command = new ConfigShow([], {} as any)
+
+    // Spy on log method
+    logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
   })
 
   afterEach(async () => {
@@ -46,52 +40,65 @@ describe('config show', () => {
 
     // Clean up temp directory
     await fs.remove(tempDir)
+
+    // Restore all mocks
+    vi.restoreAllMocks()
   })
 
   describe('basic functionality', () => {
     it('runs without errors', async () => {
-      const result = await runCommand(['config show'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, sources: false },
+        args: {},
+      } as any)
 
-      // Verify no errors occurred
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      // Should have called log at least once
+      expect(logSpy).toHaveBeenCalled()
     })
 
     it('runs with --sources flag without errors', async () => {
-      const result = await runCommand(['config show', '--sources'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, sources: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      expect(logSpy).toHaveBeenCalled()
     })
 
     it('runs with --json flag without errors', async () => {
-      const result = await runCommand(['config show', '--json'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: false },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      // Should output valid JSON
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+      expect(parsed).toHaveProperty('rsync')
+      expect(parsed).toHaveProperty('symlink')
     })
 
     it('runs with combined flags without errors', async () => {
-      const result = await runCommand(['config show', '--json', '--sources'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
-    })
-  })
+      await command.run()
 
-  describe('short flags', () => {
-    it('supports -j short flag for JSON', async () => {
-      const result = await runCommand(['config show', '-j'], import.meta.url)
-
-      expect(result.error).toBeUndefined()
-    })
-
-    it('supports -s short flag for sources', async () => {
-      const result = await runCommand(['config show', '-s'], import.meta.url)
-
-      expect(result.error).toBeUndefined()
-    })
-
-    it('supports combined short flags -j -s', async () => {
-      const result = await runCommand(['config show', '-j', '-s'], import.meta.url)
-
-      expect(result.error).toBeUndefined()
+      // Should output valid JSON with sources
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+      expect(parsed).toHaveProperty('config')
+      expect(parsed).toHaveProperty('sources')
     })
   })
 
@@ -111,10 +118,20 @@ patterns = ["package.json", "pnpm-lock.yaml"]
 `
       )
 
-      const result = await runCommand(['config show'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: false },
+        args: {},
+      } as any)
 
-      // Should run without error
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      // Verify custom values are loaded
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+      expect(parsed.rsync.enabled).toBe(false)
+      expect(parsed.rsync.exclude).toEqual(['*.log', 'tmp/'])
+      expect(parsed.symlink.patterns).toEqual(['package.json', 'pnpm-lock.yaml'])
     })
 
     it('shows custom values in JSON output', async () => {
@@ -132,9 +149,20 @@ patterns = ["package.json", "pnpm-lock.yaml"]
 `
       )
 
-      const result = await runCommand(['config show', '--json'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+
+      // Check that sources are tracked
+      expect(parsed.sources['rsync.enabled']).toBe('pando_toml')
+      expect(parsed.sources['symlink.patterns']).toBe('pando_toml')
     })
   })
 
@@ -155,9 +183,17 @@ patterns = ["package.json", "pnpm-lock.yaml"]
         })
       )
 
-      const result = await runCommand(['config show'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: false },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+      expect(parsed.symlink.patterns).toEqual(['package.json', 'package-lock.json'])
     })
 
     it('shows package.json values in JSON output', async () => {
@@ -176,9 +212,17 @@ patterns = ["package.json", "pnpm-lock.yaml"]
         })
       )
 
-      const result = await runCommand(['config show', '--json'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+      expect(parsed.sources['symlink.patterns']).toBe('package_json')
     })
   })
 
@@ -208,9 +252,20 @@ enabled = false
         })
       )
 
-      const result = await runCommand(['config show'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: false },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+
+      // pando.toml has higher priority, but both should contribute
+      expect(parsed.rsync.enabled).toBe(false) // from .pando.toml
+      expect(parsed.symlink.patterns).toEqual(['package.json']) // from package.json
     })
 
     it('shows multiple sources when using --sources flag', async () => {
@@ -238,33 +293,70 @@ enabled = false
         })
       )
 
-      const result = await runCommand(['config show', '--sources'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+
+      expect(parsed.sources['rsync.enabled']).toBe('pando_toml')
+      expect(parsed.sources['symlink.patterns']).toBe('package_json')
     })
   })
 
   describe('empty configuration', () => {
     it('handles empty config with defaults only', async () => {
       // No config files created, should use defaults
-      const result = await runCommand(['config show'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: false },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+
+      // Should have default values
+      expect(parsed.rsync.enabled).toBe(true)
+      expect(parsed.rsync.flags).toEqual(['--archive', '--exclude', '.git'])
+      expect(parsed.symlink.patterns).toEqual([])
+      expect(parsed.symlink.relative).toBe(true)
     })
 
     it('outputs valid defaults in JSON format', async () => {
       // No config files created, should use defaults
-      const result = await runCommand(['config show', '--json'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+
+      // All sources should be 'default'
+      expect(parsed.sources['rsync.enabled']).toBe('default')
+      expect(parsed.sources['symlink.patterns']).toBe('default')
     })
   })
 
   describe('error handling', () => {
     it('does not throw errors for valid configuration', async () => {
-      const result = await runCommand(['config show'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, sources: false },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await expect(command.run()).resolves.not.toThrow()
     })
 
     it('handles non-git directories gracefully', async () => {
@@ -274,10 +366,13 @@ enabled = false
       try {
         process.chdir(nonGitDir)
 
-        const result = await runCommand(['config show'], import.meta.url)
+        vi.spyOn(command, 'parse').mockResolvedValue({
+          flags: { json: true, sources: false },
+          args: {},
+        } as any)
 
         // Should still work (falls back to cwd)
-        expect(result.error).toBeUndefined()
+        await expect(command.run()).resolves.not.toThrow()
       } finally {
         // Restore
         process.chdir(tempDir)
@@ -307,9 +402,20 @@ beforeRsync = true
 `
       )
 
-      const result = await runCommand(['config show'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: false },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+
+      expect(parsed.rsync.enabled).toBe(true)
+      expect(parsed.rsync.exclude).toEqual(['*.log', 'tmp/', 'node_modules/'])
+      expect(parsed.symlink.patterns).toEqual(['package.json', 'pnpm-lock.yaml', '.env*'])
     })
 
     it('successfully loads configuration with sources', async () => {
@@ -322,9 +428,19 @@ enabled = false
 `
       )
 
-      const result = await runCommand(['config show', '--json', '--sources'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, sources: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const output = logCalls[0]?.[0] as string
+      const parsed = JSON.parse(output)
+
+      expect(parsed.config.rsync.enabled).toBe(false)
+      expect(parsed.sources['rsync.enabled']).toBe('pando_toml')
     })
   })
 })

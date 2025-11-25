@@ -322,9 +322,9 @@ Common error types:
 All commands support `--json` flag for machine-readable output:
 
 ```bash
-# Get structured error output
+# Merge missing defaults into existing config
 pando config init --json
-# Output: {"status":"error","error":"Configuration file already exists..."}
+# Output: {"status":"success","action":"merged","added":[...],"addedCount":2}
 
 # Check exit codes in scripts
 pando add --path ../feature --branch feature --json

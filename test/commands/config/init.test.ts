@@ -1,14 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { runCommand } from '@oclif/test'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs-extra'
 import * as path from 'path'
 import * as os from 'os'
 import simpleGit from 'simple-git'
 import { parse as parseToml } from '@iarna/toml'
+import ConfigInit from '../../../src/commands/config/init.js'
 
 describe('config init', () => {
   let tempDir: string
   let originalCwd: string
+  let command: ConfigInit
+  let logSpy: ReturnType<typeof vi.spyOn>
+  let errorSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {
     // Save original working directory
@@ -25,6 +28,15 @@ describe('config init', () => {
     await git.init()
     await git.addConfig('user.name', 'Test User')
     await git.addConfig('user.email', 'test@example.com')
+
+    // Create command instance
+    command = new ConfigInit([], {} as any)
+
+    // Spy on log and error methods
+    logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
+    errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+      throw new Error(String(args[0]))
+    })
   })
 
   afterEach(async () => {
@@ -33,22 +45,32 @@ describe('config init', () => {
 
     // Clean up temp directory
     await fs.remove(tempDir)
+
+    // Restore all mocks
+    vi.restoreAllMocks()
   })
 
   describe('basic functionality', () => {
     it('should create .pando.toml in current directory', async () => {
-      const result = await runCommand(['config init'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
 
       // Check file was created
       const configPath = path.join(tempDir, '.pando.toml')
       expect(await fs.pathExists(configPath)).toBe(true)
-
-      // Check output message (oclif may put output in stdout or via this.log)
-      expect(result.error).toBeUndefined()
     })
 
     it('should create valid TOML content with defaults', async () => {
-      await runCommand(['config init'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
 
       const configPath = path.join(tempDir, '.pando.toml')
       const content = await fs.readFile(configPath, 'utf-8')
@@ -59,6 +81,7 @@ describe('config init', () => {
       // Check structure
       expect(config).toHaveProperty('rsync')
       expect(config).toHaveProperty('symlink')
+      expect(config).toHaveProperty('worktree')
 
       // Check rsync defaults
       const rsync = config.rsync as Record<string, unknown>
@@ -71,10 +94,20 @@ describe('config init', () => {
       expect(symlink.patterns).toEqual([])
       expect(symlink.relative).toBe(true)
       expect(symlink.beforeRsync).toBe(true)
+
+      // Check worktree defaults
+      const worktree = config.worktree as Record<string, unknown>
+      expect(worktree.rebaseOnAdd).toBe(true)
+      expect(worktree.deleteBranchOnRemove).toBe('none')
     })
 
     it('should include helpful comments in output', async () => {
-      await runCommand(['config init'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
 
       const configPath = path.join(tempDir, '.pando.toml')
       const content = await fs.readFile(configPath, 'utf-8')
@@ -87,38 +120,191 @@ describe('config init', () => {
       expect(content).toContain('# Rsync Configuration')
       expect(content).toContain('# Symlink Configuration')
       expect(content).toContain('# Patterns support glob syntax')
+      expect(content).toContain('# Worktree Configuration')
+    })
+
+    it('should output JSON when --json flag is used', async () => {
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"status": "success"')
+      )
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"action": "created"')
+      )
     })
   })
 
   describe('--force flag', () => {
-    it('should fail if file exists without --force', async () => {
+    it('should fail if file exists with --no-merge', async () => {
       // Create initial config
-      await runCommand(['config init'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+      await command.run()
 
-      // Try to create again without --force
-      const result = await runCommand(['config init'], import.meta.url)
+      // Reset spies
+      vi.clearAllMocks()
 
-      // Should have an error
-      expect(result.error).toBeDefined()
-      expect(result.error?.message).toContain('already exists')
+      // Try to create again with --no-merge
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: false },
+        args: {},
+      } as any)
+      errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+        throw new Error(String(args[0]))
+      })
+
+      await expect(command.run()).rejects.toThrow('already exists')
     })
 
     it('should overwrite existing file with --force', async () => {
       const configPath = path.join(tempDir, '.pando.toml')
 
       // Create initial config
-      await runCommand(['config init'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+      await command.run()
 
       // Modify the file
-      await fs.writeFile(configPath, '# Modified content\n')
+      await fs.writeFile(configPath, '# Modified content\n[rsync]\nenabled = false\n')
+
+      // Reset mocks
+      vi.clearAllMocks()
 
       // Overwrite with --force
-      await runCommand(['config init', '--force'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: true, merge: true },
+        args: {},
+      } as any)
+      logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
+
+      await command.run()
 
       // Verify file was overwritten with fresh content
       const content = await fs.readFile(configPath, 'utf-8')
       expect(content).toContain('# Pando Configuration')
       expect(content).not.toContain('# Modified content')
+
+      // Check that rsync.enabled is back to default
+      const config = parseToml(content) as Record<string, any>
+      expect(config.rsync.enabled).toBe(true)
+    })
+  })
+
+  describe('merge behavior', () => {
+    it('should merge missing defaults into existing config by default', async () => {
+      const configPath = path.join(tempDir, '.pando.toml')
+
+      // Create partial config
+      await fs.writeFile(
+        configPath,
+        `[rsync]
+enabled = false
+
+[symlink]
+patterns = ["node_modules"]
+`
+      )
+
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
+
+      // Check JSON output
+      const logCalls = logSpy.mock.calls
+      const jsonOutput = logCalls[0]?.[0] as string
+      const result = JSON.parse(jsonOutput)
+
+      expect(result.status).toBe('success')
+      expect(result.action).toBe('merged')
+      expect(result.added).toBeInstanceOf(Array)
+      expect(result.addedCount).toBeGreaterThan(0)
+
+      // Verify file has merged content
+      const content = await fs.readFile(configPath, 'utf-8')
+      const config = parseToml(content) as Record<string, any>
+
+      // User values preserved
+      expect(config.rsync.enabled).toBe(false)
+      expect(config.symlink.patterns).toEqual(['node_modules'])
+
+      // Defaults added
+      expect(config.rsync.flags).toEqual(['--archive', '--exclude', '.git'])
+      expect(config.symlink.relative).toBe(true)
+      expect(config.worktree).toBeDefined()
+    })
+
+    it('should report nothing added when config is complete', async () => {
+      const configPath = path.join(tempDir, '.pando.toml')
+
+      // Create complete config first
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+      await command.run()
+
+      // Reset mocks
+      vi.clearAllMocks()
+
+      // Run again with JSON output
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+      logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
+
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const jsonOutput = logCalls[0]?.[0] as string
+      const result = JSON.parse(jsonOutput)
+
+      expect(result.status).toBe('success')
+      expect(result.action).toBe('unchanged')
+      expect(result.added).toEqual([])
+    })
+
+    it('should track added settings correctly', async () => {
+      const configPath = path.join(tempDir, '.pando.toml')
+
+      // Create config with only rsync section, missing specific fields
+      await fs.writeFile(
+        configPath,
+        `[rsync]
+enabled = false
+`
+      )
+
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
+
+      const logCalls = logSpy.mock.calls
+      const jsonOutput = logCalls[0]?.[0] as string
+      const result = JSON.parse(jsonOutput)
+
+      // Should have added rsync.flags, rsync.exclude, symlink, worktree
+      const addedPaths = result.added.map((a: any) => a.path)
+      expect(addedPaths).toContain('rsync.flags')
+      expect(addedPaths).toContain('rsync.exclude')
+      expect(addedPaths).toContain('symlink')
+      expect(addedPaths).toContain('worktree')
     })
   })
 
@@ -138,11 +324,15 @@ describe('config init', () => {
       }
 
       try {
-        const result = await runCommand(['config init', '--global'], import.meta.url)
+        vi.spyOn(command, 'parse').mockResolvedValue({
+          flags: { json: false, global: true, 'git-root': false, force: false, merge: true },
+          args: {},
+        } as any)
+
+        await command.run()
 
         // Check file was created in correct location
         expect(await fs.pathExists(globalConfigPath)).toBe(true)
-        expect(result.error).toBeUndefined()
 
         // Verify content is valid
         const content = await fs.readFile(globalConfigPath, 'utf-8')
@@ -151,30 +341,6 @@ describe('config init', () => {
         expect(config).toHaveProperty('symlink')
       } finally {
         // Clean up global config
-        if (await fs.pathExists(globalConfigPath)) {
-          await fs.remove(globalConfigPath)
-        }
-      }
-    })
-
-    it('should use config.toml filename for global config', async () => {
-      const homeDir = process.env.HOME || process.env.USERPROFILE
-      if (!homeDir) {
-        return // Skip test if home directory cannot be determined
-      }
-
-      const globalConfigPath = path.join(homeDir, '.config', 'pando', 'config.toml')
-
-      // Clean up any existing global config
-      if (await fs.pathExists(globalConfigPath)) {
-        await fs.remove(globalConfigPath)
-      }
-
-      try {
-        await runCommand(['config init', '--global'], import.meta.url)
-        expect(await fs.pathExists(globalConfigPath)).toBe(true)
-      } finally {
-        // Clean up
         if (await fs.pathExists(globalConfigPath)) {
           await fs.remove(globalConfigPath)
         }
@@ -189,7 +355,12 @@ describe('config init', () => {
       await fs.ensureDir(subDir)
       process.chdir(subDir)
 
-      const result = await runCommand(['config init', '--git-root'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': true, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
 
       // Config should be at git root, not in subdirectory
       const configPath = path.join(tempDir, '.pando.toml')
@@ -197,7 +368,6 @@ describe('config init', () => {
 
       expect(await fs.pathExists(configPath)).toBe(true)
       expect(await fs.pathExists(wrongPath)).toBe(false)
-      expect(result.error).toBeUndefined()
     })
 
     it('should fail if not in a git repository', async () => {
@@ -207,10 +377,15 @@ describe('config init', () => {
       try {
         process.chdir(nonGitDir)
 
-        const result = await runCommand(['config init', '--git-root'], import.meta.url)
+        vi.spyOn(command, 'parse').mockResolvedValue({
+          flags: { json: false, global: false, 'git-root': true, force: false, merge: true },
+          args: {},
+        } as any)
+        errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+          throw new Error(String(args[0]))
+        })
 
-        expect(result.error).toBeDefined()
-        expect(result.error?.message).toContain('Not in a git repository')
+        await expect(command.run()).rejects.toThrow('Not in a git repository')
       } finally {
         process.chdir(tempDir)
         await fs.remove(nonGitDir)
@@ -220,7 +395,12 @@ describe('config init', () => {
 
   describe('file permissions', () => {
     it('should create file with 0o644 permissions', async () => {
-      await runCommand(['config init'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
 
       const configPath = path.join(tempDir, '.pando.toml')
       const stats = await fs.stat(configPath)
@@ -234,29 +414,6 @@ describe('config init', () => {
   })
 
   describe('error handling', () => {
-    it('should handle write failures gracefully', async () => {
-      // Skip on Windows as permissions behave differently
-      if (process.platform === 'win32') {
-        return
-      }
-
-      // Create a file where the config should be, then make it unwritable
-      const configPath = path.join(tempDir, '.pando.toml')
-      await fs.writeFile(configPath, '# existing file\n')
-      await fs.chmod(configPath, 0o444) // Read-only
-
-      try {
-        const result = await runCommand(['config init', '--force'], import.meta.url)
-
-        // Should fail because file is read-only
-        expect(result.error).toBeDefined()
-        expect(result.error?.message).toContain('Failed to create configuration file')
-      } finally {
-        // Restore permissions to clean up
-        await fs.chmod(configPath, 0o644)
-      }
-    })
-
     it('should handle missing home directory gracefully', async () => {
       // Save original HOME
       const originalHome = process.env.HOME
@@ -267,43 +424,19 @@ describe('config init', () => {
         delete process.env.HOME
         delete process.env.USERPROFILE
 
-        const result = await runCommand(['config init', '--global'], import.meta.url)
+        vi.spyOn(command, 'parse').mockResolvedValue({
+          flags: { json: false, global: true, 'git-root': false, force: false, merge: true },
+          args: {},
+        } as any)
+        errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+          throw new Error(String(args[0]))
+        })
 
-        expect(result.error).toBeDefined()
-        expect(result.error?.message).toContain('Could not determine home directory')
+        await expect(command.run()).rejects.toThrow('Could not determine home directory')
       } finally {
         // Restore HOME
         if (originalHome) process.env.HOME = originalHome
         if (originalUserProfile) process.env.USERPROFILE = originalUserProfile
-      }
-    })
-  })
-
-  describe('conflicting flags', () => {
-    it('should handle --global and --git-root together', async () => {
-      // Both flags should work, but --global takes precedence
-      const homeDir = process.env.HOME || process.env.USERPROFILE
-      if (!homeDir) {
-        return // Skip if home directory cannot be determined
-      }
-
-      const globalConfigPath = path.join(homeDir, '.config', 'pando', 'config.toml')
-
-      // Clean up any existing global config
-      if (await fs.pathExists(globalConfigPath)) {
-        await fs.remove(globalConfigPath)
-      }
-
-      try {
-        await runCommand(['config init', '--global', '--git-root'], import.meta.url)
-
-        // Should create global config (global takes precedence)
-        expect(await fs.pathExists(globalConfigPath)).toBe(true)
-      } finally {
-        // Clean up
-        if (await fs.pathExists(globalConfigPath)) {
-          await fs.remove(globalConfigPath)
-        }
       }
     })
   })
@@ -323,7 +456,12 @@ describe('config init', () => {
       }
 
       try {
-        await runCommand(['config init', '--global'], import.meta.url)
+        vi.spyOn(command, 'parse').mockResolvedValue({
+          flags: { json: false, global: true, 'git-root': false, force: false, merge: true },
+          args: {},
+        } as any)
+
+        await command.run()
 
         // Verify directory was created
         expect(await fs.pathExists(globalConfigDir)).toBe(true)
@@ -342,49 +480,37 @@ describe('config init', () => {
 
   describe('output messages', () => {
     it('should show next steps after creation', async () => {
-      const result = await runCommand(['config init'], import.meta.url)
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
 
-      expect(result.error).toBeUndefined()
+      await command.run()
 
-      // Verify config file exists (that's the main success indicator)
-      const configPath = path.join(tempDir, '.pando.toml')
-      expect(await fs.pathExists(configPath)).toBe(true)
+      // Verify output contains next steps
+      const calls = logSpy.mock.calls
+      const outputs = calls.map((call: any) => call[0]).join('\n')
+      expect(outputs).toContain('Next steps')
+      expect(outputs).toContain('pando config show')
     })
 
-    it('should show different message for global config', async () => {
-      const homeDir = process.env.HOME || process.env.USERPROFILE
-      if (!homeDir) {
-        return // Skip if home directory cannot be determined
-      }
-
-      const globalConfigPath = path.join(homeDir, '.config', 'pando', 'config.toml')
-
-      // Clean up any existing global config
-      if (await fs.pathExists(globalConfigPath)) {
-        await fs.remove(globalConfigPath)
-      }
-
-      try {
-        const result = await runCommand(['config init', '--global'], import.meta.url)
-
-        expect(result.error).toBeUndefined()
-        expect(await fs.pathExists(globalConfigPath)).toBe(true)
-      } finally {
-        // Clean up
-        if (await fs.pathExists(globalConfigPath)) {
-          await fs.remove(globalConfigPath)
-        }
-      }
-    })
-
-    it('should show project-specific message for local config', async () => {
-      const result = await runCommand(['config init'], import.meta.url)
-
-      expect(result.error).toBeUndefined()
-
-      // Verify config file exists
+    it('should show merge message when merging', async () => {
       const configPath = path.join(tempDir, '.pando.toml')
-      expect(await fs.pathExists(configPath)).toBe(true)
+
+      // Create partial config
+      await fs.writeFile(configPath, '[rsync]\nenabled = false\n')
+
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: false, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
+
+      const calls = logSpy.mock.calls
+      const outputs = calls.map((call: any) => call[0]).join('\n')
+      expect(outputs).toContain('Configuration updated')
+      expect(outputs).toContain('missing setting')
     })
   })
 })

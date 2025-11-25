@@ -11,7 +11,12 @@ The `config` commands allow users to manage their Pando configuration, including
 
 ## Implementation Approach
 
-- **Init**: Checks if a config file already exists to prevent accidental overwrites. Uses `fs-extra` to write a template TOML file.
+- **Init**: Intelligent config file creation with merge support:
+  - If no config exists: Creates new file with all defaults
+  - If config exists (default): Merges missing defaults into existing config, preserving user customizations
+  - `--force`: Overwrites existing file completely
+  - `--no-merge`: Errors if file exists (old behavior)
+  - JSON output includes what was added during merge
 - **Show**: Uses the shared `ConfigLoader` utility to resolve the final configuration and prints it. Supports `--json` for machine readability.
 
 ## Key Functions/Classes
@@ -28,12 +33,25 @@ The `config` commands allow users to manage their Pando configuration, including
 ## Usage Examples
 
 ```bash
-# Initialize config
+# Initialize config (creates new or merges missing defaults)
 pando config init
+
+# Force overwrite existing config
+pando config init --force
+
+# Error if config exists (disable merge)
+pando config init --no-merge
+
+# Initialize global config
+pando config init --global
 
 # Show current config
 pando config show
 pando config show --json
+
+# Show what was added during merge
+pando config init --json
+# Output: {"status":"success","action":"merged","added":[{"path":"worktree.rebaseOnAdd","value":true}],"addedCount":1}
 ```
 
 ## Testing Approach
