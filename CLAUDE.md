@@ -17,6 +17,7 @@ pnpm dev <cmd>     # Run command in dev mode
 pnpm test          # Run tests
 pnpm lint          # Lint code
 pnpm format        # Format code
+pnpm validate      # Run format:check + lint + typecheck + test:run
 ```
 
 ### Beads Commands (Task Management)
@@ -112,17 +113,30 @@ export class GitHelper {
 
 ### Test Pattern
 
-Tests use Vitest and mirror the source structure:
+Tests use Vitest and mirror the source structure. **For command tests, test business logic and data structures rather than mocking command execution:**
 
 ```typescript
 import { describe, it, expect } from 'vitest'
+import * as path from 'path'
+import * as fs from 'fs-extra'
 
-describe('command-name', () => {
-  it('should describe expected behavior', () => {
-    // TODO: Implement test
-    expect(true).toBe(true) // Placeholder
+// Good: Test business logic directly
+describe('symlink', () => {
+  it('should detect file outside current worktree', () => {
+    const worktreeRoot = '/repo/worktree'
+    const filePath = '/repo/other/file.txt'
+    const relativePath = path.relative(worktreeRoot, filePath)
+    expect(relativePath.startsWith('..')).toBe(true)
+  })
+
+  it('should validate source file exists', async () => {
+    const testPath = path.join('/tmp', `test-${Date.now()}.txt`)
+    expect(await fs.pathExists(testPath)).toBe(false)
   })
 })
+
+// Avoid: Complex mocking of oclif command execution
+// Instead, test the underlying logic that commands use
 ```
 
 ### Error Handling Pattern
@@ -171,6 +185,16 @@ All error methods automatically support `--json` flag:
 - Operation errors: `{ status: 'error', error: 'message', context: '...', details: '...' }`
 - Warnings: `{ status: 'warning', warning: 'message' }`
 
+**TypeScript Flow Analysis:**
+When `ErrorHelper.validation()` throws but TypeScript doesn't recognize it:
+```typescript
+if (!value) {
+  ErrorHelper.validation(this, 'Message', flags.json)
+  return // Add return to help TypeScript understand control flow
+}
+// TypeScript now knows value is defined
+```
+
 ## Coding Conventions
 
 ### TypeScript Style
@@ -196,6 +220,60 @@ async function getWorktrees(): Promise<WorktreeInfo[]> {
 function getWorktrees(): any {
   // ...
 }
+```
+
+### Type Safety Patterns
+
+When eliminating `as any` casts, use these patterns:
+
+**TOML Parsing (loader.ts):**
+```typescript
+interface ParsedTomlConfig {
+  rsync?: Partial<RsyncConfig>
+  symlink?: Partial<SymlinkConfig>
+  worktree?: Partial<WorktreeConfig>
+}
+
+interface PyprojectToml {
+  tool?: { pando?: ParsedTomlConfig }
+}
+```
+
+**Inquirer Prompts (remove.ts):**
+```typescript
+interface PromptQuestion {
+  type: 'checkbox' | 'confirm' | 'input' | 'list'
+  name: string
+  message: string
+  choices?: Array<{ name: string; value: string }>
+}
+
+interface InquirerPrompt {
+  prompt: <T extends Record<string, unknown>>(questions: PromptQuestion[]) => Promise<T>
+}
+
+const inquirer = (await import('inquirer')).default as InquirerPrompt
+```
+
+**Error Objects (fileOps.ts):**
+```typescript
+interface ExecError extends Error {
+  stderr?: string
+  stdout?: string
+  code?: string | number
+}
+
+function isExecError(error: unknown): error is ExecError {
+  return error instanceof Error && ('stderr' in error || 'code' in error)
+}
+```
+
+**Generic Merging:**
+```typescript
+// Use Record<string, unknown> for intermediate operations, then cast back
+const result: Record<string, unknown> = { ...base }
+// ... operations ...
+return result as PartialPandoConfig
 ```
 
 ### Naming Conventions
@@ -960,6 +1038,29 @@ rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncCo
 - **Bad**: Git-tracked files that vary between branches
   - These are automatically checked out by git when creating worktrees
   - Symlinking them defeats the purpose of separate worktrees
+
+### Transactional Rollback Pattern
+
+The `WorktreeSetupOrchestrator` uses checkpoints for rollback on failure:
+
+```typescript
+// Create checkpoint before operations
+this.transaction.createCheckpoint('worktree', { path: worktreePath })
+
+// On failure, retrieve checkpoint and rollback
+try {
+  // ... operations ...
+} catch (error) {
+  const checkpoint = this.transaction.getCheckpoint('worktree')
+  if (checkpoint && typeof checkpoint === 'object' && 'path' in checkpoint) {
+    const worktreePath = (checkpoint as { path: string }).path
+    await this.gitHelper.removeWorktree(worktreePath, true) // force=true
+  }
+  await this.transaction.rollback()
+}
+```
+
+**Location**: `src/utils/worktreeSetup.ts`
 
 ### Config-First Initialization Pattern
 

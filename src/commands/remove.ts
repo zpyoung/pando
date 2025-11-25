@@ -5,25 +5,7 @@ import { jsonFlag, forceFlag, pathFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
 import { loadConfig } from '../config/loader.js'
 import type { DeleteBranchOption } from '../config/schema.js'
-
-/**
- * Type for inquirer prompt questions
- */
-interface PromptQuestion {
-  type: 'checkbox' | 'confirm' | 'input' | 'list'
-  name: string
-  message: string
-  choices?: Array<{ name: string; value: string }>
-  default?: boolean | string
-  validate?: (answer: string[]) => boolean | string
-}
-
-/**
- * Type for inquirer prompt function
- */
-interface InquirerPrompt {
-  prompt: <T extends Record<string, unknown>>(questions: PromptQuestion[]) => Promise<T>
-}
+import { checkbox, confirm } from '@inquirer/prompts'
 
 /**
  * Remove a git worktree
@@ -65,8 +47,6 @@ export default class RemoveWorktree extends Command {
    */
   private async selectWorktreesInteractively(worktrees: WorktreeInfo[]): Promise<string[]> {
     const chalk = (await import('chalk')).default
-    const inquirerModule = await import('inquirer')
-    const inquirer = inquirerModule.default as InquirerPrompt
 
     // Filter out main worktree (first entry)
     const removableWorktrees = worktrees.slice(1)
@@ -78,7 +58,7 @@ export default class RemoveWorktree extends Command {
     // Format choices for display
     const choices = removableWorktrees.map((wt) => {
       const branchDisplay = wt.branch || '(detached)'
-      const prunableIndicator = wt.isPrunable ? ' 🗑️  (prunable)' : ''
+      const prunableIndicator = wt.isPrunable ? ' (prunable)' : ''
       const label = `${branchDisplay} (${wt.path})${prunableIndicator}`
 
       return {
@@ -88,22 +68,18 @@ export default class RemoveWorktree extends Command {
     })
 
     // Multi-select prompt
-    const { selectedPaths } = await inquirer.prompt([
-      {
-        type: 'checkbox',
-        name: 'selectedPaths',
-        message: 'Select worktrees to remove (use spacebar to select, enter to confirm):',
-        choices,
-        validate: (answer: string[]) => {
-          if (answer.length === 0) {
-            return 'You must select at least one worktree'
-          }
-          return true
-        },
+    const selectedPaths = await checkbox({
+      message: 'Select worktrees to remove (use spacebar to select, enter to confirm):',
+      choices,
+      validate: (answer) => {
+        if (answer.length === 0) {
+          return 'You must select at least one worktree'
+        }
+        return true
       },
-    ])
+    })
 
-    return selectedPaths as string[]
+    return selectedPaths
   }
 
   /**
@@ -113,24 +89,16 @@ export default class RemoveWorktree extends Command {
    */
   private async confirmRemoval(paths: string[]): Promise<boolean> {
     const chalk = (await import('chalk')).default
-    const inquirerModule = await import('inquirer')
-    const inquirer = inquirerModule.default as InquirerPrompt
 
     this.log(chalk.yellow('\nWorktrees to be removed:'))
     for (const p of paths) {
       this.log(chalk.cyan(`  - ${p}`))
     }
 
-    const { confirmed } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'confirmed',
-        message: `Remove ${paths.length} worktree${paths.length > 1 ? 's' : ''}?`,
-        default: false,
-      },
-    ])
-
-    return confirmed as boolean
+    return confirm({
+      message: `Remove ${paths.length} worktree${paths.length > 1 ? 's' : ''}?`,
+      default: false,
+    })
   }
 
   /**
@@ -144,8 +112,6 @@ export default class RemoveWorktree extends Command {
     remoteName: string
   ): Promise<boolean> {
     const chalk = (await import('chalk')).default
-    const inquirerModule = await import('inquirer')
-    const inquirer = inquirerModule.default as InquirerPrompt
 
     this.log(
       chalk.yellow(
@@ -154,16 +120,10 @@ export default class RemoveWorktree extends Command {
     )
     this.log(chalk.yellow('  This action cannot be undone.'))
 
-    const { confirmed } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'confirmed',
-        message: `Delete remote branch '${remoteName}/${branchName}'?`,
-        default: false,
-      },
-    ])
-
-    return confirmed as boolean
+    return confirm({
+      message: `Delete remote branch '${remoteName}/${branchName}'?`,
+      default: false,
+    })
   }
 
   /**
@@ -378,19 +338,13 @@ export default class RemoveWorktree extends Command {
 
               // Prompt user to force remove
               const chalk = (await import('chalk')).default
-              const inquirerModule = await import('inquirer')
-              const inquirer = inquirerModule.default as InquirerPrompt
 
               this.log(chalk.yellow(`\nWorktree '${worktreePath}' has uncommitted changes.`))
 
-              const { confirmForce } = await inquirer.prompt([
-                {
-                  type: 'confirm',
-                  name: 'confirmForce',
-                  message: 'Do you want to force remove it?',
-                  default: false,
-                },
-              ])
+              const confirmForce = await confirm({
+                message: 'Do you want to force remove it?',
+                default: false,
+              })
 
               if (!confirmForce) {
                 results.push({
