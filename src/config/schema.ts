@@ -274,11 +274,6 @@ export const DEFAULT_CONFIG: PandoConfig = {
  * @throws {z.ZodError} If configuration is invalid
  */
 export function validateConfig(config: unknown): PandoConfig {
-  // TODO: Implement validation
-  // 1. Parse config with PandoConfigSchema
-  // 2. Apply defaults for missing values
-  // 3. Return validated config
-  // 4. Throw ZodError with detailed messages if invalid
   return PandoConfigSchema.parse(config)
 }
 

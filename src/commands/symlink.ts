@@ -3,10 +3,7 @@ import * as path from 'path'
 import * as fs from 'fs-extra'
 import { stat } from 'fs/promises'
 import { createGitHelper } from '../utils/git.js'
-import {
-  FileOperationTransaction,
-  createSymlinkHelper,
-} from '../utils/fileOps.js'
+import { FileOperationTransaction, createSymlinkHelper } from '../utils/fileOps.js'
 import { ErrorHelper } from '../utils/errors.js'
 
 export default class SymlinkWorktreeFile extends Command {
@@ -63,9 +60,9 @@ export default class SymlinkWorktreeFile extends Command {
       const normalizedMain = path.resolve(mainWorktreePath)
 
       if (normalizedCurrent === normalizedMain) {
-         // It's possible they are in a subdir of main worktree, but let's just check if we are "inside" the main worktree
-         // Actually, if we are in the main worktree, we probably shouldn't be doing this "move to main" operation.
-         // But let's proceed with the logic: Source -> Destination.
+        // It's possible they are in a subdir of main worktree, but let's just check if we are "inside" the main worktree
+        // Actually, if we are in the main worktree, we probably shouldn't be doing this "move to main" operation.
+        // But let's proceed with the logic: Source -> Destination.
       }
 
       // 2. Resolve paths
@@ -73,13 +70,13 @@ export default class SymlinkWorktreeFile extends Command {
 
       // Verify source exists
       if (!(await fs.pathExists(sourceFilePath))) {
-         ErrorHelper.validation(this, `Source file does not exist: ${sourceFilePath}`, flags.json)
+        ErrorHelper.validation(this, `Source file does not exist: ${sourceFilePath}`, flags.json)
       }
 
       // Check if source is a file
       const sourceStats = await stat(sourceFilePath)
       if (!sourceStats.isFile()) {
-          ErrorHelper.validation(this, `Source is not a regular file: ${sourceFilePath}`, flags.json)
+        ErrorHelper.validation(this, `Source is not a regular file: ${sourceFilePath}`, flags.json)
       }
 
       // Calculate relative path from current worktree root to the file
@@ -89,25 +86,29 @@ export default class SymlinkWorktreeFile extends Command {
       const relativePath = path.relative(currentWorktreeRoot, sourceFilePath)
 
       if (relativePath.startsWith('..')) {
-          ErrorHelper.validation(this, `File ${args.file} is outside the current worktree`, flags.json)
+        ErrorHelper.validation(
+          this,
+          `File ${args.file} is outside the current worktree`,
+          flags.json
+        )
       }
 
       // Destination path in main worktree
       const destFilePath = path.join(mainWorktreePath, relativePath)
 
       if (spinner) {
-          spinner.start(`Moving ${relativePath} to main worktree...`)
+        spinner.start(`Moving ${relativePath} to main worktree...`)
       }
 
       // 3. Check destination
       if (await fs.pathExists(destFilePath)) {
         if (!flags.force) {
-            if (spinner) spinner.fail('Destination exists')
-            ErrorHelper.validation(
-                this,
-                `Destination file already exists: ${destFilePath}\nUse --force to overwrite.`,
-                flags.json
-            )
+          if (spinner) spinner.fail('Destination exists')
+          ErrorHelper.validation(
+            this,
+            `Destination file already exists: ${destFilePath}\nUse --force to overwrite.`,
+            flags.json
+          )
         }
       }
 
@@ -157,46 +158,42 @@ export default class SymlinkWorktreeFile extends Command {
         await symlinkHelper.createSymlink(destFilePath, sourceFilePath, { relative: true })
 
         if (spinner) {
-            spinner.succeed('File moved and symlinked')
+          spinner.succeed('File moved and symlinked')
         }
 
         if (flags.json) {
-            this.log(JSON.stringify({
+          this.log(
+            JSON.stringify(
+              {
                 success: true,
                 source: sourceFilePath,
                 destination: destFilePath,
-                link: sourceFilePath
-            }, null, 2))
+                link: sourceFilePath,
+              },
+              null,
+              2
+            )
+          )
         } else {
-            this.log(chalk?.green(`✓ Moved ${args.file} to main worktree`))
-            this.log(chalk?.gray(`  Source: ${sourceFilePath}`))
-            this.log(chalk?.gray(`  Dest:   ${destFilePath}`))
-            this.log(chalk?.green(`✓ Created symlink`))
+          this.log(chalk?.green(`✓ Moved ${args.file} to main worktree`))
+          this.log(chalk?.gray(`  Source: ${sourceFilePath}`))
+          this.log(chalk?.gray(`  Dest:   ${destFilePath}`))
+          this.log(chalk?.green(`✓ Created symlink`))
         }
-
       } catch (error) {
         // Rollback
         if (spinner) spinner.fail('Operation failed, rolling back...')
         await transaction.rollback()
-        // If we manually did fs.copy/remove outside transaction (which we did for the file move part),
-        // we need to handle that.
-        // The FileOperationTransaction class in this codebase seems to require manual recording?
-        // Looking at fileOps.ts: "TODO: Implement operation recording" in record().
-        // Ah, the existing Transaction class is a bit of a skeleton or I need to use it correctly.
-        // The `createSymlink` helper DOES record.
-        // But my fs.copy and fs.remove were raw calls.
-
-        // To be proper, I should probably wrap the copy/delete in the transaction or just do best-effort manual rollback here
-        // since I'm implementing the command.
-        // For now, I will just re-throw with a helpful message, as implementing full transaction logic
-        // for copy/move might be out of scope for this single file change if the util isn't ready.
-        // Wait, I see `transaction.record` in `fileOps.ts`.
-
         throw error
       }
-
     } catch (error) {
-      await this.handleError(error, flags, chalk, spinner)
+      if (spinner?.isSpinning) spinner.fail('Failed')
+      ErrorHelper.operation(
+        this,
+        error instanceof Error ? error : new Error(String(error)),
+        'Symlink operation failed',
+        flags.json
+      )
     }
   }
 
@@ -208,20 +205,5 @@ export default class SymlinkWorktreeFile extends Command {
     const spinner = ora ? ora() : null
     const chalk = !isJson ? (await import('chalk')).default : null
     return { spinner, chalk }
-  }
-
-  private async handleError(
-    error: unknown,
-    flags: { json: boolean },
-    _chalk: unknown,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
-  ): Promise<void> {
-      if (spinner && spinner.isSpinning) spinner.fail('Failed')
-      const msg = error instanceof Error ? error.message : String(error)
-      if (flags.json) {
-          this.log(JSON.stringify({ success: false, error: msg }, null, 2))
-      } else {
-          ErrorHelper.operation(this, error as Error, msg, false)
-      }
   }
 }

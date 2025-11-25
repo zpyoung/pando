@@ -15,6 +15,32 @@ const execAsync = promisify(exec)
  * for rollback capabilities.
  */
 
+/**
+ * Error with additional properties from exec/filesystem operations
+ */
+interface ExecError extends Error {
+  stderr?: string
+  stdout?: string
+  code?: string | number
+}
+
+/**
+ * Type guard for exec errors
+ */
+function isExecError(error: unknown): error is ExecError {
+  return error instanceof Error && ('stderr' in error || 'code' in error)
+}
+
+/**
+ * Get error code from an error object
+ */
+function getErrorCode(error: unknown): string {
+  if (error instanceof Error && 'code' in error) {
+    return String((error as ExecError).code)
+  }
+  return 'UNKNOWN'
+}
+
 // ============================================================================
 // Custom Errors
 // ============================================================================
@@ -87,13 +113,20 @@ export interface Operation {
 export class FileOperationTransaction {
   private operations: Operation[] = []
   private checkpoints: Map<string, unknown> = new Map()
+  private onWarning?: (message: string) => void
+
+  /**
+   * Create a transaction with optional warning callback
+   * @param onWarning - Callback for warning messages during rollback
+   */
+  constructor(onWarning?: (message: string) => void) {
+    this.onWarning = onWarning
+  }
 
   /**
    * Record an operation
    */
   record(type: OperationType, path: string, metadata?: Record<string, unknown>): void {
-    // TODO: Implement operation recording
-    // Add operation to operations array with timestamp
     this.operations.push({
       type,
       path,
@@ -105,11 +138,15 @@ export class FileOperationTransaction {
   /**
    * Create a checkpoint (snapshot state for potential rollback)
    */
-  createCheckpoint(name: string, data: any): void {
-    // TODO: Implement checkpoint creation
-    // Store snapshot of current state
-    // Used for rollback if needed
+  createCheckpoint(name: string, data: unknown): void {
     this.checkpoints.set(name, data)
+  }
+
+  /**
+   * Get a checkpoint by name
+   */
+  getCheckpoint(name: string): unknown {
+    return this.checkpoints.get(name)
   }
 
   /**
@@ -174,8 +211,9 @@ export class FileOperationTransaction {
             break
         }
       } catch (error) {
-        // Log error but continue rolling back other operations
-        console.warn(`Failed to rollback operation ${op.type} at ${op.path}:`, error)
+        // Report error but continue rolling back other operations
+        const errMsg = error instanceof Error ? error.message : String(error)
+        this.onWarning?.(`Failed to rollback operation ${op.type} at ${op.path}: ${errMsg}`)
       }
     }
 
@@ -206,9 +244,6 @@ export class RsyncHelper {
    * Check if rsync is installed and available
    */
   async isInstalled(): Promise<boolean> {
-    // TODO: Implement rsync installation check
-    // Run: rsync --version
-    // Return true if succeeds, false if fails
     try {
       await execAsync('rsync --version')
       return true
@@ -319,8 +354,7 @@ export class RsyncHelper {
 
       return result
     } catch (error) {
-      const execError = error as any
-      const details = execError.stderr ? `: ${execError.stderr}` : ''
+      const details = isExecError(error) && error.stderr ? `: ${error.stderr}` : ''
       throw new FileOperationError(`rsync command failed${details}`, error as Error)
     }
   }
@@ -532,7 +566,7 @@ export class SymlinkHelper {
         throw error
       }
       const errMsg = error instanceof Error ? error.message : String(error)
-      const errCode = (error as any).code || 'UNKNOWN'
+      const errCode = getErrorCode(error)
       throw new FileOperationError(
         `Failed to create symlink from ${source} to ${target}: ${errMsg} (${errCode})`,
         error as Error

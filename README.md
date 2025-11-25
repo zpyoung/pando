@@ -178,6 +178,43 @@ pando nav --branch feature-x
 cd $(pando nav --branch feature-x --output-path)
 ```
 
+### `pando symlink`
+
+Move a file from the current worktree to the main worktree and replace it with a symlink. Useful for keeping configuration files, dependencies, or other shared files in sync across all worktrees.
+
+**Arguments:**
+
+- `FILE`: File to symlink (required)
+
+**Flags:**
+
+- `-f, --force`: Overwrite file in main worktree if it exists
+- `--dry-run`: Simulate the operation without making changes
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+
+```bash
+# Move .env file to main worktree and symlink it
+pando symlink .env
+
+# Preview what would happen
+pando symlink package.json --dry-run
+
+# Overwrite existing file in main worktree
+pando symlink config.json --force
+
+# Use with JSON output
+pando symlink .env --json
+```
+
+**Use Cases:**
+
+- **Environment files** (`.env`, `.env.local`): Share environment configuration across worktrees
+- **Lock files** (`package-lock.json`, `pnpm-lock.yaml`): Ensure consistent dependency resolution
+- **IDE settings** (`.vscode/settings.json`): Share editor configuration
+- **Build cache directories**: Avoid duplicate downloads/compilation
+
 ## Configuration
 
 Pando can be configured using a `.pando.toml` file in your project root:

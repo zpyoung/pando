@@ -301,7 +301,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -316,7 +316,9 @@ describe('remove', () => {
 
       expect(inquirerMock.prompt).toHaveBeenCalledTimes(2)
       expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature', false)
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Successfully removed 1 worktree'))
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Successfully removed 1 worktree')
+      )
     })
 
     it('should exclude main worktree from selection', async () => {
@@ -326,7 +328,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -352,7 +354,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -378,7 +380,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
@@ -395,7 +397,9 @@ describe('remove', () => {
       expect(mockGitHelper.removeWorktree).toHaveBeenCalledTimes(2)
       expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature1', false)
       expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature2', false)
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Successfully removed 2 worktrees'))
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Successfully removed 2 worktrees')
+      )
     })
 
     it('should cancel removal when user declines confirmation', async () => {
@@ -405,7 +409,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
 
       inquirerMock.prompt
@@ -427,7 +431,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges
         .mockResolvedValueOnce(false) // feature1 - no uncommitted changes
@@ -450,7 +454,9 @@ describe('remove', () => {
       // Only feature1 should be removed (feature2 has uncommitted changes)
       expect(mockGitHelper.removeWorktree).toHaveBeenCalledTimes(1)
       expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature1', false)
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Successfully removed 1 worktree'))
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Successfully removed 1 worktree')
+      )
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to remove 1 worktree'))
       expect(exitSpy).toHaveBeenCalledWith(1)
     })
@@ -463,7 +469,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
 
@@ -490,7 +496,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
 
       command.argv = []
@@ -506,7 +512,7 @@ describe('remove', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
-    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)

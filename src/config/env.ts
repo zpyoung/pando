@@ -50,10 +50,6 @@ const ENV_VAR_MAP: Record<string, string> = {
  * @returns Parsed boolean
  */
 export function parseBoolean(value: string): boolean {
-  // TODO: Implement boolean parsing
-  // 1. Convert to lowercase
-  // 2. Check for truthy values: 'true', '1', 'yes'
-  // 3. Return true if truthy, false otherwise
   const lower = value.toLowerCase().trim()
   return ['true', '1', 'yes'].includes(lower)
 }
@@ -65,11 +61,6 @@ export function parseBoolean(value: string): boolean {
  * @returns Array of trimmed strings
  */
 export function parseArray(value: string): string[] {
-  // TODO: Implement array parsing
-  // 1. Split by comma
-  // 2. Trim each value
-  // 3. Filter out empty strings
-  // 4. Return array
   return value
     .split(',')
     .map((v) => v.trim())
@@ -88,11 +79,6 @@ export function setNestedProperty(
   path: string,
   value: unknown
 ): void {
-  // TODO: Implement nested property setting
-  // 1. Split path by '.'
-  // 2. Navigate/create nested objects
-  // 3. Set value at final key
-  // Example: setNestedProperty({}, 'rsync.enabled', true) → { rsync: { enabled: true } }
   const keys = path.split('.')
   let current = obj
 
@@ -121,12 +107,6 @@ export function setNestedProperty(
  * @returns Parsed value
  */
 export function parseEnvValue(key: string, value: string): unknown {
-  // TODO: Implement value parsing based on key
-  // 1. Check if key suggests array (FLAGS, EXCLUDE, PATTERNS)
-  // 2. Check if key suggests boolean (ENABLED, RELATIVE)
-  // 3. Otherwise treat as string
-  // 4. Return parsed value
-
   // Array fields
   if (key.includes('FLAGS') || key.includes('EXCLUDE') || key.includes('PATTERNS')) {
     return parseArray(value)
@@ -155,15 +135,6 @@ export function parseEnvValue(key: string, value: string): unknown {
  * @returns Partial configuration from environment variables
  */
 export function parseEnvVars(env: NodeJS.ProcessEnv = process.env): PartialPandoConfig {
-  // TODO: Implement environment variable parsing
-  // 1. Create empty config object
-  // 2. Iterate through all env vars
-  // 3. Filter for PANDO_* prefix
-  // 4. Check if var is in ENV_VAR_MAP
-  // 5. Parse value based on key
-  // 6. Set nested property on config
-  // 7. Return config object
-
   const config: Record<string, unknown> = {}
 
   for (const [key, value] of Object.entries(env)) {
@@ -199,8 +170,6 @@ export function getEnvConfig(): PartialPandoConfig {
  * @returns True if any PANDO_* vars exist
  */
 export function hasEnvConfig(env: NodeJS.ProcessEnv = process.env): boolean {
-  // TODO: Implement env config detection
-  // Check if any keys in env start with PANDO_
   return Object.keys(env).some((key) => key.startsWith(ENV_PREFIX))
 }
 

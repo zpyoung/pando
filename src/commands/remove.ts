@@ -7,6 +7,25 @@ import { loadConfig } from '../config/loader.js'
 import type { DeleteBranchOption } from '../config/schema.js'
 
 /**
+ * Type for inquirer prompt questions
+ */
+interface PromptQuestion {
+  type: 'checkbox' | 'confirm' | 'input' | 'list'
+  name: string
+  message: string
+  choices?: Array<{ name: string; value: string }>
+  default?: boolean | string
+  validate?: (answer: string[]) => boolean | string
+}
+
+/**
+ * Type for inquirer prompt function
+ */
+interface InquirerPrompt {
+  prompt: <T extends Record<string, unknown>>(questions: PromptQuestion[]) => Promise<T>
+}
+
+/**
  * Remove a git worktree
  *
  * Removes a working tree and cleans up associated metadata.
@@ -47,7 +66,7 @@ export default class RemoveWorktree extends Command {
   private async selectWorktreesInteractively(worktrees: WorktreeInfo[]): Promise<string[]> {
     const chalk = (await import('chalk')).default
     const inquirerModule = await import('inquirer')
-    const inquirer = inquirerModule.default as any
+    const inquirer = inquirerModule.default as InquirerPrompt
 
     // Filter out main worktree (first entry)
     const removableWorktrees = worktrees.slice(1)
@@ -95,7 +114,7 @@ export default class RemoveWorktree extends Command {
   private async confirmRemoval(paths: string[]): Promise<boolean> {
     const chalk = (await import('chalk')).default
     const inquirerModule = await import('inquirer')
-    const inquirer = inquirerModule.default as any
+    const inquirer = inquirerModule.default as InquirerPrompt
 
     this.log(chalk.yellow('\nWorktrees to be removed:'))
     for (const p of paths) {
@@ -120,12 +139,19 @@ export default class RemoveWorktree extends Command {
    * @param remoteName - Name of the remote
    * @returns True if user confirms, false otherwise
    */
-  private async confirmRemoteBranchDeletion(branchName: string, remoteName: string): Promise<boolean> {
+  private async confirmRemoteBranchDeletion(
+    branchName: string,
+    remoteName: string
+  ): Promise<boolean> {
     const chalk = (await import('chalk')).default
     const inquirerModule = await import('inquirer')
-    const inquirer = inquirerModule.default as any
+    const inquirer = inquirerModule.default as InquirerPrompt
 
-    this.log(chalk.yellow(`\n⚠ You are about to delete branch '${branchName}' from remote '${remoteName}'`))
+    this.log(
+      chalk.yellow(
+        `\n⚠ You are about to delete branch '${branchName}' from remote '${remoteName}'`
+      )
+    )
     this.log(chalk.yellow('  This action cannot be undone.'))
 
     const { confirmed } = await inquirer.prompt([
@@ -195,7 +221,7 @@ export default class RemoveWorktree extends Command {
 
     // Delete remote branch if requested
     if (deleteOption === 'remote') {
-      const remote = await gitHelper.getBranchRemote(branchName) || 'origin'
+      const remote = (await gitHelper.getBranchRemote(branchName)) || 'origin'
       const remoteBranchExists = await gitHelper.remoteBranchExists(branchName, remote)
 
       if (!remoteBranchExists) {
@@ -353,7 +379,7 @@ export default class RemoveWorktree extends Command {
               // Prompt user to force remove
               const chalk = (await import('chalk')).default
               const inquirerModule = await import('inquirer')
-              const inquirer = inquirerModule.default as any
+              const inquirer = inquirerModule.default as InquirerPrompt
 
               this.log(chalk.yellow(`\nWorktree '${worktreePath}' has uncommitted changes.`))
 

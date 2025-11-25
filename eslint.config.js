@@ -88,6 +88,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'bin/**', '*.config.ts'],
+    ignores: ['dist/**', 'node_modules/**', 'bin/**', 'scripts/**', '*.config.ts'],
   },
 ]
