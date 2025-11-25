@@ -633,9 +633,7 @@ export default class AddWorktree extends Command {
         let errorMessage = 'Setup failed'
         if (result.symlinkResult?.conflicts && result.symlinkResult.conflicts.length > 0) {
           const conflictDetails = result.symlinkResult.conflicts
-            .map(
-              (c) => `  • Target: ${c.target}\n    Source: ${c.source}\n    Reason: ${c.reason}`
-            )
+            .map((c) => `  • Target: ${c.target}\n    Source: ${c.source}\n    Reason: ${c.reason}`)
             .join('\n\n')
           errorMessage +=
             `\n\nSymlink conflicts (${result.symlinkResult.conflicts.length}):\n\n` +

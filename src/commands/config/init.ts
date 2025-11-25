@@ -75,8 +75,9 @@ export default class ConfigInit extends Command {
       const homeDir = process.env.HOME || process.env.USERPROFILE
       if (!homeDir) {
         ErrorHelper.validation(this, 'Could not determine home directory', flags.json)
+        return // TypeScript doesn't know validation throws
       }
-      targetDir = path.join(homeDir!, '.config', 'pando')
+      targetDir = path.join(homeDir, '.config', 'pando')
       filename = 'config.toml'
     } else if (flags['git-root']) {
       // Git root config
@@ -261,12 +262,7 @@ export default class ConfigInit extends Command {
         }
       }
     } catch (error) {
-      ErrorHelper.operation(
-        this,
-        error as Error,
-        'Failed to merge configuration file',
-        flags.json
-      )
+      ErrorHelper.operation(this, error as Error, 'Failed to merge configuration file', flags.json)
     }
   }
 
@@ -360,9 +356,7 @@ export default class ConfigInit extends Command {
    * Generate TOML content with comments
    */
   private generateTomlContent(config: PandoConfig = DEFAULT_CONFIG): string {
-    const toml = stringifyToml(
-      config as unknown as ReturnType<typeof import('@iarna/toml').parse>
-    )
+    const toml = stringifyToml(config as unknown as ReturnType<typeof import('@iarna/toml').parse>)
 
     // Add helpful header comment
     const header = `# Pando Configuration

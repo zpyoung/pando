@@ -349,18 +349,44 @@ export class WorktreeSetupOrchestrator {
       this.reportProgress(options.onProgress, SetupPhase.ROLLBACK, 'Error occurred, rolling back')
 
       try {
-        // TODO: Execute rollback
-        // 1. Remove worktree (git worktree remove --force)
-        // 2. Clean up symlinks
-        // 3. Restore from checkpoint if needed
-        // 4. Log rollback actions
+        this.reportProgress(options.onProgress, SetupPhase.ROLLBACK, 'Rolling back file operations')
+
+        // 1. Rollback file operations (symlinks, copied files)
         await this.transaction.rollback()
+
+        // 2. Remove the worktree via git
+        const worktreeCheckpoint = this.transaction.getCheckpoint('worktree')
+        if (
+          worktreeCheckpoint &&
+          typeof worktreeCheckpoint === 'object' &&
+          worktreeCheckpoint !== null &&
+          'path' in worktreeCheckpoint
+        ) {
+          const worktreePath = (worktreeCheckpoint as { path: string }).path
+
+          this.reportProgress(options.onProgress, SetupPhase.ROLLBACK, 'Removing git worktree')
+
+          try {
+            await this.gitHelper.removeWorktree(worktreePath, true) // force=true
+          } catch (gitError) {
+            // Fallback: remove directory if git metadata cleanup fails
+            const fs = await import('fs-extra')
+            if (await fs.pathExists(worktreePath)) {
+              await fs.remove(worktreePath)
+            }
+            const gitErrMsg = gitError instanceof Error ? gitError.message : String(gitError)
+            warnings.push(
+              `Removed worktree directory but git metadata may need manual cleanup: ${gitErrMsg}`
+            )
+          }
+        }
+
         rolledBack = true
       } catch (rollbackError) {
-        // TODO: Handle rollback failure
-        // Log error but don't throw
-        // Add to warnings
-        warnings.push(`Rollback partially failed: ${rollbackError}`)
+        const errorMsg =
+          rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+        warnings.push(`Rollback failed: ${errorMsg}. Manual cleanup may be required.`)
+        rolledBack = false
       }
 
       const duration = Date.now() - startTime

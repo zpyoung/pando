@@ -2,9 +2,44 @@ import { parse as parseToml } from '@iarna/toml'
 import fs from 'fs-extra'
 import * as os from 'os'
 import * as path from 'path'
-import type { ConfigFile, ConfigWithSource, PandoConfig, PartialPandoConfig } from './schema.js'
+import type {
+  ConfigFile,
+  ConfigWithSource,
+  PandoConfig,
+  PartialPandoConfig,
+  RsyncConfig,
+  SymlinkConfig,
+  WorktreeConfig,
+} from './schema.js'
 import { ConfigSource, DEFAULT_CONFIG, validateConfig, validatePartialConfig } from './schema.js'
 import { getEnvConfig, hasEnvConfig } from './env.js'
+
+// ============================================================================
+// TOML Parsing Types
+// ============================================================================
+
+/**
+ * Type for parsed Pando configuration from TOML
+ */
+interface ParsedTomlConfig {
+  rsync?: Partial<RsyncConfig>
+  symlink?: Partial<SymlinkConfig>
+  worktree?: Partial<WorktreeConfig>
+}
+
+/**
+ * Type for pyproject.toml structure
+ */
+interface PyprojectToml {
+  tool?: { pando?: ParsedTomlConfig }
+}
+
+/**
+ * Type for Cargo.toml structure
+ */
+interface CargoToml {
+  package?: { metadata?: { pando?: ParsedTomlConfig } }
+}
 
 /**
  * Configuration Loader
@@ -187,7 +222,7 @@ export async function configFileExists(filePath: string): Promise<boolean> {
  */
 export async function parsePandoToml(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = parseToml(contents) as any
+  const parsed = parseToml(contents) as ParsedTomlConfig
   return validatePartialConfig(parsed)
 }
 
@@ -201,8 +236,8 @@ export async function parsePandoToml(filePath: string): Promise<PartialPandoConf
  */
 export async function parsePyprojectToml(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = parseToml(contents) as any
-  const pandoConfig = parsed?.tool?.pando || {}
+  const parsed = parseToml(contents) as PyprojectToml
+  const pandoConfig = parsed?.tool?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 
@@ -216,8 +251,8 @@ export async function parsePyprojectToml(filePath: string): Promise<PartialPando
  */
 export async function parseCargoToml(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = parseToml(contents) as any
-  const pandoConfig = parsed?.package?.metadata?.pando || {}
+  const parsed = parseToml(contents) as CargoToml
+  const pandoConfig = parsed?.package?.metadata?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 
@@ -273,9 +308,6 @@ export async function parseComposerJson(filePath: string): Promise<PartialPandoC
  * @returns Parsed configuration
  */
 export async function parseConfigFile(configFile: ConfigFile): Promise<PartialPandoConfig> {
-  // TODO: Implement parser dispatcher
-  // Switch on configFile.source and call appropriate parser
-  // Handle parse errors gracefully (log warning, return empty config)
   switch (configFile.source) {
     case ConfigSource.PANDO_TOML:
     case ConfigSource.GLOBAL_CONFIG:
@@ -313,7 +345,8 @@ export function mergeConfigs(
   base: PartialPandoConfig,
   override: PartialPandoConfig
 ): PartialPandoConfig {
-  const result: PartialPandoConfig = { ...base }
+  // Use Record<string, unknown> for mutable operations, then cast to PartialPandoConfig
+  const result: Record<string, unknown> = { ...base }
 
   for (const key of Object.keys(override) as Array<keyof PartialPandoConfig>) {
     const overrideValue = override[key]
@@ -324,7 +357,7 @@ export function mergeConfigs(
 
     // If value is an array, replace entirely (don't concatenate)
     if (Array.isArray(overrideValue)) {
-      ;(result as any)[key] = overrideValue
+      result[key] = overrideValue
       continue
     }
 
@@ -332,18 +365,18 @@ export function mergeConfigs(
     if (typeof overrideValue === 'object' && overrideValue !== null) {
       const baseValue = base[key]
       if (typeof baseValue === 'object' && baseValue !== null && !Array.isArray(baseValue)) {
-        ;(result as any)[key] = { ...baseValue, ...overrideValue }
+        result[key] = { ...baseValue, ...overrideValue }
       } else {
-        ;(result as any)[key] = overrideValue
+        result[key] = overrideValue
       }
       continue
     }
 
     // Otherwise, replace value
-    ;(result as any)[key] = overrideValue
+    result[key] = overrideValue
   }
 
-  return result
+  return result as PartialPandoConfig
 }
 
 /**
@@ -387,10 +420,10 @@ export function mergeMultipleConfigs(
         sources[String(key)] = source
 
         // Track source for nested keys
-        const nestedConfig = config[key]
+        const nestedConfig = config[key] as Record<string, unknown> | undefined
         if (typeof nestedConfig === 'object' && nestedConfig !== null) {
           for (const nestedKey of Object.keys(nestedConfig)) {
-            if ((nestedConfig as any)[nestedKey] !== undefined) {
+            if (nestedConfig[nestedKey] !== undefined) {
               sources[`${String(key)}.${nestedKey}`] = source
             }
           }
@@ -428,6 +461,7 @@ export class ConfigLoader {
     cwd?: string
     gitRoot?: string
     skipCache?: boolean
+    onWarning?: (message: string) => void
   }): Promise<PandoConfig> {
     const cwd = options.cwd || process.cwd()
     const gitRoot = options.gitRoot || cwd
@@ -456,8 +490,9 @@ export class ConfigLoader {
           source: configFile.source,
         })
       } catch (error) {
-        // Log warning but continue with other configs
-        console.warn(`Failed to parse ${configFile.path}:`, error)
+        // Report warning but continue with other configs
+        const errMsg = error instanceof Error ? error.message : String(error)
+        options.onWarning?.(`Failed to parse ${configFile.path}: ${errMsg}`)
       }
     }
 
@@ -487,7 +522,11 @@ export class ConfigLoader {
    * @param options - Load options
    * @returns Configuration with source metadata
    */
-  async loadWithSources(options: { cwd?: string; gitRoot?: string }): Promise<ConfigWithSource> {
+  async loadWithSources(options: {
+    cwd?: string
+    gitRoot?: string
+    onWarning?: (message: string) => void
+  }): Promise<ConfigWithSource> {
     const cwd = options.cwd || process.cwd()
     const gitRoot = options.gitRoot || cwd
 
@@ -509,8 +548,9 @@ export class ConfigLoader {
           source: configFile.source,
         })
       } catch (error) {
-        // Log warning but continue with other configs
-        console.warn(`Failed to parse ${configFile.path}:`, error)
+        // Report warning but continue with other configs
+        const errMsg = error instanceof Error ? error.message : String(error)
+        options.onWarning?.(`Failed to parse ${configFile.path}: ${errMsg}`)
       }
     }
 

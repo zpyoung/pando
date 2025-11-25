@@ -87,8 +87,7 @@ export class GitHelper {
     const args = ['worktree', 'add']
 
     // Determine if branch exists when branch is specified
-    const branchExists =
-      options?.branch ? await this.branchExists(options.branch) : false
+    const branchExists = options?.branch ? await this.branchExists(options.branch) : false
 
     // Add branch option with appropriate flag
     if (options?.branch) {

@@ -11,7 +11,7 @@ describe('config init', () => {
   let originalCwd: string
   let command: ConfigInit
   let logSpy: ReturnType<typeof vi.spyOn>
-  let errorSpy: ReturnType<typeof vi.spyOn>
+  let _errorSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {
     // Save original working directory
@@ -34,7 +34,7 @@ describe('config init', () => {
 
     // Spy on log and error methods
     logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
-    errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+    _errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
       throw new Error(String(args[0]))
     })
   })
@@ -131,12 +131,8 @@ describe('config init', () => {
 
       await command.run()
 
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"status": "success"')
-      )
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"action": "created"')
-      )
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('"status": "success"'))
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('"action": "created"'))
     })
   })
 
@@ -157,7 +153,7 @@ describe('config init', () => {
         flags: { json: false, global: false, 'git-root': false, force: false, merge: false },
         args: {},
       } as any)
-      errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+      _errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
         throw new Error(String(args[0]))
       })
 
@@ -247,7 +243,7 @@ patterns = ["node_modules"]
     })
 
     it('should report nothing added when config is complete', async () => {
-      const configPath = path.join(tempDir, '.pando.toml')
+      const _configPath = path.join(tempDir, '.pando.toml')
 
       // Create complete config first
       vi.spyOn(command, 'parse').mockResolvedValue({
@@ -381,7 +377,7 @@ enabled = false
           flags: { json: false, global: false, 'git-root': true, force: false, merge: true },
           args: {},
         } as any)
-        errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+        _errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
           throw new Error(String(args[0]))
         })
 
@@ -428,7 +424,7 @@ enabled = false
           flags: { json: false, global: true, 'git-root': false, force: false, merge: true },
           args: {},
         } as any)
-        errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
+        _errorSpy = vi.spyOn(command, 'error').mockImplementation((...args: unknown[]) => {
           throw new Error(String(args[0]))
         })
 

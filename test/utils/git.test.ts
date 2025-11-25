@@ -172,13 +172,7 @@ branch refs/heads/feature
       })
 
       // Should use -B flag when force is true
-      expect(mockGit.raw).toHaveBeenCalledWith([
-        'worktree',
-        'add',
-        '-B',
-        'feature',
-        '/path/to/new',
-      ])
+      expect(mockGit.raw).toHaveBeenCalledWith(['worktree', 'add', '-B', 'feature', '/path/to/new'])
     })
 
     it('should use -B flag with commit when force is true', async () => {
