@@ -98,7 +98,7 @@ describe('config init', () => {
       // Check worktree defaults
       const worktree = config.worktree as Record<string, unknown>
       expect(worktree.rebaseOnAdd).toBe(true)
-      expect(worktree.deleteBranchOnRemove).toBe('none')
+      expect(worktree.deleteBranchOnRemove).toBe('local')
     })
 
     it('should include helpful comments in output', async () => {

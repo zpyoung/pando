@@ -60,7 +60,7 @@ export type DeleteBranchOption = z.infer<typeof DeleteBranchOptionSchema>
 export const WorktreeConfigSchema = z.object({
   defaultPath: z.string().optional(),
   rebaseOnAdd: z.boolean().default(true),
-  deleteBranchOnRemove: DeleteBranchOptionSchema.default('none'),
+  deleteBranchOnRemove: DeleteBranchOptionSchema.default('local'),
 })
 
 /**
@@ -168,10 +168,10 @@ export interface WorktreeConfig {
 
   /**
    * Delete branch when removing worktree
-   * - 'none': Don't delete any branches (default)
-   * - 'local': Delete local branch only
+   * - 'none': Don't delete any branches
+   * - 'local': Delete local branch only (default)
    * - 'remote': Delete both local and remote branches
-   * @default 'none'
+   * @default 'local'
    */
   deleteBranchOnRemove?: DeleteBranchOption
 }
@@ -258,7 +258,7 @@ export const DEFAULT_CONFIG: PandoConfig = {
   },
   worktree: {
     rebaseOnAdd: true,
-    deleteBranchOnRemove: 'none',
+    deleteBranchOnRemove: 'local',
   },
 }
 

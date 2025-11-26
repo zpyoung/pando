@@ -34,15 +34,14 @@ vi.mock('../../src/config/loader.js', () => ({
   loadConfig: vi.fn().mockResolvedValue({
     rsync: { enabled: true, flags: ['--archive'], exclude: [] },
     symlink: { patterns: [], relative: true, beforeRsync: true },
-    worktree: { rebaseOnAdd: true, deleteBranchOnRemove: 'none' },
+    worktree: { rebaseOnAdd: true, deleteBranchOnRemove: 'local' },
   }),
 }))
 
-// Mock inquirer
-vi.mock('inquirer', () => ({
-  default: {
-    prompt: vi.fn(),
-  },
+// Mock @inquirer/prompts (the actual module used by the command)
+vi.mock('@inquirer/prompts', () => ({
+  checkbox: vi.fn(),
+  confirm: vi.fn(),
 }))
 
 describe('remove', () => {
@@ -148,6 +147,10 @@ describe('remove', () => {
     mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(true)
+
+    // Mock the confirm prompt to decline force removal
+    const { confirm } = await import('@inquirer/prompts')
+    ;(confirm as any).mockResolvedValueOnce(false)
 
     const exitSpy = vi.spyOn(command, 'exit').mockImplementation(() => {
       throw new Error('exit called')
@@ -280,11 +283,13 @@ describe('remove', () => {
   })
 
   describe('interactive mode', () => {
-    let inquirerMock: any
+    let checkboxMock: any
+    let confirmMock: any
 
     beforeEach(async () => {
-      const inquirer = await import('inquirer')
-      inquirerMock = inquirer.default
+      const prompts = await import('@inquirer/prompts')
+      checkboxMock = prompts.checkbox as any
+      confirmMock = prompts.confirm as any
     })
 
     it('should error when using --json without --path', async () => {
@@ -305,16 +310,18 @@ describe('remove', () => {
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
 
-      // Mock inquirer prompts
-      inquirerMock.prompt
-        .mockResolvedValueOnce({ selectedPaths: ['/path/to/feature'] }) // Selection
-        .mockResolvedValueOnce({ confirmed: true }) // Confirmation
+      // Mock @inquirer/prompts
+      checkboxMock.mockResolvedValueOnce(['/path/to/feature'])
+      confirmMock.mockResolvedValueOnce(true)
 
       command.argv = []
       await command.run()
 
-      expect(inquirerMock.prompt).toHaveBeenCalledTimes(2)
+      expect(checkboxMock).toHaveBeenCalledTimes(1)
+      expect(confirmMock).toHaveBeenCalledTimes(1)
       expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature', false)
       expect(logSpy).toHaveBeenCalledWith(
         expect.stringContaining('Successfully removed 1 worktree')
@@ -332,19 +339,19 @@ describe('remove', () => {
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
 
-      inquirerMock.prompt
-        .mockResolvedValueOnce({ selectedPaths: ['/path/to/feature'] })
-        .mockResolvedValueOnce({ confirmed: true })
+      checkboxMock.mockResolvedValueOnce(['/path/to/feature'])
+      confirmMock.mockResolvedValueOnce(true)
 
       command.argv = []
       await command.run()
 
       // Check that the prompt only included the feature worktree (not main)
-      const firstPromptCall = inquirerMock.prompt.mock.calls[0][0]
-      expect(firstPromptCall.length).toBe(1)
-      expect(firstPromptCall[0].choices.length).toBe(1)
-      expect(firstPromptCall[0].choices[0].value).toBe('/path/to/feature')
+      const checkboxCall = checkboxMock.mock.calls[0][0]
+      expect(checkboxCall.choices.length).toBe(1)
+      expect(checkboxCall.choices[0].value).toBe('/path/to/feature')
     })
 
     it('should show prunable indicator for prunable worktrees', async () => {
@@ -358,18 +365,18 @@ describe('remove', () => {
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
 
-      inquirerMock.prompt
-        .mockResolvedValueOnce({ selectedPaths: ['/path/to/prunable'] })
-        .mockResolvedValueOnce({ confirmed: true })
+      checkboxMock.mockResolvedValueOnce(['/path/to/prunable'])
+      confirmMock.mockResolvedValueOnce(true)
 
       command.argv = []
       await command.run()
 
       // Check that the prunable indicator is shown
-      const firstPromptCall = inquirerMock.prompt.mock.calls[0][0]
-      expect(firstPromptCall[0].choices[0].name).toContain('🗑️')
-      expect(firstPromptCall[0].choices[0].name).toContain('(prunable)')
+      const checkboxCall = checkboxMock.mock.calls[0][0]
+      expect(checkboxCall.choices[0].name).toContain('(prunable)')
     })
 
     it('should handle multiple worktree selection', async () => {
@@ -384,12 +391,11 @@ describe('remove', () => {
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
 
-      inquirerMock.prompt
-        .mockResolvedValueOnce({
-          selectedPaths: ['/path/to/feature1', '/path/to/feature2'],
-        })
-        .mockResolvedValueOnce({ confirmed: true })
+      checkboxMock.mockResolvedValueOnce(['/path/to/feature1', '/path/to/feature2'])
+      confirmMock.mockResolvedValueOnce(true)
 
       command.argv = []
       await command.run()
@@ -412,9 +418,8 @@ describe('remove', () => {
       mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
 
-      inquirerMock.prompt
-        .mockResolvedValueOnce({ selectedPaths: ['/path/to/feature'] })
-        .mockResolvedValueOnce({ confirmed: false }) // User declines
+      checkboxMock.mockResolvedValueOnce(['/path/to/feature'])
+      confirmMock.mockResolvedValueOnce(false) // User declines
 
       command.argv = []
       await command.run()
@@ -437,12 +442,11 @@ describe('remove', () => {
         .mockResolvedValueOnce(false) // feature1 - no uncommitted changes
         .mockResolvedValueOnce(true) // feature2 - has uncommitted changes
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
 
-      inquirerMock.prompt
-        .mockResolvedValueOnce({
-          selectedPaths: ['/path/to/feature1', '/path/to/feature2'],
-        })
-        .mockResolvedValueOnce({ confirmed: true })
+      checkboxMock.mockResolvedValueOnce(['/path/to/feature1', '/path/to/feature2'])
+      confirmMock.mockResolvedValueOnce(true)
 
       const exitSpy = vi.spyOn(command, 'exit').mockImplementation(() => {
         throw new Error('exit called')
@@ -472,12 +476,11 @@ describe('remove', () => {
       mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
       mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
 
-      inquirerMock.prompt
-        .mockResolvedValueOnce({
-          selectedPaths: ['/path/to/feature1', '/path/to/feature2'],
-        })
-        .mockResolvedValueOnce({ confirmed: true })
+      checkboxMock.mockResolvedValueOnce(['/path/to/feature1', '/path/to/feature2'])
+      confirmMock.mockResolvedValueOnce(true)
 
       command.argv = ['--force']
       await command.run()
@@ -502,7 +505,7 @@ describe('remove', () => {
       command.argv = []
 
       await expect(command.run()).rejects.toThrow('No worktrees available to remove')
-      expect(inquirerMock.prompt).not.toHaveBeenCalled()
+      expect(checkboxMock).not.toHaveBeenCalled()
     })
 
     it('should display detached HEAD worktrees correctly', async () => {
@@ -517,16 +520,98 @@ describe('remove', () => {
       mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
 
-      inquirerMock.prompt
-        .mockResolvedValueOnce({ selectedPaths: ['/path/to/detached'] })
-        .mockResolvedValueOnce({ confirmed: true })
+      checkboxMock.mockResolvedValueOnce(['/path/to/detached'])
+      confirmMock.mockResolvedValueOnce(true)
 
       command.argv = []
       await command.run()
 
       // Check that detached HEAD is shown
-      const firstPromptCall = inquirerMock.prompt.mock.calls[0][0]
-      expect(firstPromptCall[0].choices[0].name).toContain('(detached)')
+      const checkboxCall = checkboxMock.mock.calls[0][0]
+      expect(checkboxCall.choices[0].name).toContain('(detached)')
+    })
+  })
+
+  describe('branch deletion', () => {
+    it('should delete local branch by default (new default behavior)', async () => {
+      const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
+        { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+      ]
+
+      mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+      mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+      mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
+
+      command.argv = ['--path', '/path/to/feature']
+      await command.run()
+
+      expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature', false)
+      expect(mockGitHelper.isBranchMerged).toHaveBeenCalledWith('feature-x')
+      expect(mockGitHelper.deleteBranch).toHaveBeenCalledWith('feature-x', false)
+    })
+
+    it('should skip branch deletion with --keep-branch flag', async () => {
+      const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
+        { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+      ]
+
+      mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+      mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+      mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+
+      command.argv = ['--path', '/path/to/feature', '--keep-branch']
+      await command.run()
+
+      expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature', false)
+      expect(mockGitHelper.deleteBranch).not.toHaveBeenCalled()
+      expect(mockGitHelper.isBranchMerged).not.toHaveBeenCalled()
+    })
+
+    it('should respect --delete-branch=none over config default', async () => {
+      const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
+        { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+      ]
+
+      mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+      mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+      mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+
+      command.argv = ['--path', '/path/to/feature', '--delete-branch', 'none']
+      await command.run()
+
+      expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/path/to/feature', false)
+      expect(mockGitHelper.deleteBranch).not.toHaveBeenCalled()
+    })
+
+    it('should show branch deletion info in JSON output', async () => {
+      const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+      ]
+
+      mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+      mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+      mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+      mockGitHelper.isBranchMerged.mockResolvedValue(true)
+      mockGitHelper.deleteBranch.mockResolvedValue(undefined)
+
+      command.argv = ['--path', '/path/to/feature', '--json']
+      await command.run()
+
+      expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"deleteBranchOption"\s*:\s*"local"/))
+      expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"localDeleted"\s*:\s*true/))
     })
   })
 })

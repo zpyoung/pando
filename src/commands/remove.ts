@@ -18,9 +18,9 @@ export default class RemoveWorktree extends Command {
 
   static examples = [
     '<%= config.bin %> <%= command.id %> --path ../feature-x',
+    '<%= config.bin %> <%= command.id %> --path ../feature-x --keep-branch',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --force',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --json',
-    '<%= config.bin %> <%= command.id %> --path ../feature-x --delete-branch local',
     '<%= config.bin %> <%= command.id %> --path ../feature-x --delete-branch remote --force',
     '<%= config.bin %> <%= command.id %> # Interactive selection',
   ]
@@ -35,6 +35,12 @@ export default class RemoveWorktree extends Command {
       description: 'Delete associated branch after removing worktree (none|local|remote)',
       options: ['none', 'local', 'remote'],
       default: undefined,
+    }),
+
+    'keep-branch': Flags.boolean({
+      char: 'k',
+      description: 'Keep the local branch (do not delete it)',
+      default: false,
     }),
 
     json: jsonFlag,
@@ -245,11 +251,12 @@ export default class RemoveWorktree extends Command {
       const gitRoot = await gitHelper.getRepositoryRoot()
       const config = await loadConfig({ gitRoot })
 
-      // Determine delete-branch option (flag overrides config)
-      const deleteBranchOption: DeleteBranchOption =
-        (flags['delete-branch'] as DeleteBranchOption) ||
-        config.worktree.deleteBranchOnRemove ||
-        'none'
+      // Determine delete-branch option (--keep-branch takes precedence, then flag, then config)
+      const deleteBranchOption: DeleteBranchOption = flags['keep-branch']
+        ? 'none'
+        : (flags['delete-branch'] as DeleteBranchOption) ||
+          config.worktree.deleteBranchOnRemove ||
+          'local'
 
       // 3. Get list of worktrees
       const worktrees = await gitHelper.listWorktrees()

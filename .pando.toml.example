@@ -98,13 +98,13 @@ rebaseOnAdd = true
 
 # Delete branch when removing worktree
 # Options:
-#   - "none": Don't delete any branches (default)
-#   - "local": Delete local branch only
+#   - "none": Don't delete any branches (use --keep-branch flag)
+#   - "local": Delete local branch only (default)
 #   - "remote": Delete both local and remote branches
-# Use --delete-branch flag to override for a single command
+# Use --keep-branch flag to skip deletion, or --delete-branch to specify level
 # Remote branches require confirmation unless --force is used
-# Default: "none"
-deleteBranchOnRemove = "none"
+# Default: "local"
+deleteBranchOnRemove = "local"
 
 # ============================================================================
 # Project-Specific Examples
@@ -160,5 +160,5 @@ deleteBranchOnRemove = "none"
 #   pando add --path ../feature --branch feature --symlink "package.json"
 #   pando add --path ../feature --branch feature --absolute-symlinks
 #   pando add --branch existing-feature --no-rebase
-#   pando remove --path ../feature --delete-branch local
+#   pando remove --path ../feature --keep-branch
 #   pando remove --path ../feature --delete-branch remote --force

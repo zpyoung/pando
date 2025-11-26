@@ -391,8 +391,8 @@ export default class ConfigInit extends Command {
       '# rebaseOnAdd - Automatically rebase existing branches onto source when adding worktree',
       '#   Set to false to disable automatic rebase, or use --no-rebase flag',
       '# deleteBranchOnRemove - Delete branch when removing worktree',
-      '#   none: Do not delete branches (default)',
-      '#   local: Delete local branch only',
+      '#   none: Do not delete branches (use --keep-branch flag)',
+      '#   local: Delete local branch only (default)',
       '#   remote: Delete both local and remote branches',
       '',
     ].join('\n')
