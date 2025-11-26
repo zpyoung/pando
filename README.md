@@ -124,17 +124,19 @@ Remove a git worktree
 
 - `-p, --path`: Path to the worktree to remove (optional - will prompt interactively if omitted)
 - `-f, --force`: Force removal even with uncommitted changes
+- `-k, --keep-branch`: Keep the local branch (do not delete it)
 - `-d, --delete-branch`: Delete associated branch after removing worktree (`none`|`local`|`remote`)
-  - `none`: Don't delete any branches (default)
-  - `local`: Delete local branch only
+  - `none`: Don't delete any branches
+  - `local`: Delete local branch only (default)
   - `remote`: Delete both local and remote branches
 - `-j, --json`: Output in JSON format (requires --path)
 
-**Branch Deletion Safety:**
+**Branch Deletion:**
+- By default, the local branch is deleted when removing a worktree
+- Use `--keep-branch` to preserve the branch
 - Before deleting, checks if branch is merged (use `--force` to skip this check)
 - Remote branch deletion requires confirmation unless `--force` is used
-- If branch doesn't exist on remote, only local is deleted
-- Use `worktree.deleteBranchOnRemove` in config to set default behavior
+- Use `worktree.deleteBranchOnRemove` in config to change default behavior
 
 **Examples:**
 
@@ -142,12 +144,12 @@ Remove a git worktree
 # Interactive selection (select from list)
 pando remove
 
-# Direct removal with path
+# Direct removal with path (deletes local branch by default)
 pando remove --path ../feature-x
 pando remove --path ../feature-x --force
 
-# Remove worktree and delete local branch
-pando remove --path ../feature-x --delete-branch local
+# Keep the branch when removing worktree
+pando remove --path ../feature-x --keep-branch
 
 # Remove worktree and delete both local and remote branches
 pando remove --path ../feature-x --delete-branch remote --force
