@@ -6,7 +6,7 @@ Pando makes it effortless to work on multiple branches simultaneously using Git 
 
 ## Features
 
-- 🌳 **Worktree Management**: Create, list, remove, and navigate git worktrees with ease
+- 🌳 **Worktree Management**: Create, list, and remove git worktrees with ease
 - 🤖 **Automation-First**: Every command supports `--json` flag for scripting and AI agents
 - 🎯 **Developer-Friendly**: Interactive prompts when flags aren't provided
 - ⚡ **Fast**: Built with TypeScript for type safety and performance
@@ -51,11 +51,6 @@ pando add --path ../feature-x --branch feature-x
 
 # List all worktrees
 pando list
-
-# Navigate to a worktree (outputs path for shell evaluation)
-cd $(pando navigate --branch feature-x --output-path)
-# Or use the shorter alias
-cd $(pando nav --branch feature-x --output-path)
 
 # Remove a worktree (interactive selection or direct with --path)
 pando remove
@@ -156,28 +151,6 @@ pando remove --path ../feature-x --delete-branch remote --force
 
 # Interactive multi-select with force flag
 pando remove --force
-```
-
-### `pando navigate` (alias: `pando nav`)
-
-Navigate to a git worktree
-
-**Flags:**
-
-- `-b, --branch`: Branch name to navigate to
-- `-p, --path`: Worktree path to navigate to
-- `--output-path`: Output only the path (for shell evaluation)
-- `-j, --json`: Output in JSON format
-
-**Examples:**
-
-```bash
-pando navigate --branch feature-x
-cd $(pando navigate --branch feature-x --output-path)
-
-# Using the shorter alias
-pando nav --branch feature-x
-cd $(pando nav --branch feature-x --output-path)
 ```
 
 ### `pando symlink`

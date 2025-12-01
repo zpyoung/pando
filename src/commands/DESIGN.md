@@ -10,8 +10,6 @@ This directory contains all CLI command implementations for Pando. Each command 
 |------|-------------|
 | `add.ts` | Create new git worktrees with optional rsync/symlink setup |
 | `list.ts` | List all git worktrees in the repository |
-| `navigate.ts` | Navigate to a worktree by branch or path |
-| `nav.ts` | Alias for navigate command (re-export) |
 | `remove.ts` | Remove worktrees with optional branch deletion |
 | `symlink.ts` | Move file to main worktree and create symlink |
 | `config/` | Configuration subcommands (init, show) |
@@ -84,20 +82,6 @@ export default class CommandName extends Command {
 **Flags**:
 - `--verbose, -v`: Show detailed information
 - `--json, -j`: JSON output
-
-### navigate.ts / nav.ts
-
-**Purpose**: Find worktree path by branch or direct path
-
-**Key Features**:
-- Search by branch name or path
-- `--output-path` for shell integration: `cd $(pando nav --branch x --output-path)`
-- Interactive selection when multiple matches
-
-**Flags**:
-- `--branch, -b`: Branch name to find
-- `--path, -p`: Direct path to worktree
-- `--output-path`: Output only the path
 
 ### remove.ts
 

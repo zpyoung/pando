@@ -243,34 +243,6 @@ pando remove --path ../feature-x --delete-branch local --force
 - Make dangerous operations obvious
 - Follow git's own conventions
 
-### Worktree Navigation Pattern
-
-**Decision**: Output paths for shell evaluation
-
-**Problem**: CLI can't change parent shell's directory
-
-**Solution**: Output commands/paths for evaluation
-
-```bash
-# Output path for cd
-cd $(pando navigate --branch feature-x --output-path)
-
-# Or use the shorter nav alias
-cd $(pando nav --branch feature-x --output-path)
-
-# Or create shell alias
-alias goto-worktree='cd $(pando nav --output-path --branch $1)'
-goto-worktree feature-x
-```
-
-**Rationale**:
-- Works across shells (bash, zsh, fish)
-- Composable with other commands
-- Standard Unix pattern
-
-**Alternative Considered**: Shell integration scripts
-- **Rejected**: Too complex, shell-specific
-
 ## AI-Friendly Design Patterns
 
 ### Consistent File Organization

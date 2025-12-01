@@ -83,19 +83,6 @@ export default class Add extends Command {
 }
 ```
 
-### Command Alias Pattern
-
-To create a command alias (like `pando nav` for `pando navigate`), use a simple re-export:
-
-```typescript
-// src/commands/nav.ts
-import NavigateCommand from './navigate.js'
-
-export default NavigateCommand
-```
-
-This ensures both commands share the same implementation and flags.
-
 ### Utility Pattern
 
 Business logic lives in `src/utils/git.ts` as methods on the `GitHelper` class:
@@ -288,7 +275,7 @@ return result as PartialPandoConfig
 
 ```
 src/commands/
-├── verb.ts                    # Top-level commands (add, list, remove, navigate, nav, symlink)
+├── verb.ts                    # Top-level commands (add, list, remove, symlink)
 └── topic/verb.ts              # Nested commands (config/init, config/show)
 
 # Each command file follows this structure:
@@ -351,22 +338,6 @@ Keep files under 250 lines. If longer, extract utilities.
 5. **Run and verify**:
    ```bash
    pnpm dev topic:verb --help
-   ```
-
-**For command aliases** (like `pando nav` for `pando navigate`):
-
-1. **Create alias file** that re-exports the main command:
-
-   ```bash
-   # src/commands/alias.ts
-   import MainCommand from './main-command.js'
-   export default MainCommand
-   ```
-
-2. **Create test file** to verify alias works:
-
-   ```bash
-   touch test/commands/alias.test.ts
    ```
 
 ### Adding Git Operations
@@ -931,7 +902,7 @@ pnpm test:coverage       # With coverage
 Follow conventional commits:
 
 ```
-feat(worktree): add navigation command
+feat(worktree): add symlink command
 fix(branch): handle deleted branches correctly
 docs(readme): update installation instructions
 test(worktree): add integration tests
