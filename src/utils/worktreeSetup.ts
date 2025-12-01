@@ -10,6 +10,7 @@ import {
   type RsyncResult,
   type SymlinkResult,
 } from './fileOps.js'
+import type { RsyncProgressData } from './rsyncProgress.js'
 
 /**
  * Worktree Setup Orchestrator
@@ -122,10 +123,6 @@ export class WorktreeSetupOrchestrator {
     let symlinkResult: SymlinkResult | undefined
     let rolledBack = false
 
-    // Initialize results to undefined to avoid type inference issues with stub methods
-    rsyncResult = undefined
-    symlinkResult = undefined
-
     try {
       // ============================================================
       // Phase 1: Initialization
@@ -213,13 +210,18 @@ export class WorktreeSetupOrchestrator {
       // Phase 4: Rsync
       // ============================================================
       if (!options.skipRsync && this.config.rsync.enabled) {
-        this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Copying files with rsync')
+        this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Estimating file count...')
 
         // Check rsync is installed
         const { RsyncNotInstalledError } = await import('./fileOps.js')
         if (!(await this.rsyncHelper.isInstalled())) {
           throw new RsyncNotInstalledError()
         }
+
+        // Estimate total file count for progress display
+        const totalFiles = await this.rsyncHelper.estimateFileCount(sourceTreePath, rsyncConfig)
+
+        this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Copying files with rsync')
 
         // Build exclude patterns
         const excludePatterns: string[] = [
@@ -250,18 +252,34 @@ export class WorktreeSetupOrchestrator {
                 // For files: exclude the specific file
                 excludePatterns.push(`/${item}`)
               }
-            } catch {
-              // Default to file pattern if stat fails
+            } catch (statError) {
+              // Default to file pattern if stat fails, but warn about potential issues
+              const errMsg = statError instanceof Error ? statError.message : String(statError)
+              warnings.push(
+                `Could not stat '${item}' for rsync exclusion (using file pattern): ${errMsg}`
+              )
               excludePatterns.push(`/${item}`)
             }
           }
         }
 
-        // Execute rsync
+        // Execute rsync with structured progress callback
         rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
           excludePatterns,
+          totalFiles,
           onProgress: options.onProgress
-            ? (output: string): void => options.onProgress!(SetupPhase.RSYNC, output)
+            ? (progress: RsyncProgressData): void => {
+                // Format progress message based on whether we have a total
+                let message: string
+                if (progress.totalFiles > 0 && progress.percentage !== undefined) {
+                  // Format percentage with one decimal place for precision
+                  const percentStr = progress.percentage.toFixed(1)
+                  message = `Syncing files: ${progress.filesTransferred}/${progress.totalFiles} (${percentStr}%)`
+                } else {
+                  message = `Synced: ${progress.filesTransferred} files`
+                }
+                options.onProgress!(SetupPhase.RSYNC, message)
+              }
             : undefined,
         })
       }

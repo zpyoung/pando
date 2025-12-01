@@ -233,7 +233,12 @@ export default class AddWorktree extends Command {
     if (flags.force && !flags.branch) {
       ErrorHelper.validation(
         this,
-        'The --force flag requires --branch to be specified',
+        'The --force flag requires --branch to be specified.\n\n' +
+          'The --force flag resets an existing branch to a new commit.\n' +
+          'Without a branch name, there is nothing to force-reset.\n\n' +
+          'Options:\n' +
+          '  • Add --branch <name> to specify the branch to reset\n' +
+          '  • Remove --force if creating a new worktree without resetting',
         flags.json as boolean | undefined
       )
     }
@@ -245,7 +250,11 @@ export default class AddWorktree extends Command {
       if (branchExists) {
         ErrorHelper.validation(
           this,
-          `Branch '${String(flags.branch)}' already exists. Choose a different branch name, use --force to reset the branch, or omit --branch to checkout the commit in detached HEAD state.`,
+          `Branch '${String(flags.branch)}' already exists.\n\n` +
+            'Options:\n' +
+            `  • Use --force to reset '${String(flags.branch)}' to commit ${String(flags.commit).substring(0, 7)}\n` +
+            '  • Choose a different branch name with --branch <new-name>\n' +
+            '  • Omit --branch to checkout the commit in detached HEAD state',
           flags.json as boolean | undefined
         )
       }
@@ -278,6 +287,14 @@ export default class AddWorktree extends Command {
     // Apply flag overrides
     if (flags['skip-rsync']) {
       config.rsync.enabled = false
+      // Warn if rsync-specific flags were provided alongside --skip-rsync
+      if (flags['rsync-flags'] || flags['rsync-exclude']) {
+        ErrorHelper.warn(
+          this,
+          '--rsync-flags and --rsync-exclude are ignored when --skip-rsync is set',
+          flags.json as boolean | undefined
+        )
+      }
     }
     if (flags['rsync-flags']) {
       const rsyncFlags = flags['rsync-flags'] as string[]
@@ -428,8 +445,8 @@ export default class AddWorktree extends Command {
   private buildProgressCallback(
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
     isJson: boolean
-  ): (phase: SetupPhase, _message: string) => void {
-    return (phase: SetupPhase, _message: string): void => {
+  ): (phase: SetupPhase, message: string) => void {
+    return (phase: SetupPhase, message: string): void => {
       if (spinner) {
         // Update spinner with phase-specific messages
         switch (phase) {
@@ -443,7 +460,8 @@ export default class AddWorktree extends Command {
             spinner.text = 'Creating symlinks (before rsync)...'
             break
           case SetupPhase.RSYNC:
-            spinner.text = 'Syncing files with rsync...'
+            // Use dynamic message from rsync progress (e.g., "Syncing files: 45/120 (37%)")
+            spinner.text = message || 'Syncing files with rsync...'
             break
           case SetupPhase.SYMLINK_AFTER:
             spinner.text = 'Creating symlinks (after rsync)...'
@@ -455,7 +473,12 @@ export default class AddWorktree extends Command {
             spinner.succeed('Setup complete')
             break
           case SetupPhase.ROLLBACK:
-            spinner.fail('Setup failed, rolling back...')
+            // Include context from message if available
+            spinner.fail(message || 'Setup failed, rolling back...')
+            break
+          default:
+            // Handle any new phases that might be added in the future
+            spinner.text = message || `Processing: ${phase}...`
             break
         }
       } else if (isJson) {

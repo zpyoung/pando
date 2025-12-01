@@ -1057,6 +1057,48 @@ async run() {
 
 **Location**: Commands that use config defaults (e.g., `src/commands/add.ts`)
 
+### Real-time Progress with Spawn
+
+When external commands need real-time streaming output (e.g., progress indicators), use `spawn` instead of `exec`:
+
+```typescript
+import { spawn } from 'child_process'
+
+// Streaming with spawn (real-time output)
+return new Promise((resolve, reject) => {
+  const process = spawn('rsync', args)
+  let stdout = ''
+  let filesTransferred = 0
+  let lastProgressUpdate = 0
+  const throttleMs = 100  // Prevent UI flickering
+
+  process.stdout.on('data', (data: Buffer) => {
+    const chunk = data.toString()
+    stdout += chunk
+
+    // Parse and throttle progress updates
+    if (options.onProgress) {
+      const now = Date.now()
+      if (now - lastProgressUpdate >= throttleMs) {
+        lastProgressUpdate = now
+        options.onProgress({ filesTransferred, totalFiles, percentage })
+      }
+    }
+  })
+
+  process.on('close', (code) => {
+    if (code !== 0) reject(new Error(`Failed with code ${code}`))
+    else resolve(parseResult(stdout))
+  })
+})
+```
+
+**When to use `spawn` vs `exec`:**
+- **spawn**: Real-time streaming, progress indicators, long-running commands
+- **exec**: Simple commands where buffered output is sufficient
+
+**Location**: `src/utils/fileOps.ts` (RsyncHelper.rsync)
+
 ## Debugging
 
 ### Development Mode

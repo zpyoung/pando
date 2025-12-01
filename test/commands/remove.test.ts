@@ -610,7 +610,9 @@ describe('remove', () => {
       command.argv = ['--path', '/path/to/feature', '--json']
       await command.run()
 
-      expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"deleteBranchOption"\s*:\s*"local"/))
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/"deleteBranchOption"\s*:\s*"local"/)
+      )
       expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"localDeleted"\s*:\s*true/))
     })
   })
