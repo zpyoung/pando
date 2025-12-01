@@ -27,8 +27,12 @@ vi.mock('fs-extra', async () => {
     default: {
       ...actual,
       pathExists: vi.fn(),
+      stat: vi.fn(),
+      remove: vi.fn(),
     },
     pathExists: vi.fn(),
+    stat: vi.fn(),
+    remove: vi.fn(),
   }
 })
 
@@ -54,12 +58,18 @@ describe('WorktreeSetupOrchestrator', () => {
   let mockSymlinkHelper: SymlinkHelper
   let mockTransaction: FileOperationTransaction
   let mockPathExists: ReturnType<typeof vi.fn>
+  let mockStat: ReturnType<typeof vi.fn>
+  let mockRemove: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
     // Get reference to mocked fs-extra
     const fsExtra = await import('fs-extra')
     mockPathExists = fsExtra.pathExists as any
+    mockStat = (fsExtra as any).stat
+    mockRemove = (fsExtra as any).remove
     vi.mocked(mockPathExists).mockReset()
+    vi.mocked(mockStat).mockReset()
+    vi.mocked(mockRemove).mockReset()
 
     // Create mock GitHelper
     mockGitHelper = {
@@ -120,6 +130,11 @@ describe('WorktreeSetupOrchestrator', () => {
 
     // Mock fs-extra default behavior
     vi.mocked(mockPathExists).mockResolvedValue(true)
+    vi.mocked(mockStat).mockResolvedValue({
+      isDirectory: () => false,
+      isFile: () => true,
+    } as any)
+    vi.mocked(mockRemove).mockResolvedValue(undefined)
 
     // Mock factory functions
     const fileOps = await import('../../src/utils/fileOps')

@@ -1,10 +1,12 @@
 import * as fs from 'fs-extra'
 import { symlink as fsSymlink, readlink as fsReadlink, lstat as fsLstat } from 'fs/promises'
-import { exec } from 'child_process'
+import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import { globby } from 'globby'
 import * as path from 'path'
+import * as os from 'os'
 import type { RsyncConfig, SymlinkConfig } from '../config/schema.js'
+import type { RsyncProgressCallback } from './rsyncProgress.js'
 
 const execAsync = promisify(exec)
 
@@ -22,13 +24,6 @@ interface ExecError extends Error {
   stderr?: string
   stdout?: string
   code?: string | number
-}
-
-/**
- * Type guard for exec errors
- */
-function isExecError(error: unknown): error is ExecError {
-  return error instanceof Error && ('stderr' in error || 'code' in error)
 }
 
 /**
@@ -237,19 +232,132 @@ export class FileOperationTransaction {
 /**
  * Helper for rsync operations
  */
+/**
+ * Rsync version and capability information
+ */
+export interface RsyncVersionInfo {
+  /** Whether rsync is installed */
+  installed: boolean
+  /** Version string (e.g., "3.2.7") */
+  version?: string
+  /** Major version number */
+  major?: number
+  /** Minor version number */
+  minor?: number
+  /** Whether --progress flag is supported (rsync 2.6.0+) */
+  supportsProgress: boolean
+  /** Whether --stats flag is supported (rsync 2.6.0+) */
+  supportsStats: boolean
+}
+
 export class RsyncHelper {
+  private versionCache?: RsyncVersionInfo
+
   constructor(private _transaction: FileOperationTransaction) {}
 
   /**
    * Check if rsync is installed and available
    */
   async isInstalled(): Promise<boolean> {
-    try {
-      await execAsync('rsync --version')
-      return true
-    } catch {
-      return false
+    const info = await this.getVersionInfo()
+    return info.installed
+  }
+
+  /**
+   * Get rsync version and capability information
+   *
+   * Results are cached for the lifetime of this helper instance.
+   * The --progress and --stats flags require rsync 2.6.0 or later.
+   */
+  async getVersionInfo(): Promise<RsyncVersionInfo> {
+    // Return cached result if available
+    if (this.versionCache) {
+      return this.versionCache
     }
+
+    try {
+      const { stdout } = await execAsync('rsync --version')
+
+      // Parse version from output like "rsync  version 3.2.7  protocol version 31"
+      const versionMatch = stdout.match(/rsync\s+version\s+(\d+)\.(\d+)\.?(\d+)?/i)
+
+      if (versionMatch && versionMatch[1] && versionMatch[2]) {
+        const major = parseInt(versionMatch[1], 10)
+        const minor = parseInt(versionMatch[2], 10)
+        const patch = versionMatch[3] ? parseInt(versionMatch[3], 10) : 0
+
+        // --progress and --stats are available since rsync 2.6.0
+        const supportsModernFlags = major > 2 || (major === 2 && minor >= 6)
+
+        this.versionCache = {
+          installed: true,
+          version: `${major}.${minor}.${patch}`,
+          major,
+          minor,
+          supportsProgress: supportsModernFlags,
+          supportsStats: supportsModernFlags,
+        }
+      } else {
+        // Rsync installed but couldn't parse version - assume modern features supported
+        this.versionCache = {
+          installed: true,
+          supportsProgress: true,
+          supportsStats: true,
+        }
+      }
+    } catch {
+      this.versionCache = {
+        installed: false,
+        supportsProgress: false,
+        supportsStats: false,
+      }
+    }
+
+    return this.versionCache
+  }
+
+  /**
+   * Flags that are managed internally and should be filtered from user config
+   */
+  private static readonly INTERNAL_FLAGS = ['--stats', '--progress', '--dry-run']
+
+  /**
+   * Escape a string for safe use in shell commands
+   * Uses single quotes which prevent all shell expansion
+   *
+   * @param str - String to escape
+   * @returns Shell-safe escaped string
+   */
+  private shellEscape(str: string): string {
+    // Single quotes prevent all shell expansion
+    // To include a single quote, we end the quoted string, add an escaped single quote, and restart
+    return `'${str.replace(/'/g, "'\\''")}'`
+  }
+
+  /**
+   * Validate and sanitize rsync flags
+   * Removes internally-managed flags to prevent conflicts
+   *
+   * @param flags - User-provided flags
+   * @returns Sanitized flags array
+   */
+  private sanitizeFlags(flags: string[]): string[] {
+    return flags.filter((flag) => {
+      // Skip empty or whitespace-only flags
+      if (!flag || !flag.trim()) {
+        return false
+      }
+
+      // Filter out flags we manage internally
+      const normalizedFlag = flag.trim().toLowerCase()
+      for (const internal of RsyncHelper.INTERNAL_FLAGS) {
+        if (normalizedFlag === internal || normalizedFlag.startsWith(`${internal}=`)) {
+          return false
+        }
+      }
+
+      return true
+    })
   }
 
   /**
@@ -263,9 +371,10 @@ export class RsyncHelper {
   ): string {
     const parts: string[] = ['rsync']
 
-    // Add flags from config
+    // Add flags from config (sanitized to remove internally-managed flags)
     if (config.flags && config.flags.length > 0) {
-      parts.push(...config.flags)
+      const sanitizedFlags = this.sanitizeFlags(config.flags)
+      parts.push(...sanitizedFlags)
     }
 
     // Collect all exclude patterns
@@ -281,28 +390,104 @@ export class RsyncHelper {
       excludes.push(...additionalExcludes)
     }
 
-    // Always exclude .git directory
+    // SAFETY: Always exclude .git directory to prevent worktree corruption
+    // Each worktree has its own .git file that points to the main repository's
+    // .git/worktrees/<name> directory. Syncing .git content between worktrees
+    // would break git's worktree tracking and corrupt repository state.
+    // This exclusion is intentionally non-configurable for safety.
     if (!excludes.includes('.git')) {
       excludes.push('.git')
     }
 
-    // Add exclude flags
+    // Add exclude flags (shell-escaped to prevent expansion)
     for (const pattern of excludes) {
-      parts.push('--exclude', `"${pattern}"`)
+      parts.push('--exclude', this.shellEscape(pattern))
     }
 
-    // Add source and destination (quote them)
+    // Add source and destination (shell-escaped)
     // IMPORTANT: Source needs trailing slash to copy contents, not the directory itself
     // Without trailing slash: rsync /src/dir /dest → /dest/dir/...
     // With trailing slash: rsync /src/dir/ /dest → /dest/...
     const sourceWithSlash = source.endsWith('/') ? source : `${source}/`
-    parts.push(`"${sourceWithSlash}"`, `"${destination}"`)
+    parts.push(this.shellEscape(sourceWithSlash), this.shellEscape(destination))
 
     return parts.join(' ')
   }
 
   /**
+   * Build rsync command arguments array for spawn
+   * Unlike buildCommand(), this returns an array suitable for child_process.spawn
+   */
+  buildArgs(
+    source: string,
+    destination: string,
+    config: RsyncConfig,
+    additionalExcludes: string[] = []
+  ): string[] {
+    const args: string[] = []
+
+    // Add flags from config (sanitized to remove internally-managed flags)
+    if (config.flags && config.flags.length > 0) {
+      const sanitizedFlags = this.sanitizeFlags(config.flags)
+      args.push(...sanitizedFlags)
+    }
+
+    // Collect all exclude patterns
+    const excludes: string[] = []
+
+    // Add excludes from config
+    if (config.exclude && config.exclude.length > 0) {
+      excludes.push(...config.exclude)
+    }
+
+    // Add additional excludes
+    if (additionalExcludes.length > 0) {
+      excludes.push(...additionalExcludes)
+    }
+
+    // SAFETY: Always exclude .git directory (see buildCommand for rationale)
+    if (!excludes.includes('.git')) {
+      excludes.push('.git')
+    }
+
+    // Add exclude flags (no quotes needed for spawn)
+    for (const pattern of excludes) {
+      args.push('--exclude', pattern)
+    }
+
+    // Add source and destination (no quotes needed for spawn)
+    const sourceWithSlash = source.endsWith('/') ? source : `${source}/`
+    args.push(sourceWithSlash, destination)
+
+    return args
+  }
+
+  /**
+   * Parse rsync progress output line to detect file completion
+   * Returns true when a file transfer is complete (detected by xfer# pattern)
+   */
+  parseProgressLine(line: string): { isFileComplete: boolean } {
+    // Rsync --progress output format for completed file:
+    // 14.71M 100% 237.69MB/s 0:00:00 (xfer#1, to-check=1/2)
+    // The (xfer#N) pattern indicates Nth file transfer completed
+    const xferMatch = line.match(/\(xfer#\d+/)
+    if (xferMatch) {
+      return { isFileComplete: true }
+    }
+
+    return { isFileComplete: false }
+  }
+
+  /**
    * Execute rsync from source to destination
+   *
+   * @param source - Source directory
+   * @param destination - Destination directory
+   * @param config - Rsync configuration
+   * @param options - Options including exclude patterns and progress callbacks
+   * @param options.excludePatterns - Additional patterns to exclude
+   * @param options.totalFiles - Pre-estimated file count for progress percentage
+   * @param options.onProgress - Callback for real-time progress updates
    */
   async rsync(
     source: string,
@@ -310,53 +495,116 @@ export class RsyncHelper {
     config: RsyncConfig,
     options: {
       excludePatterns?: string[]
-      onProgress?: (output: string) => void
+      totalFiles?: number
+      onProgress?: RsyncProgressCallback
     } = {}
   ): Promise<RsyncResult> {
-    // Check if rsync is installed
-    if (!(await this.isInstalled())) {
+    // Check if rsync is installed and get version info
+    const versionInfo = await this.getVersionInfo()
+    if (!versionInfo.installed) {
       throw new RsyncNotInstalledError()
     }
 
-    // Build rsync command (add --stats for statistics)
-    const configWithStats: RsyncConfig = {
-      ...config,
-      flags: [...(config.flags || []), '--stats'],
+    // Build config with --stats and --progress flags for real-time output
+    // These flags require rsync 2.6.0+ (released 2004), but we check just in case
+    const additionalFlags: string[] = []
+    if (versionInfo.supportsStats) {
+      additionalFlags.push('--stats')
     }
-    const command = this.buildCommand(
-      source,
-      destination,
-      configWithStats,
-      options.excludePatterns || []
-    )
+    if (versionInfo.supportsProgress) {
+      additionalFlags.push('--progress')
+    }
+
+    const configWithFlags: RsyncConfig = {
+      ...config,
+      flags: [...(config.flags || []), ...additionalFlags],
+    }
+
+    // Build args array for spawn
+    const args = this.buildArgs(source, destination, configWithFlags, options.excludePatterns || [])
 
     // Record start time
     const startTime = Date.now()
 
-    try {
-      // Execute command
-      const { stdout, stderr } = await execAsync(command)
+    return new Promise((resolve, reject) => {
+      const rsyncProcess = spawn('rsync', args)
+      let stdout = ''
+      let stderr = ''
+      let filesTransferred = 0
+      let lastProgressUpdate = 0
+      const throttleMs = 100
 
-      // Call progress callback if provided
-      if (options.onProgress) {
-        options.onProgress(stdout)
-      }
+      rsyncProcess.stdout.on('data', (data: Buffer) => {
+        const chunk = data.toString()
+        stdout += chunk
 
-      // Track operation in transaction
-      this._transaction.record(OperationType.RSYNC, destination, {
-        source,
-        destination,
-        command,
+        // Parse for progress if callback provided
+        if (options.onProgress) {
+          const lines = chunk.split('\n')
+          for (const line of lines) {
+            const parsed = this.parseProgressLine(line)
+            if (parsed.isFileComplete) {
+              filesTransferred++
+
+              // Throttle updates to avoid flickering
+              const now = Date.now()
+              if (now - lastProgressUpdate >= throttleMs) {
+                lastProgressUpdate = now
+                const totalFiles = options.totalFiles || 0
+                options.onProgress({
+                  filesTransferred,
+                  totalFiles,
+                  // Use one decimal place for more accurate progress representation
+                  percentage:
+                    totalFiles > 0
+                      ? Math.round((filesTransferred / totalFiles) * 1000) / 10
+                      : undefined,
+                })
+              }
+            }
+          }
+        }
       })
 
-      // Parse output for statistics
-      const result = this.parseRsyncStats(stdout + stderr, Date.now() - startTime)
+      rsyncProcess.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString()
+      })
 
-      return result
-    } catch (error) {
-      const details = isExecError(error) && error.stderr ? `: ${error.stderr}` : ''
-      throw new FileOperationError(`rsync command failed${details}`, error as Error)
-    }
+      rsyncProcess.on('close', (code) => {
+        // Send final progress update (in case last update was throttled)
+        if (options.onProgress && filesTransferred > 0) {
+          const totalFiles = options.totalFiles || 0
+          options.onProgress({
+            filesTransferred,
+            totalFiles,
+            // Final update: use one decimal place for consistency
+            percentage:
+              totalFiles > 0
+                ? Math.round((filesTransferred / totalFiles) * 1000) / 10
+                : undefined,
+          })
+        }
+
+        if (code !== 0) {
+          reject(new FileOperationError(`rsync command failed with code ${code}: ${stderr}`))
+          return
+        }
+
+        // Track operation in transaction
+        this._transaction.record(OperationType.RSYNC, destination, {
+          source,
+          destination,
+        })
+
+        // Parse output for statistics
+        const result = this.parseRsyncStats(stdout + stderr, Date.now() - startTime)
+        resolve(result)
+      })
+
+      rsyncProcess.on('error', (error) => {
+        reject(new FileOperationError(`rsync failed: ${error.message}`, error))
+      })
+    })
   }
 
   /**
@@ -408,7 +656,8 @@ export class RsyncHelper {
     }
 
     // Use a temporary destination that won't be created (dry-run)
-    const tempDest = '/tmp/pando-rsync-estimate'
+    // Use os.tmpdir() for cross-platform compatibility
+    const tempDest = path.join(os.tmpdir(), 'pando-rsync-estimate')
     const command = this.buildCommand(source, tempDest, dryRunConfig)
 
     try {
@@ -455,6 +704,19 @@ export class SymlinkHelper {
 
   /**
    * Match files and directories against glob patterns
+   *
+   * This method matches files and directories in baseDir against the provided glob patterns.
+   * It automatically deduplicates results so that if a directory is matched, files inside
+   * that directory are not also returned (since symlinking the directory covers them).
+   *
+   * @param baseDir - The base directory to search in
+   * @param patterns - Array of glob patterns (e.g., ['*.txt', 'node_modules', '.env'])
+   * @returns Array of matched relative paths (deduplicated)
+   *
+   * @example
+   * // Match all .txt files and the node_modules directory
+   * const matches = await symlinkHelper.matchPatterns('/project', ['*.txt', 'node_modules'])
+   * // Returns: ['file.txt', 'node_modules'] (files inside node_modules are NOT included)
    */
   async matchPatterns(baseDir: string, patterns: string[]): Promise<string[]> {
     try {
@@ -506,9 +768,26 @@ export class SymlinkHelper {
 
   /**
    * Remove files/directories that are inside a matched directory.
-   * If both a directory and items inside it match, only keep the top-level directory.
+   *
+   * When both a directory and items inside it match the patterns, only keep the
+   * top-level directory. This prevents redundant symlink operations since
+   * symlinking a directory already covers all its contents.
+   *
+   * @param matches - Array of matched relative paths
+   * @param baseDir - Base directory for resolving paths
+   * @returns Filtered array with nested items removed
+   *
+   * @example
+   * // Input: ['parent', 'parent/child', 'parent/child/file.txt', 'standalone.txt']
+   * // Output: ['parent', 'standalone.txt']
+   * // Reason: parent/child and parent/child/file.txt are inside 'parent'
    */
   private async deduplicateMatches(matches: string[], baseDir: string): Promise<string[]> {
+    // Early return for empty or single-item arrays (no deduplication needed)
+    if (matches.length <= 1) {
+      return matches
+    }
+
     // Identify which matches are directories
     const directories = new Set<string>()
     for (const match of matches) {
@@ -520,6 +799,7 @@ export class SymlinkHelper {
         }
       } catch {
         // File doesn't exist or can't be accessed, skip
+        // This is expected for broken symlinks or permission issues
       }
     }
 
@@ -530,7 +810,9 @@ export class SymlinkHelper {
       let parentPath = path.dirname(match)
       while (parentPath !== '.' && parentPath !== '') {
         if (directories.has(parentPath)) {
-          return false // Skip - parent directory will be symlinked
+          // Skip - this item is inside a matched directory
+          // The parent directory symlink will cover this item
+          return false
         }
         parentPath = path.dirname(parentPath)
       }

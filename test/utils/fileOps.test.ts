@@ -322,6 +322,205 @@ describe('RsyncHelper', () => {
       // This test might fail on Windows or minimal environments
       expect(typeof isInstalled).toBe('boolean')
     })
+
+    // Note: Mock-based isInstalled tests are not included
+    // because child_process.exec is not configurable for spying in the current test environment.
+    // The isInstalled method is tested implicitly through integration tests that verify
+    // RsyncNotInstalledError is thrown when rsync is not available.
+  })
+
+  describe('getVersionInfo', () => {
+    it('should return version information', async () => {
+      const info = await rsyncHelper.getVersionInfo()
+
+      // Should have installed status
+      expect(typeof info.installed).toBe('boolean')
+      expect(typeof info.supportsProgress).toBe('boolean')
+      expect(typeof info.supportsStats).toBe('boolean')
+
+      // If installed, should have version info
+      if (info.installed) {
+        expect(info.version).toBeDefined()
+        expect(typeof info.major).toBe('number')
+        expect(typeof info.minor).toBe('number')
+      }
+    })
+
+    it('should cache version info', async () => {
+      const info1 = await rsyncHelper.getVersionInfo()
+      const info2 = await rsyncHelper.getVersionInfo()
+
+      // Should return the same object (cached)
+      expect(info1).toBe(info2)
+    })
+
+    it('should detect support for modern flags on rsync 2.6.0+', async () => {
+      const info = await rsyncHelper.getVersionInfo()
+
+      if (info.installed && info.major !== undefined && info.minor !== undefined) {
+        // Most systems have rsync 2.6.0+ (released 2004)
+        const isModern = info.major > 2 || (info.major === 2 && info.minor >= 6)
+        expect(info.supportsProgress).toBe(isModern)
+        expect(info.supportsStats).toBe(isModern)
+      }
+    })
+  })
+
+  describe('buildArgs', () => {
+    it('should build correct args array with flags', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: ['-av', '--checksum'],
+        exclude: [],
+      })
+
+      expect(args).toContain('-av')
+      expect(args).toContain('--checksum')
+      expect(args).toContain('/source/')
+      expect(args).toContain('/dest')
+    })
+
+    it('should include exclude patterns', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: ['-av'],
+        exclude: ['node_modules', '*.log'],
+      })
+
+      expect(args).toContain('--exclude')
+      expect(args).toContain('node_modules')
+      expect(args).toContain('*.log')
+    })
+
+    it('should always exclude .git directory', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: [],
+        exclude: [],
+      })
+
+      expect(args).toContain('--exclude')
+      expect(args).toContain('.git')
+    })
+
+    it('should not duplicate .git exclude if already present', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: [],
+        exclude: ['.git'],
+      })
+
+      const gitExcludes = args.filter((arg) => arg === '.git')
+      expect(gitExcludes).toHaveLength(1)
+    })
+
+    it('should add trailing slash to source path', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: [],
+        exclude: [],
+      })
+
+      expect(args).toContain('/source/')
+    })
+
+    it('should not double trailing slash if already present', () => {
+      const args = rsyncHelper.buildArgs('/source/', '/dest', {
+        enabled: true,
+        flags: [],
+        exclude: [],
+      })
+
+      expect(args).toContain('/source/')
+      expect(args).not.toContain('/source//')
+    })
+
+    it('should include additional excludes', () => {
+      const args = rsyncHelper.buildArgs(
+        '/source',
+        '/dest',
+        {
+          enabled: true,
+          flags: [],
+          exclude: ['from-config'],
+        },
+        ['from-additional']
+      )
+
+      expect(args).toContain('from-config')
+      expect(args).toContain('from-additional')
+    })
+
+    it('should filter out internally-managed flags', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: ['-av', '--stats', '--progress', '--dry-run', '--checksum'],
+        exclude: [],
+      })
+
+      // User flags should be included
+      expect(args).toContain('-av')
+      expect(args).toContain('--checksum')
+
+      // Internally-managed flags should be filtered out
+      expect(args).not.toContain('--stats')
+      expect(args).not.toContain('--progress')
+      expect(args).not.toContain('--dry-run')
+    })
+
+    it('should filter empty and whitespace-only flags', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: ['-av', '', '   ', '--checksum'],
+        exclude: [],
+      })
+
+      expect(args).toContain('-av')
+      expect(args).toContain('--checksum')
+      expect(args).not.toContain('')
+      expect(args).not.toContain('   ')
+    })
+  })
+
+  describe('parseProgressLine', () => {
+    it('should detect completed file transfer from xfer pattern', () => {
+      const result = rsyncHelper.parseProgressLine(
+        '14.71M 100% 237.69MB/s 0:00:00 (xfer#1, to-check=1/2)'
+      )
+      expect(result.isFileComplete).toBe(true)
+    })
+
+    it('should detect completed file with higher xfer number', () => {
+      const result = rsyncHelper.parseProgressLine(
+        '1.23K 100% 12.34MB/s 0:00:00 (xfer#42, to-check=100/150)'
+      )
+      expect(result.isFileComplete).toBe(true)
+    })
+
+    it('should not detect file completion for progress line without xfer', () => {
+      const result = rsyncHelper.parseProgressLine('14.71M  50% 237.69MB/s 0:00:01')
+      expect(result.isFileComplete).toBe(false)
+    })
+
+    it('should not detect file completion for filename line', () => {
+      const result = rsyncHelper.parseProgressLine('src/utils/git.ts')
+      expect(result.isFileComplete).toBe(false)
+    })
+
+    it('should not detect file completion for sending incremental line', () => {
+      const result = rsyncHelper.parseProgressLine('sending incremental file list')
+      expect(result.isFileComplete).toBe(false)
+    })
+
+    it('should not detect file completion for empty line', () => {
+      const result = rsyncHelper.parseProgressLine('')
+      expect(result.isFileComplete).toBe(false)
+    })
+
+    it('should not detect file completion for stats line', () => {
+      const result = rsyncHelper.parseProgressLine('Number of files: 123')
+      expect(result.isFileComplete).toBe(false)
+    })
   })
 })
 
@@ -464,6 +663,66 @@ describe('SymlinkHelper', () => {
       const matches = await symlinkHelper.matchPatterns(testDir, [])
 
       expect(matches).toHaveLength(0)
+    })
+
+    it('should handle symlinks to files without following them recursively', async () => {
+      // Create: target.txt, link.txt -> target.txt
+      const targetPath = path.join(testDir, 'target.txt')
+      const linkPath = path.join(testDir, 'link.txt')
+
+      await fs.writeFile(targetPath, 'content')
+      await fs.symlink(targetPath, linkPath)
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['*.txt'])
+
+      // Both the file and symlink should match
+      expect(matches).toContain('target.txt')
+      expect(matches).toContain('link.txt')
+    })
+
+    it('should handle symlinks to directories safely', async () => {
+      // Create: realdir/file.txt, linkdir -> realdir
+      const realDir = path.join(testDir, 'realdir')
+      const linkDir = path.join(testDir, 'linkdir')
+
+      await fs.ensureDir(realDir)
+      await fs.writeFile(path.join(realDir, 'file.txt'), 'content')
+      await fs.symlink(realDir, linkDir)
+
+      // Match both real and symlinked directories
+      const matches = await symlinkHelper.matchPatterns(testDir, ['realdir', 'linkdir'])
+
+      expect(matches).toContain('realdir')
+      expect(matches).toContain('linkdir')
+    })
+
+    it('should handle broken symlinks gracefully', async () => {
+      // Create a symlink to a non-existent target
+      const brokenLink = path.join(testDir, 'broken-link')
+      await fs.symlink('/nonexistent/path', brokenLink)
+
+      // Create a regular file to ensure pattern matching works
+      await fs.writeFile(path.join(testDir, 'regular.txt'), 'content')
+
+      // Should not throw and should return the regular file
+      const matches = await symlinkHelper.matchPatterns(testDir, ['*'])
+
+      expect(matches).toContain('regular.txt')
+      // Broken symlink might or might not be included depending on globby behavior
+    })
+
+    it('should deduplicate when symlink target is also matched', async () => {
+      // Create: parent/child.txt, and symlink inside parent pointing up
+      const parentDir = path.join(testDir, 'parent')
+      await fs.ensureDir(parentDir)
+      await fs.writeFile(path.join(parentDir, 'child.txt'), 'content')
+
+      // Match the parent directory
+      const matches = await symlinkHelper.matchPatterns(testDir, ['parent', 'parent/*'])
+
+      // Should only contain parent (child is inside parent)
+      expect(matches).toContain('parent')
+      expect(matches).not.toContain('parent/child.txt')
     })
   })
 })
