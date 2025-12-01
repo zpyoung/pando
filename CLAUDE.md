@@ -966,6 +966,94 @@ try {
 }
 ```
 
+### User-Friendly Validation Errors
+
+When validation fails, provide actionable options instead of just stating the error:
+
+```typescript
+// Good: Multi-line error with actionable options
+ErrorHelper.validation(
+  this,
+  `Branch '${branch}' already exists.\n\n` +
+    'Options:\n' +
+    `  • Use --force to reset the branch\n` +
+    '  • Choose a different branch name with --branch <new-name>\n' +
+    '  • Omit --branch to checkout in detached HEAD state',
+  flags.json
+)
+
+// Avoid: Single-line error without guidance
+ErrorHelper.validation(this, 'Branch already exists', flags.json)
+```
+
+### CLI Flag Consistency Warnings
+
+When mutually exclusive flags are provided, warn the user instead of silently ignoring:
+
+```typescript
+if (flags['skip-rsync']) {
+  config.rsync.enabled = false
+  // Warn if rsync-specific flags were provided alongside --skip-rsync
+  if (flags['rsync-flags'] || flags['rsync-exclude']) {
+    ErrorHelper.warn(
+      this,
+      '--rsync-flags and --rsync-exclude are ignored when --skip-rsync is set',
+      flags.json
+    )
+  }
+}
+```
+
+### External Tool Version Detection
+
+When depending on external CLI tools, detect version and capabilities:
+
+```typescript
+interface VersionInfo {
+  installed: boolean
+  version?: string
+  major?: number
+  minor?: number
+  supportsFeatureX: boolean
+}
+
+export class ToolHelper {
+  private versionCache?: VersionInfo
+
+  async getVersionInfo(): Promise<VersionInfo> {
+    // Return cached result
+    if (this.versionCache) return this.versionCache
+
+    try {
+      const { stdout } = await execAsync('tool --version')
+      const match = stdout.match(/version\s+(\d+)\.(\d+)/)
+
+      if (match && match[1] && match[2]) {
+        const major = parseInt(match[1], 10)
+        const minor = parseInt(match[2], 10)
+
+        this.versionCache = {
+          installed: true,
+          version: `${major}.${minor}`,
+          major,
+          minor,
+          supportsFeatureX: major >= 2, // Feature requires v2+
+        }
+      }
+    } catch {
+      this.versionCache = { installed: false, supportsFeatureX: false }
+    }
+
+    return this.versionCache
+  }
+}
+```
+
+**Benefits:**
+- Caches result for performance
+- Gracefully handles missing tools
+- Conditionally enables features based on version
+
 ### Worktree Setup: Rsync/Symlink Coordination
 
 When setting up new worktrees with both rsync and symlink operations, **always match symlink patterns and exclude from rsync first**:
