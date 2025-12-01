@@ -46,6 +46,9 @@ pnpm link
 ## Quick Start
 
 ```bash
+# Initialize configuration (optional but recommended)
+pando config init
+
 # Create a new worktree for a feature branch
 pando add --path ../feature-x --branch feature-x
 
@@ -55,6 +58,9 @@ pando list
 # Remove a worktree (interactive selection or direct with --path)
 pando remove
 pando remove --path ../feature-x
+
+# View current configuration and sources
+pando config show
 ```
 
 ## Commands
@@ -192,7 +198,102 @@ pando symlink .env --json
 
 ## Configuration
 
-Pando can be configured using a `.pando.toml` file in your project root:
+Pando supports flexible configuration through multiple sources with a clear priority hierarchy.
+
+### Config Commands
+
+#### `pando config init`
+
+Generate a configuration file with defaults and helpful comments.
+
+**Flags:**
+
+- `-g, --global`: Create user-level config at `~/.config/pando/config.toml`
+- `--git-root`: Create config at git repository root
+- `-f, --force`: Overwrite existing config file
+- `-m, --merge`: Merge missing defaults into existing config (default behavior)
+- `--no-merge`: Error if config already exists
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+
+```bash
+# Create project config in current directory
+pando config init
+
+# Create user-level (global) config
+pando config init --global
+
+# Create config at git repository root
+pando config init --git-root
+
+# Overwrite existing config
+pando config init --force
+
+# Add missing defaults to existing config
+pando config init --merge
+```
+
+#### `pando config show`
+
+Display the current effective configuration with source information.
+
+**Flags:**
+
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+
+```bash
+# Show current config with sources
+pando config show
+
+# JSON output for scripts
+pando config show --json
+```
+
+### Configuration Locations
+
+Pando discovers configuration from multiple locations:
+
+| Location | File | Use Case |
+|----------|------|----------|
+| Current directory | `.pando.toml` | Project-specific settings |
+| Git root | `.pando.toml` | Repository-wide defaults |
+| Project files | `pyproject.toml`, `package.json`, etc. | Embedded in existing config |
+| User home | `~/.config/pando/config.toml` | User-level defaults |
+
+### Configuration Priority
+
+Settings are merged with the following priority (highest to lowest):
+
+1. **CLI flags** - Always win (e.g., `--path`, `--no-rebase`)
+2. **Environment variables** - `PANDO_*` prefixed variables
+3. **Project `.pando.toml`** - In current directory or parent directories
+4. **Project files** - `pyproject.toml` `[tool.pando]`, `package.json` `"pando"`, etc.
+5. **Global config** - `~/.config/pando/config.toml`
+6. **Built-in defaults** - Sensible defaults for all options
+
+### Project vs User Config
+
+**Project config** (`.pando.toml` in repo):
+- Shared with team via version control
+- Project-specific worktree paths and patterns
+- Checked into git
+
+**User config** (`~/.config/pando/config.toml`):
+- Personal preferences across all projects
+- Default behaviors you always want
+- Not shared with team
+
+```bash
+# Create user-level config
+pando config init --global
+```
+
+### Config File Format
+
+Pando uses TOML format for configuration:
 
 ```toml
 # Rsync Configuration
@@ -212,6 +313,35 @@ beforeRsync = true
 defaultPath = "../worktrees"  # Default parent directory for worktrees
 rebaseOnAdd = true            # Rebase existing branches when adding worktree
 deleteBranchOnRemove = "none" # Delete branch on worktree remove: "none", "local", "remote"
+```
+
+### Embedding in Project Files
+
+Instead of a separate `.pando.toml`, you can embed configuration in existing project files:
+
+**pyproject.toml** (Python projects):
+```toml
+[tool.pando]
+[tool.pando.worktree]
+defaultPath = "../worktrees"
+```
+
+**package.json** (Node.js projects):
+```json
+{
+  "pando": {
+    "worktree": {
+      "defaultPath": "../worktrees"
+    }
+  }
+}
+```
+
+**Cargo.toml** (Rust projects):
+```toml
+[package.metadata.pando]
+[package.metadata.pando.worktree]
+defaultPath = "../worktrees"
 ```
 
 ### Worktree Default Path

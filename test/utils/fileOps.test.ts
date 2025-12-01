@@ -327,11 +327,17 @@ describe('RsyncHelper', () => {
 
 describe('SymlinkHelper', () => {
   let transaction: FileOperationTransaction
-  let _symlinkHelper: SymlinkHelper
+  let symlinkHelper: SymlinkHelper
+  let testDir: string
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pando-symlink-test-'))
     transaction = new FileOperationTransaction()
-    _symlinkHelper = createSymlinkHelper(transaction)
+    symlinkHelper = createSymlinkHelper(transaction)
+  })
+
+  afterEach(async () => {
+    await fs.remove(testDir)
   })
 
   describe('factory functions', () => {
@@ -343,6 +349,121 @@ describe('SymlinkHelper', () => {
     it('should create SymlinkHelper', () => {
       const helper = createSymlinkHelper(transaction)
       expect(helper).toBeInstanceOf(SymlinkHelper)
+    })
+  })
+
+  describe('matchPatterns', () => {
+    it('should match files with glob patterns', async () => {
+      // Create test files
+      await fs.writeFile(path.join(testDir, 'file1.txt'), 'content')
+      await fs.writeFile(path.join(testDir, 'file2.txt'), 'content')
+      await fs.writeFile(path.join(testDir, 'other.json'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['*.txt'])
+
+      expect(matches).toHaveLength(2)
+      expect(matches).toContain('file1.txt')
+      expect(matches).toContain('file2.txt')
+      expect(matches).not.toContain('other.json')
+    })
+
+    it('should match directories with glob patterns', async () => {
+      // Create test directories
+      await fs.ensureDir(path.join(testDir, 'subdir1'))
+      await fs.ensureDir(path.join(testDir, 'subdir2'))
+      await fs.writeFile(path.join(testDir, 'file.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['subdir*'])
+
+      expect(matches).toHaveLength(2)
+      expect(matches).toContain('subdir1')
+      expect(matches).toContain('subdir2')
+      expect(matches).not.toContain('file.txt')
+    })
+
+    it('should match both files and directories with broad pattern', async () => {
+      // Create mixed content
+      await fs.ensureDir(path.join(testDir, 'dir'))
+      await fs.writeFile(path.join(testDir, 'file.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['*'])
+
+      expect(matches).toContain('dir')
+      expect(matches).toContain('file.txt')
+    })
+
+    it('should deduplicate files inside matched directories', async () => {
+      // Create: subdir/file.txt
+      await fs.ensureDir(path.join(testDir, 'subdir'))
+      await fs.writeFile(path.join(testDir, 'subdir', 'file.txt'), 'content')
+
+      // Match both the directory and files inside it
+      const matches = await symlinkHelper.matchPatterns(testDir, ['subdir', 'subdir/*'])
+
+      // Should only contain the directory, not the file inside
+      expect(matches).toContain('subdir')
+      expect(matches).not.toContain('subdir/file.txt')
+    })
+
+    it('should deduplicate nested files inside matched parent directory', async () => {
+      // Create: parent/child/grandchild.txt
+      await fs.ensureDir(path.join(testDir, 'parent', 'child'))
+      await fs.writeFile(path.join(testDir, 'parent', 'child', 'grandchild.txt'), 'content')
+
+      // Match the parent directory and nested files
+      const matches = await symlinkHelper.matchPatterns(testDir, ['parent', 'parent/**/*'])
+
+      // Should only contain the parent directory
+      expect(matches).toContain('parent')
+      expect(matches).not.toContain('parent/child')
+      expect(matches).not.toContain('parent/child/grandchild.txt')
+    })
+
+    it('should keep files that are not inside matched directories', async () => {
+      // Create: dir1/, dir2/file.txt, standalone.txt
+      await fs.ensureDir(path.join(testDir, 'dir1'))
+      await fs.ensureDir(path.join(testDir, 'dir2'))
+      await fs.writeFile(path.join(testDir, 'dir2', 'file.txt'), 'content')
+      await fs.writeFile(path.join(testDir, 'standalone.txt'), 'content')
+
+      // Match dir1 (as directory) and all .txt files
+      const matches = await symlinkHelper.matchPatterns(testDir, ['dir1', '**/*.txt'])
+
+      // dir1 should be included
+      expect(matches).toContain('dir1')
+      // standalone.txt should be included (not inside dir1)
+      expect(matches).toContain('standalone.txt')
+      // dir2/file.txt should be included (not inside dir1)
+      expect(matches).toContain('dir2/file.txt')
+    })
+
+    it('should match dotfiles and dot-directories', async () => {
+      // Create: .hidden/file.txt, .env
+      await fs.ensureDir(path.join(testDir, '.hidden'))
+      await fs.writeFile(path.join(testDir, '.hidden', 'file.txt'), 'content')
+      await fs.writeFile(path.join(testDir, '.env'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['.hidden', '.env'])
+
+      expect(matches).toContain('.hidden')
+      expect(matches).toContain('.env')
+    })
+
+    it('should return empty array for no matches', async () => {
+      // Create a file that won't match
+      await fs.writeFile(path.join(testDir, 'file.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['*.json'])
+
+      expect(matches).toHaveLength(0)
+    })
+
+    it('should handle empty patterns array', async () => {
+      await fs.writeFile(path.join(testDir, 'file.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, [])
+
+      expect(matches).toHaveLength(0)
     })
   })
 })

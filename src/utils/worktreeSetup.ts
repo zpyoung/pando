@@ -227,19 +227,34 @@ export class WorktreeSetupOrchestrator {
           ...rsyncConfig.exclude,
         ]
 
-        // ALWAYS exclude files that will be symlinked (regardless of beforeRsync setting)
-        // This prevents rsync from copying files that should be symlinks
+        // ALWAYS exclude files/directories that will be symlinked (regardless of beforeRsync setting)
+        // This prevents rsync from copying items that should be symlinks
         if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
-          // Match symlink patterns against source directory to find files that will be symlinked
-          const filesToSymlink = await this.symlinkHelper.matchPatterns(
+          // Match symlink patterns against source directory to find items that will be symlinked
+          const itemsToSymlink = await this.symlinkHelper.matchPatterns(
             sourceTreePath,
             symlinkConfig.patterns
           )
 
-          // Add matched files to rsync exclude patterns
-          // Prepend '/' to match from root of source directory in rsync
-          const symlinkExcludes = filesToSymlink.map((file) => `/${file}`)
-          excludePatterns.push(...symlinkExcludes)
+          // Generate rsync exclude patterns with proper format for files vs directories
+          // Directories need trailing '/' to exclude the directory and all contents
+          const pathModule = await import('path')
+          for (const item of itemsToSymlink) {
+            const fullPath = pathModule.default.join(sourceTreePath, item)
+            try {
+              const stats = await fs.stat(fullPath)
+              if (stats.isDirectory()) {
+                // For directories: use trailing slash to exclude directory and contents
+                excludePatterns.push(`/${item}/`)
+              } else {
+                // For files: exclude the specific file
+                excludePatterns.push(`/${item}`)
+              }
+            } catch {
+              // Default to file pattern if stat fails
+              excludePatterns.push(`/${item}`)
+            }
+          }
         }
 
         // Execute rsync
