@@ -454,21 +454,88 @@ export class SymlinkHelper {
   constructor(private _transaction: FileOperationTransaction) {}
 
   /**
-   * Match files against glob patterns
+   * Match files and directories against glob patterns
    */
   async matchPatterns(baseDir: string, patterns: string[]): Promise<string[]> {
     try {
-      // Use globby to match patterns in baseDir
-      const matches = await globby(patterns, {
+      // Match files with patterns
+      const fileMatches = await globby(patterns, {
         cwd: baseDir,
-        onlyFiles: true, // Filter out directories
-        dot: true, // Include dotfiles
+        onlyFiles: true,
+        dot: true,
       })
 
-      return matches
+      // Match directories with glob patterns (for patterns like "subdir*" or "*")
+      const globDirMatches = await globby(patterns, {
+        cwd: baseDir,
+        onlyDirectories: true,
+        dot: true,
+      })
+
+      // Also check if any non-glob pattern directly matches an existing directory
+      // (globby doesn't match directories by exact name like "subdir" without wildcards)
+      const directDirMatches: string[] = []
+      for (const pattern of patterns) {
+        // Skip glob patterns - they're handled above
+        if (pattern.includes('*') || pattern.includes('?') || pattern.includes('[')) {
+          continue
+        }
+        // Check if pattern matches an existing directory
+        const normalizedPattern = pattern.replace(/\/$/, '') // Remove trailing slash if present
+        const dirPath = path.join(baseDir, normalizedPattern)
+        try {
+          const stats = await fs.stat(dirPath)
+          if (stats.isDirectory()) {
+            directDirMatches.push(normalizedPattern)
+          }
+        } catch {
+          // Directory doesn't exist, skip
+        }
+      }
+
+      // Combine and deduplicate
+      const allMatches = [...new Set([...fileMatches, ...globDirMatches, ...directDirMatches])]
+
+      // Deduplicate: remove files that are inside a matched directory
+      // (if both .cursor/ and .cursor/file.md match, only keep .cursor/)
+      return this.deduplicateMatches(allMatches, baseDir)
     } catch (error) {
       throw new FileOperationError('Failed to match patterns', error as Error)
     }
+  }
+
+  /**
+   * Remove files/directories that are inside a matched directory.
+   * If both a directory and items inside it match, only keep the top-level directory.
+   */
+  private async deduplicateMatches(matches: string[], baseDir: string): Promise<string[]> {
+    // Identify which matches are directories
+    const directories = new Set<string>()
+    for (const match of matches) {
+      const fullPath = path.join(baseDir, match)
+      try {
+        const stats = await fs.stat(fullPath)
+        if (stats.isDirectory()) {
+          directories.add(match)
+        }
+      } catch {
+        // File doesn't exist or can't be accessed, skip
+      }
+    }
+
+    // Filter out items (files or directories) that are inside a matched directory
+    return matches.filter((match) => {
+      // Check if any parent path is in the directories set
+      // This applies to both files AND nested directories
+      let parentPath = path.dirname(match)
+      while (parentPath !== '.' && parentPath !== '') {
+        if (directories.has(parentPath)) {
+          return false // Skip - parent directory will be symlinked
+        }
+        parentPath = path.dirname(parentPath)
+      }
+      return true
+    })
   }
 
   /**
