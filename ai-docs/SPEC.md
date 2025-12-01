@@ -6,7 +6,7 @@
 
 ## 2. Core Goals
 
-- **Effortless Worktree Management**: Simplify creation, removal, and navigation of git worktrees.
+- **Effortless Worktree Management**: Simplify creation and removal of git worktrees.
 - **Automation-First**: Ensure every command supports JSON output for easy integration with scripts and AI agents.
 - **Developer Experience**: Provide interactive prompts, clear error messages, and "wow" aesthetics.
 - **Performance**: Fast execution using TypeScript and efficient git operations.
@@ -26,7 +26,6 @@
 - `add`: Create a new worktree, optionally checking out a new or existing branch.
 - `list`: Show all worktrees with details (branch, path, commit).
 - `remove`: Delete a worktree, with safety checks for uncommitted changes.
-- `navigate`: Output the path to a worktree for shell navigation.
 
 ### Branch Management
 

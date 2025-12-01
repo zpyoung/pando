@@ -42,8 +42,6 @@ commands/
 ├── add.ts         # pando add (create worktree)
 ├── list.ts        # pando list (list worktrees)
 ├── remove.ts      # pando remove (remove worktree)
-├── navigate.ts    # pando navigate (navigate to worktree)
-├── nav.ts         # pando nav (alias for navigate)
 ├── symlink.ts     # pando symlink (create symlinks)
 └── config/
     ├── init.ts    # pando config init
@@ -137,7 +135,7 @@ Pando follows **feature-based organization** (vertical slices):
 
 ```
 Feature: Worktree Management
-├── Commands:    src/commands/*.ts (add, list, remove, navigate, symlink)
+├── Commands:    src/commands/*.ts (add, list, remove, symlink)
 ├── Logic:       src/utils/git.ts (worktree methods)
 ├── Types:       WorktreeInfo, etc.
 └── Tests:       test/commands/*.test.ts
