@@ -303,6 +303,142 @@ describe('FileOperationTransaction', () => {
       expect(transaction.getOperations()).toHaveLength(0)
     })
   })
+
+  describe('rollback - RollbackResult', () => {
+    it('should return preserved checkpoints after rollback', async () => {
+      const checkpointData = { path: '/test/worktree' }
+      transaction.createCheckpoint('worktree', checkpointData)
+      transaction.record(OperationType.CREATE_SYMLINK, '/path/1')
+
+      const result = await transaction.rollback()
+
+      // Checkpoints should be preserved in the result
+      expect(result.checkpoints.get('worktree')).toEqual(checkpointData)
+      // But internal checkpoints should be cleared
+      expect(transaction.getCheckpoint('worktree')).toBeUndefined()
+    })
+
+    it('should return list of rolled back operations', async () => {
+      const linkPath = path.join(testDir, 'link')
+      const targetPath = path.join(testDir, 'target.txt')
+      await fs.writeFile(targetPath, 'content')
+      await fs.symlink(targetPath, linkPath)
+      transaction.record(OperationType.CREATE_SYMLINK, linkPath)
+
+      const result = await transaction.rollback()
+
+      expect(result.rolledBackOperations).toHaveLength(1)
+      expect(result.rolledBackOperations[0].type).toBe(OperationType.CREATE_SYMLINK)
+      expect(result.rolledBackOperations[0].path).toBe(linkPath)
+    })
+
+    it('should track operations that failed to rollback', async () => {
+      // Create a symlink operation that will fail during rollback
+      // by recording a path that doesn't exist as a symlink
+      const nonExistentPath = path.join(testDir, 'does-not-exist')
+      transaction.record(OperationType.CREATE_SYMLINK, nonExistentPath)
+
+      const result = await transaction.rollback()
+
+      // Non-existent paths are skipped (not failed) - they just don't get added to rolledBackOperations
+      expect(result.rolledBackOperations).toHaveLength(0)
+      expect(result.failedRollbacks).toHaveLength(0)
+    })
+
+    it('should preserve multiple checkpoints', async () => {
+      transaction.createCheckpoint('checkpoint1', { value: 1 })
+      transaction.createCheckpoint('checkpoint2', { value: 2 })
+      transaction.createCheckpoint('worktree', { path: '/test' })
+
+      const result = await transaction.rollback()
+
+      expect(result.checkpoints.size).toBe(3)
+      expect(result.checkpoints.get('checkpoint1')).toEqual({ value: 1 })
+      expect(result.checkpoints.get('checkpoint2')).toEqual({ value: 2 })
+      expect(result.checkpoints.get('worktree')).toEqual({ path: '/test' })
+    })
+
+    it('should use preserved checkpoints for DELETE_FILE restoration', async () => {
+      const filePath = path.join(testDir, 'file-to-restore.txt')
+      const originalContent = 'original content'
+
+      // Simulate a DELETE_FILE operation with checkpoint backup
+      await fs.writeFile(filePath, originalContent)
+      transaction.createCheckpoint(`file:${filePath}`, originalContent)
+      await fs.remove(filePath)
+      transaction.record(OperationType.DELETE_FILE, filePath)
+
+      // Verify file is deleted
+      expect(await fs.pathExists(filePath)).toBe(false)
+
+      // Rollback should restore from preserved checkpoint
+      const result = await transaction.rollback()
+
+      // Verify file is restored
+      expect(await fs.pathExists(filePath)).toBe(true)
+      expect(await fs.readFile(filePath, 'utf8')).toBe(originalContent)
+      expect(result.rolledBackOperations).toHaveLength(1)
+    })
+
+    it('should warn when symlink path exists but is not a symlink', async () => {
+      const warnings: string[] = []
+      const transactionWithWarnings = new FileOperationTransaction((msg) => warnings.push(msg))
+
+      const filePath = path.join(testDir, 'regular-file.txt')
+      await fs.writeFile(filePath, 'content')
+
+      // Record as symlink even though it's a regular file
+      transactionWithWarnings.record(OperationType.CREATE_SYMLINK, filePath)
+
+      await transactionWithWarnings.rollback()
+
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('path exists but is not a symlink')
+    })
+
+    it('should warn when rsync operation has no destination metadata', async () => {
+      const warnings: string[] = []
+      const transactionWithWarnings = new FileOperationTransaction((msg) => warnings.push(msg))
+
+      // Record rsync without destination metadata
+      transactionWithWarnings.record(OperationType.RSYNC, '/source/path')
+
+      await transactionWithWarnings.rollback()
+
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('no destination metadata recorded')
+    })
+
+    it('should warn when directory is not empty during rollback', async () => {
+      const warnings: string[] = []
+      const transactionWithWarnings = new FileOperationTransaction((msg) => warnings.push(msg))
+
+      const dirPath = path.join(testDir, 'non-empty-dir')
+      await fs.ensureDir(dirPath)
+      await fs.writeFile(path.join(dirPath, 'file.txt'), 'content')
+
+      transactionWithWarnings.record(OperationType.CREATE_DIR, dirPath)
+
+      await transactionWithWarnings.rollback()
+
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('directory not empty')
+    })
+
+    it('should warn when DELETE_FILE has no checkpoint backup', async () => {
+      const warnings: string[] = []
+      const transactionWithWarnings = new FileOperationTransaction((msg) => warnings.push(msg))
+
+      const filePath = path.join(testDir, 'deleted-file.txt')
+      // Record DELETE_FILE without creating a checkpoint
+      transactionWithWarnings.record(OperationType.DELETE_FILE, filePath)
+
+      await transactionWithWarnings.rollback()
+
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('no checkpoint backup available')
+    })
+  })
 })
 
 describe('RsyncHelper', () => {

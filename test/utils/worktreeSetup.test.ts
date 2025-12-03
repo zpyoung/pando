@@ -74,6 +74,7 @@ describe('WorktreeSetupOrchestrator', () => {
     // Create mock GitHelper
     mockGitHelper = {
       getMainWorktreePath: vi.fn().mockResolvedValue('/repo/main'),
+      removeWorktree: vi.fn().mockResolvedValue(undefined),
     } as any
 
     // Create mock config
@@ -96,7 +97,11 @@ describe('WorktreeSetupOrchestrator', () => {
       createCheckpoint: vi.fn(),
       getCheckpoint: vi.fn().mockReturnValue(undefined),
       getOperations: vi.fn().mockReturnValue([]),
-      rollback: vi.fn().mockResolvedValue(undefined),
+      rollback: vi.fn().mockResolvedValue({
+        rolledBackOperations: [],
+        failedRollbacks: [],
+        checkpoints: new Map(),
+      }),
       clear: vi.fn(),
     } as any
 
@@ -641,6 +646,48 @@ describe('WorktreeSetupOrchestrator', () => {
       } catch (error) {
         const setupError = error as SetupError
         expect(setupError.cause).toBe(originalError)
+      }
+    })
+
+    it('should remove worktree using checkpoint from rollback result (regression test)', async () => {
+      // This test verifies the fix for the bug where worktree was not deleted on error
+      // because rollback() cleared checkpoints before we could retrieve them
+      mockRsyncHelper.rsync.mockRejectedValueOnce(new Error('Rsync failed'))
+
+      // Mock rollback to return preserved checkpoints (simulating the fix)
+      mockTransaction.rollback.mockResolvedValueOnce({
+        rolledBackOperations: [],
+        failedRollbacks: [],
+        checkpoints: new Map([['worktree', { path: '/repo/feature' }]]),
+      })
+
+      try {
+        await orchestrator.setupNewWorktree('/repo/feature')
+        expect.fail('Should have thrown error')
+      } catch (error) {
+        expect(error).toBeInstanceOf(SetupError)
+        // CRITICAL: Verify worktree removal was called with the checkpoint path
+        expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith('/repo/feature', true)
+      }
+    })
+
+    it('should handle missing checkpoint gracefully during rollback', async () => {
+      mockRsyncHelper.rsync.mockRejectedValueOnce(new Error('Rsync failed'))
+
+      // Mock rollback to return empty checkpoints (edge case)
+      mockTransaction.rollback.mockResolvedValueOnce({
+        rolledBackOperations: [],
+        failedRollbacks: [],
+        checkpoints: new Map(), // No worktree checkpoint
+      })
+
+      try {
+        await orchestrator.setupNewWorktree('/repo/feature')
+        expect.fail('Should have thrown error')
+      } catch (error) {
+        // Should not crash, just skip worktree removal
+        expect(error).toBeInstanceOf(SetupError)
+        expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
       }
     })
   })

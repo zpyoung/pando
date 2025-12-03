@@ -1106,18 +1106,23 @@ The `WorktreeSetupOrchestrator` uses checkpoints for rollback on failure:
 // Create checkpoint before operations
 this.transaction.createCheckpoint('worktree', { path: worktreePath })
 
-// On failure, retrieve checkpoint and rollback
+// On failure, rollback returns preserved checkpoints
 try {
   // ... operations ...
 } catch (error) {
-  const checkpoint = this.transaction.getCheckpoint('worktree')
+  // rollback() clears internal state but returns preserved checkpoints
+  const rollbackResult = await this.transaction.rollback()
+
+  // Access checkpoint from rollback result (not from transaction - it's been cleared)
+  const checkpoint = rollbackResult.checkpoints.get('worktree')
   if (checkpoint && typeof checkpoint === 'object' && 'path' in checkpoint) {
     const worktreePath = (checkpoint as { path: string }).path
     await this.gitHelper.removeWorktree(worktreePath, true) // force=true
   }
-  await this.transaction.rollback()
 }
 ```
+
+**Note**: `rollback()` returns a `RollbackResult` containing `rolledBackOperations`, `failedRollbacks`, and `checkpoints`. Always retrieve checkpoint data from the result, not from the transaction after rollback, as internal state is cleared during rollback.
 
 **Location**: `src/utils/worktreeSetup.ts`
 
