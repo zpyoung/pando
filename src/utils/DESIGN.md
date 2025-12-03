@@ -25,8 +25,12 @@ This module provides core utility functions for git operations, file operations 
 transaction.record(OperationType.CREATE_SYMLINK, path)
 // ... do operation ...
 // On error:
-await transaction.rollback() // Undoes all operations
+const result = await transaction.rollback()
+// result.checkpoints preserves data for post-rollback cleanup (e.g., worktree path)
+// result.rolledBackOperations shows what was undone
 ```
+
+**Note**: `rollback()` returns a `RollbackResult` with preserved checkpoints because internal state is cleared during rollback. This prevents temporal coupling bugs where checkpoint data is needed after rollback completes.
 
 ### Rsync for File Copying
 **Chosen**: Use rsync instead of native Node.js file copying
@@ -153,8 +157,12 @@ try {
     config.symlink
   )
 } catch (error) {
-  // Rollback on error
-  await transaction.rollback()
+  // Rollback on error - returns preserved checkpoints and rollback status
+  const result = await transaction.rollback()
+  console.log(`Rolled back ${result.rolledBackOperations.length} operations`)
+  if (result.failedRollbacks.length > 0) {
+    console.warn('Some rollback operations failed:', result.failedRollbacks)
+  }
   throw error
 }
 ```

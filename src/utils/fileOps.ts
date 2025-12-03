@@ -101,6 +101,18 @@ export interface Operation {
 }
 
 /**
+ * Result of a rollback operation
+ */
+export interface RollbackResult {
+  /** Operations that were successfully rolled back */
+  rolledBackOperations: Operation[]
+  /** Operations that failed to rollback */
+  failedRollbacks: Array<{ operation: Operation; error: string }>
+  /** Checkpoint data preserved from before rollback */
+  checkpoints: Map<string, unknown>
+}
+
+/**
  * Transaction for tracking file operations
  *
  * Enables rollback of all operations if any step fails.
@@ -154,7 +166,12 @@ export class FileOperationTransaction {
   /**
    * Rollback all operations in reverse order
    */
-  async rollback(): Promise<void> {
+  async rollback(): Promise<RollbackResult> {
+    // Preserve checkpoints BEFORE clearing - critical for post-rollback use
+    const preservedCheckpoints = new Map(this.checkpoints)
+    const rolledBackOperations: Operation[] = []
+    const failedRollbacks: Array<{ operation: Operation; error: string }> = []
+
     // Iterate operations in reverse order
     const reversedOps = [...this.operations].reverse()
 
@@ -167,8 +184,15 @@ export class FileOperationTransaction {
               const stats = await fsLstat(op.path)
               if (stats.isSymbolicLink()) {
                 await fs.unlink(op.path)
+                rolledBackOperations.push(op)
+              } else {
+                // Path exists but is not a symlink - skip with warning
+                this.onWarning?.(
+                  `Skipped rollback of ${op.type} at ${op.path}: path exists but is not a symlink`
+                )
               }
             }
+            // If path doesn't exist, nothing to rollback (already cleaned up)
             break
 
           case OperationType.RSYNC:
@@ -178,7 +202,14 @@ export class FileOperationTransaction {
               const dest = op.metadata.destination as string
               if (await fs.pathExists(dest)) {
                 await fs.remove(dest)
+                rolledBackOperations.push(op)
               }
+              // If destination doesn't exist, nothing to rollback
+            } else {
+              // No destination metadata - cannot rollback
+              this.onWarning?.(
+                `Skipped rollback of ${op.type} at ${op.path}: no destination metadata recorded`
+              )
             }
             break
 
@@ -189,31 +220,54 @@ export class FileOperationTransaction {
                 const items = await fs.readdir(op.path)
                 if (items.length === 0) {
                   await fs.rmdir(op.path)
+                  rolledBackOperations.push(op)
+                } else {
+                  // Directory not empty - skip with warning
+                  this.onWarning?.(
+                    `Skipped rollback of ${op.type} at ${op.path}: directory not empty (${items.length} items)`
+                  )
                 }
-              } catch {
-                // Directory not empty or other error - skip
+              } catch (dirError) {
+                // Error reading directory - report and continue
+                const dirErrMsg = dirError instanceof Error ? dirError.message : String(dirError)
+                this.onWarning?.(
+                  `Skipped rollback of ${op.type} at ${op.path}: failed to read directory: ${dirErrMsg}`
+                )
               }
             }
             break
 
           case OperationType.DELETE_FILE:
-            // Restore from checkpoint if available
+            // Restore from preserved checkpoint if available
             const checkpointKey = `file:${op.path}`
-            if (this.checkpoints.has(checkpointKey)) {
-              const content = this.checkpoints.get(checkpointKey) as string
+            if (preservedCheckpoints.has(checkpointKey)) {
+              const content = preservedCheckpoints.get(checkpointKey) as string
               await fs.writeFile(op.path, content)
+              rolledBackOperations.push(op)
+            } else {
+              // No checkpoint for file restoration - skip with warning
+              this.onWarning?.(
+                `Skipped rollback of ${op.type} at ${op.path}: no checkpoint backup available`
+              )
             }
             break
         }
       } catch (error) {
         // Report error but continue rolling back other operations
         const errMsg = error instanceof Error ? error.message : String(error)
+        failedRollbacks.push({ operation: op, error: errMsg })
         this.onWarning?.(`Failed to rollback operation ${op.type} at ${op.path}: ${errMsg}`)
       }
     }
 
-    // Clear operations after rollback
+    // Clear operations and checkpoints after rollback
     this.clear()
+
+    return {
+      rolledBackOperations,
+      failedRollbacks,
+      checkpoints: preservedCheckpoints,
+    }
   }
 
   /**
@@ -579,9 +633,7 @@ export class RsyncHelper {
             totalFiles,
             // Final update: use one decimal place for consistency
             percentage:
-              totalFiles > 0
-                ? Math.round((filesTransferred / totalFiles) * 1000) / 10
-                : undefined,
+              totalFiles > 0 ? Math.round((filesTransferred / totalFiles) * 1000) / 10 : undefined,
           })
         }
 
@@ -656,8 +708,10 @@ export class RsyncHelper {
     }
 
     // Use a temporary destination that won't be created (dry-run)
-    // Use os.tmpdir() for cross-platform compatibility
-    const tempDest = path.join(os.tmpdir(), 'pando-rsync-estimate')
+    // Include process ID and timestamp for uniqueness to avoid conflicts
+    // when multiple processes run concurrently
+    const uniqueId = `${process.pid}-${Date.now()}`
+    const tempDest = path.join(os.tmpdir(), `pando-rsync-estimate-${uniqueId}`)
     const command = this.buildCommand(source, tempDest, dryRunConfig)
 
     try {
