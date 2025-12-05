@@ -205,8 +205,14 @@ export default class AddWorktree extends Command {
       // Use config default path + branch name
       // Sanitize branch name: convert slashes to underscores for filesystem safety
       const sanitizedBranch = String(flags.branch).replace(/\//g, '_')
-      // Append sanitized branch name to default path
-      worktreePath = path.join(config.worktree.defaultPath, sanitizedBranch)
+
+      // Insert project subfolder if enabled
+      if (config.worktree.useProjectSubfolder) {
+        const projectName = path.basename(gitRoot)
+        worktreePath = path.join(config.worktree.defaultPath, projectName, sanitizedBranch)
+      } else {
+        worktreePath = path.join(config.worktree.defaultPath, sanitizedBranch)
+      }
     } else {
       // No path flag and no usable config default
       ErrorHelper.validation(
@@ -228,6 +234,9 @@ export default class AddWorktree extends Command {
         flags.json as boolean | undefined
       )
     }
+
+    // Ensure parent directory exists (needed for useProjectSubfolder and nested defaultPath)
+    await fs.ensureDir(path.dirname(resolvedPath))
 
     // Validate force flag requires branch
     if (flags.force && !flags.branch) {

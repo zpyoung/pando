@@ -61,6 +61,7 @@ export const WorktreeConfigSchema = z.object({
   defaultPath: z.string().optional(),
   rebaseOnAdd: z.boolean().default(true),
   deleteBranchOnRemove: DeleteBranchOptionSchema.default('local'),
+  useProjectSubfolder: z.boolean().default(false),
 })
 
 /**
@@ -70,6 +71,7 @@ export const WorktreeConfigSchemaPartial = z.object({
   defaultPath: z.string().optional(),
   rebaseOnAdd: z.boolean().optional(),
   deleteBranchOnRemove: DeleteBranchOptionSchema.optional(),
+  useProjectSubfolder: z.boolean().optional(),
 })
 
 /**
@@ -174,6 +176,17 @@ export interface WorktreeConfig {
    * @default 'local'
    */
   deleteBranchOnRemove?: DeleteBranchOption
+
+  /**
+   * Create worktrees in a project-specific subfolder under defaultPath
+   * When true: defaultPath/projectName/branchName
+   * When false: defaultPath/branchName
+   * @default false
+   * @example With defaultPath='../worktrees', project='myapp', branch='feature':
+   *          true  -> ../worktrees/myapp/feature
+   *          false -> ../worktrees/feature
+   */
+  useProjectSubfolder?: boolean
 }
 
 /**
@@ -259,6 +272,7 @@ export const DEFAULT_CONFIG: PandoConfig = {
   worktree: {
     rebaseOnAdd: true,
     deleteBranchOnRemove: 'local',
+    useProjectSubfolder: false,
   },
 }
 

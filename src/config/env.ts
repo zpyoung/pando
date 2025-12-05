@@ -39,6 +39,7 @@ const ENV_VAR_MAP: Record<string, string> = {
   PANDO_WORKTREE_DEFAULT_PATH: 'worktree.defaultPath',
   PANDO_WORKTREE_REBASE_ON_ADD: 'worktree.rebaseOnAdd',
   PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE: 'worktree.deleteBranchOnRemove',
+  PANDO_WORKTREE_USE_PROJECT_SUBFOLDER: 'worktree.useProjectSubfolder',
 }
 
 /**
@@ -117,7 +118,8 @@ export function parseEnvValue(key: string, value: string): unknown {
     key.includes('ENABLED') ||
     key.includes('RELATIVE') ||
     key.includes('BEFORE') ||
-    key.includes('REBASE')
+    key.includes('REBASE') ||
+    key.includes('USE_')
   ) {
     return parseBoolean(value)
   }
@@ -185,7 +187,13 @@ export function listSupportedEnvVars(): Array<{ name: string; path: string; type
 
     if (name.includes('FLAGS') || name.includes('EXCLUDE') || name.includes('PATTERNS')) {
       type = 'array'
-    } else if (name.includes('ENABLED') || name.includes('RELATIVE') || name.includes('BEFORE')) {
+    } else if (
+      name.includes('ENABLED') ||
+      name.includes('RELATIVE') ||
+      name.includes('BEFORE') ||
+      name.includes('REBASE') ||
+      name.includes('USE_')
+    ) {
       type = 'boolean'
     }
 
