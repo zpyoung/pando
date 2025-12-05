@@ -176,6 +176,11 @@ describe('parseEnvValue', () => {
     expect(parseEnvValue('PANDO_SYMLINK_BEFORE_RSYNC', 'no')).toBe(false)
   })
 
+  it('should parse USE_ as boolean', () => {
+    expect(parseEnvValue('PANDO_WORKTREE_USE_PROJECT_SUBFOLDER', 'true')).toBe(true)
+    expect(parseEnvValue('PANDO_WORKTREE_USE_PROJECT_SUBFOLDER', 'false')).toBe(false)
+  })
+
   it('should return string for unknown keys', () => {
     expect(parseEnvValue('PANDO_UNKNOWN_KEY', 'value')).toBe('value')
   })
@@ -234,6 +239,17 @@ describe('parseEnvVars', () => {
     expect(parseEnvVars(env)).toEqual({
       worktree: {
         defaultPath: '../worktrees',
+      },
+    })
+  })
+
+  it('should parse worktree useProjectSubfolder', () => {
+    const env = {
+      PANDO_WORKTREE_USE_PROJECT_SUBFOLDER: 'true',
+    }
+    expect(parseEnvVars(env)).toEqual({
+      worktree: {
+        useProjectSubfolder: true,
       },
     })
   })
@@ -337,6 +353,7 @@ describe('listSupportedEnvVars', () => {
     expect(names).toContain('PANDO_SYMLINK_PATTERNS')
     expect(names).toContain('PANDO_SYMLINK_RELATIVE')
     expect(names).toContain('PANDO_SYMLINK_BEFORE_RSYNC')
+    expect(names).toContain('PANDO_WORKTREE_USE_PROJECT_SUBFOLDER')
   })
 
   it('should include config paths', () => {

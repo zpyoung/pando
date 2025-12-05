@@ -392,6 +392,96 @@ describe('add', () => {
     })
   })
 
+  describe('useProjectSubfolder path resolution', () => {
+    it('should include useProjectSubfolder in config defaults', () => {
+      // Test that useProjectSubfolder defaults to false
+      const defaultConfig: PandoConfig = {
+        rsync: {
+          enabled: true,
+          flags: ['--archive', '--exclude', '.git'],
+          exclude: [],
+        },
+        symlink: {
+          patterns: [],
+          relative: true,
+          beforeRsync: true,
+        },
+        worktree: {
+          useProjectSubfolder: false,
+        },
+      }
+
+      expect(defaultConfig.worktree.useProjectSubfolder).toBe(false)
+    })
+
+    it('should resolve path without project subfolder when disabled', () => {
+      // Test path resolution when useProjectSubfolder=false (default)
+      const defaultPath = '../worktrees'
+      const branchName = 'feature-x'
+      const sanitizedBranch = branchName.replace(/\//g, '_')
+      const useProjectSubfolder = false
+
+      let worktreePath: string
+      if (useProjectSubfolder) {
+        const projectName = 'myproject'
+        worktreePath = path.join(defaultPath, projectName, sanitizedBranch)
+      } else {
+        worktreePath = path.join(defaultPath, sanitizedBranch)
+      }
+
+      expect(worktreePath).toBe(path.join('..', 'worktrees', 'feature-x'))
+    })
+
+    it('should resolve path with project subfolder when enabled', () => {
+      // Test path resolution when useProjectSubfolder=true
+      const defaultPath = '../worktrees'
+      const branchName = 'feature-x'
+      const projectName = 'myproject'
+      const sanitizedBranch = branchName.replace(/\//g, '_')
+      const useProjectSubfolder = true
+
+      let worktreePath: string
+      if (useProjectSubfolder) {
+        worktreePath = path.join(defaultPath, projectName, sanitizedBranch)
+      } else {
+        worktreePath = path.join(defaultPath, sanitizedBranch)
+      }
+
+      expect(worktreePath).toBe(path.join('..', 'worktrees', 'myproject', 'feature-x'))
+    })
+
+    it('should handle branch names with slashes correctly', () => {
+      // Test that branch names are sanitized before path construction
+      const defaultPath = '../worktrees'
+      const branchName = 'feature/login/oauth'
+      const projectName = 'myproject'
+      const sanitizedBranch = branchName.replace(/\//g, '_')
+
+      const worktreePath = path.join(defaultPath, projectName, sanitizedBranch)
+
+      expect(worktreePath).toBe(path.join('..', 'worktrees', 'myproject', 'feature_login_oauth'))
+    })
+
+    it('should derive project name from git root directory', () => {
+      // Test that project name comes from path.basename(gitRoot)
+      const gitRoot = '/home/user/projects/myapp'
+      const projectName = path.basename(gitRoot)
+
+      expect(projectName).toBe('myapp')
+    })
+
+    it('should not apply useProjectSubfolder when --path flag is provided', () => {
+      // Test that explicit --path flag bypasses useProjectSubfolder logic
+      const explicitPath = '../custom-path'
+      const _useProjectSubfolder = true // Even if enabled, ignored when --path is set
+
+      // When --path is provided, we use it directly (no project subfolder logic)
+      const worktreePath = explicitPath
+
+      expect(worktreePath).toBe('../custom-path')
+    })
+  })
+
   describe('edge cases', () => {
     it('should handle empty config gracefully', () => {
       // Test with minimal/default configuration

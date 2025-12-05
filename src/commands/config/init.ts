@@ -345,6 +345,15 @@ export default class ConfigInit extends Command {
           value: DEFAULT_CONFIG.worktree.deleteBranchOnRemove,
         })
       }
+
+      if (existing.worktree.useProjectSubfolder !== undefined) {
+        merged.worktree.useProjectSubfolder = existing.worktree.useProjectSubfolder
+      } else {
+        added.push({
+          path: 'worktree.useProjectSubfolder',
+          value: DEFAULT_CONFIG.worktree.useProjectSubfolder,
+        })
+      }
     } else {
       added.push({ path: 'worktree', value: DEFAULT_CONFIG.worktree })
     }
@@ -388,6 +397,9 @@ export default class ConfigInit extends Command {
       '# defaultPath - Default parent directory for new worktrees',
       '#   Relative paths resolve from git root, branch names are auto-appended',
       '#   Example: "../worktrees" with --branch feat/login → ../worktrees/feat_login',
+      '# useProjectSubfolder - Create worktrees in project-specific subfolders',
+      '#   true: ../worktrees/projectName/branchName',
+      '#   false: ../worktrees/branchName (default)',
       '# rebaseOnAdd - Automatically rebase existing branches onto source when adding worktree',
       '#   Set to false to disable automatic rebase, or use --no-rebase flag',
       '# deleteBranchOnRemove - Delete branch when removing worktree',
