@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../helpers/container.js'
 import { setupGitRepo } from '../helpers/git-repo.js'
-import { pandoAdd, pandoSymlink, runPando } from '../helpers/cli-runner.js'
-import { expectSuccess, expectJsonError } from '../helpers/assertions.js'
+import {
+  pandoAdd,
+  pandoSymlink,
+  runPando,
+  pandoSymlinkHuman,
+} from '../helpers/cli-runner.js'
+import {
+  expectSuccess,
+  expectSymlinkHuman,
+  expectErrorMessage,
+} from '../helpers/assertions.js'
 
 describe('pando symlink (E2E)', () => {
   let container: E2EContainer
@@ -27,7 +36,7 @@ describe('pando symlink (E2E)', () => {
       '--skip-rsync',
       '--skip-symlink',
     ])
-  }, 120000)
+  })
 
   afterAll(async () => {
     if (container) {
@@ -154,6 +163,115 @@ describe('pando symlink (E2E)', () => {
         `ls -la ${worktreePath}/dry-run-file.txt`,
       ])
       expect(linkCheck.stdout).not.toContain('->')
+    })
+  })
+
+  describe('human-readable output', () => {
+    it('should show complete symlink output with Moved, Source, Dest, and Created symlink', async () => {
+      // Create a new worktree for this test
+      await pandoAdd(container, repoPath, [
+        '--branch',
+        'human-symlink-1',
+        '--path',
+        '../worktrees/human-symlink-1',
+        '--skip-rsync',
+        '--skip-symlink',
+      ])
+
+      const worktreePath = `${repoPath}/../worktrees/human-symlink-1`
+
+      // Create a file
+      await container.exec([
+        'sh',
+        '-c',
+        `echo "human symlink content" > ${worktreePath}/human-file.txt`,
+      ])
+
+      // Run symlink with human output
+      const result = await pandoSymlinkHuman(container, worktreePath, ['human-file.txt'])
+
+      // Comprehensive check: ✓, Moved, Source:, Dest:, Created symlink
+      expectSymlinkHuman(result, {
+        fileName: 'human-file.txt',
+      })
+    })
+
+    it('should show Moved message with Source and Dest paths', async () => {
+      // Create a new worktree for this test
+      await pandoAdd(container, repoPath, [
+        '--branch',
+        'human-symlink-2',
+        '--path',
+        '../worktrees/human-symlink-2',
+        '--skip-rsync',
+        '--skip-symlink',
+      ])
+
+      const worktreePath = `${repoPath}/../worktrees/human-symlink-2`
+
+      // Create a file
+      await container.exec([
+        'sh',
+        '-c',
+        `echo "moved content" > ${worktreePath}/moved-file.txt`,
+      ])
+
+      // Run symlink with human output
+      const result = await pandoSymlinkHuman(container, worktreePath, ['moved-file.txt'])
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must have checkmark
+      expect(output).toContain('✓')
+
+      // Must show "Moved" message
+      expect(output.toLowerCase()).toContain('moved')
+
+      // Must show Source: and Dest: paths
+      expect(output.toLowerCase()).toContain('source:')
+      expect(output.toLowerCase()).toContain('dest:')
+
+      // Must show "Created symlink"
+      expect(output.toLowerCase()).toContain('created symlink')
+    })
+
+    it('should show dry-run format with Move, To, and Link', async () => {
+      // Create a new worktree for this test
+      await pandoAdd(container, repoPath, [
+        '--branch',
+        'human-dry-run',
+        '--path',
+        '../worktrees/human-dry-run',
+        '--skip-rsync',
+        '--skip-symlink',
+      ])
+
+      const worktreePath = `${repoPath}/../worktrees/human-dry-run`
+
+      // Create a file
+      await container.exec([
+        'sh',
+        '-c',
+        `echo "dry run human" > ${worktreePath}/dry-human.txt`,
+      ])
+
+      // Run symlink with dry-run
+      const result = await pandoSymlinkHuman(container, worktreePath, ['dry-human.txt', '--dry-run'])
+
+      // Comprehensive dry-run check: "Dry run:", Move:, To:, Link:
+      expectSymlinkHuman(result, {
+        fileName: 'dry-human.txt',
+        isDryRun: true,
+      })
+    })
+
+    it('should show error for nonexistent file', async () => {
+      const worktreePath = `${repoPath}/../worktrees/symlink-cmd-test`
+
+      const result = await pandoSymlinkHuman(container, worktreePath, ['nonexistent-human.txt'])
+
+      expectErrorMessage(result)
     })
   })
 })

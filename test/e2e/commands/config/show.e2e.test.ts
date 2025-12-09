@@ -1,8 +1,16 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../../helpers/container.js'
 import { setupGitRepo } from '../../helpers/git-repo.js'
-import { pandoConfigShow, pandoConfigInit, runPando } from '../../helpers/cli-runner.js'
-import { expectSuccess } from '../../helpers/assertions.js'
+import {
+  pandoConfigShow,
+  pandoConfigInit,
+  runPando,
+  pandoConfigShowHuman,
+} from '../../helpers/cli-runner.js'
+import {
+  expectSuccess,
+  expectConfigShowHuman,
+} from '../../helpers/assertions.js'
 
 describe('pando config show (E2E)', () => {
   let container: E2EContainer
@@ -10,7 +18,7 @@ describe('pando config show (E2E)', () => {
 
   beforeAll(async () => {
     container = await createE2EContainer()
-  }, 120000)
+  })
 
   afterAll(async () => {
     if (container) {
@@ -131,6 +139,83 @@ EOF`,
 
       // Should still show default config (or handle gracefully)
       expectSuccess(result)
+    })
+  })
+
+  describe('human-readable output', () => {
+    it('should show complete config output with header, sections, and all settings', async () => {
+      await pandoConfigInit(container, repoPath)
+
+      const result = await pandoConfigShowHuman(container, repoPath)
+
+      // Comprehensive check: Configuration header, [rsync], [symlink], settings
+      expectConfigShowHuman(result, {
+        sections: ['rsync', 'symlink'],
+      })
+    })
+
+    it('should show rsync section with enabled, flags, and exclude settings', async () => {
+      await pandoConfigInit(container, repoPath)
+
+      const result = await pandoConfigShowHuman(container, repoPath)
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must show Configuration header
+      expect(output.toLowerCase()).toContain('configuration')
+
+      // Must show [rsync] section
+      expect(output).toContain('[rsync]')
+
+      // Must show rsync settings
+      expect(output.toLowerCase()).toContain('enabled')
+      expect(output.toLowerCase()).toContain('flags')
+      expect(output.toLowerCase()).toContain('exclude')
+    })
+
+    it('should show symlink section with patterns and relative settings', async () => {
+      await pandoConfigInit(container, repoPath)
+
+      const result = await pandoConfigShowHuman(container, repoPath)
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must show [symlink] section
+      expect(output).toContain('[symlink]')
+
+      // Must show symlink settings
+      expect(output.toLowerCase()).toContain('patterns')
+      expect(output.toLowerCase()).toContain('relative')
+    })
+
+    it('should show custom values from config file', async () => {
+      // Create custom config
+      await container.exec([
+        'sh',
+        '-c',
+        `cat > ${repoPath}/.pando.toml << 'EOF'
+[rsync]
+enabled = false
+EOF`,
+      ])
+
+      const result = await pandoConfigShowHuman(container, repoPath)
+
+      expectConfigShowHuman(result, {
+        customValues: { enabled: 'false' },
+      })
+    })
+
+    it('should show Configuration sources section with --sources flag', async () => {
+      await pandoConfigInit(container, repoPath)
+
+      const result = await pandoConfigShowHuman(container, repoPath, ['--sources'])
+
+      expectConfigShowHuman(result, {
+        showSources: true,
+      })
     })
   })
 })

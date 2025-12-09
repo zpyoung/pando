@@ -8,7 +8,7 @@ export default defineConfig({
     include: ['test/e2e/**/*.e2e.test.ts'],
     exclude: ['node_modules', 'dist'],
     testTimeout: 120000, // 2 minutes per test (container operations are slow)
-    hookTimeout: 300000, // 5 minutes for beforeAll/afterAll (container startup + image build)
+    hookTimeout: 600000, // 10 minutes for beforeAll/afterAll (container startup + image build on first run)
     pool: 'forks', // Use forks for better isolation
     poolOptions: {
       forks: {

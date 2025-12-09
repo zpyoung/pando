@@ -67,3 +67,51 @@ export function pandoConfigShow(
 ): Promise<PandoResult> {
   return runPando(container, { command: 'config show', args, cwd, json: true })
 }
+
+// Human-readable output variants (no --json flag)
+export function pandoAddHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[]
+): Promise<PandoResult> {
+  return runPando(container, { command: 'add', args, cwd, json: false })
+}
+
+export function pandoListHuman(
+  container: E2EContainer,
+  cwd: string
+): Promise<PandoResult> {
+  return runPando(container, { command: 'list', cwd, json: false })
+}
+
+export function pandoRemoveHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[]
+): Promise<PandoResult> {
+  return runPando(container, { command: 'remove', args, cwd, json: false })
+}
+
+export function pandoSymlinkHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[]
+): Promise<PandoResult> {
+  return runPando(container, { command: 'symlink', args, cwd, json: false })
+}
+
+export function pandoConfigInitHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'config init', args, cwd, json: false })
+}
+
+export function pandoConfigShowHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'config show', args, cwd, json: false })
+}

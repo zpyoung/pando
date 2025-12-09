@@ -1,8 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../helpers/container.js'
 import { setupGitRepo } from '../helpers/git-repo.js'
-import { pandoAdd, pandoRemove, pandoList } from '../helpers/cli-runner.js'
-import { expectSuccess, expectJsonError } from '../helpers/assertions.js'
+import {
+  pandoAdd,
+  pandoRemove,
+  pandoList,
+  pandoRemoveHuman,
+} from '../helpers/cli-runner.js'
+import {
+  expectSuccess,
+  expectJsonError,
+  expectWorktreeRemoveHuman,
+  expectErrorMessage,
+} from '../helpers/assertions.js'
 
 describe('pando remove (E2E)', () => {
   let container: E2EContainer
@@ -14,7 +24,7 @@ describe('pando remove (E2E)', () => {
       name: 'remove-test-repo',
       files: [{ path: 'README.md', content: '# Test' }],
     })
-  }, 120000)
+  })
 
   afterAll(async () => {
     if (container) {
@@ -204,6 +214,95 @@ describe('pando remove (E2E)', () => {
 
       // Should fail because no --path provided with --json
       expect(result.exitCode).not.toBe(0)
+    })
+  })
+
+  describe('human-readable output', () => {
+    it('should show success message with checkmark and removed path', async () => {
+      // Create worktree first
+      await pandoAdd(container, repoPath, [
+        '--branch',
+        'human-remove-1',
+        '--path',
+        '../worktrees/human-remove-1',
+        '--skip-rsync',
+      ])
+
+      // Remove it with human output
+      const result = await pandoRemoveHuman(container, repoPath, [
+        '--path',
+        '../worktrees/human-remove-1',
+        '--keep-branch',
+      ])
+
+      // Comprehensive check: ✓, "removed", path
+      expectWorktreeRemoveHuman(result, {
+        pathContains: 'human-remove-1',
+      })
+    })
+
+    it('should show removed worktree path and success message', async () => {
+      // Create worktree first
+      await pandoAdd(container, repoPath, [
+        '--branch',
+        'human-remove-2',
+        '--path',
+        '../worktrees/human-remove-2',
+        '--skip-rsync',
+      ])
+
+      // Remove it with human output
+      const result = await pandoRemoveHuman(container, repoPath, [
+        '--path',
+        '../worktrees/human-remove-2',
+        '--keep-branch',
+      ])
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must have checkmark
+      expect(output).toContain('✓')
+
+      // Must show "removed" message
+      expect(output.toLowerCase()).toContain('removed')
+
+      // Must show the worktree path
+      expect(output).toContain('human-remove-2')
+    })
+
+    it('should show branch deletion message with branch name when deleted', async () => {
+      // Create worktree first
+      await pandoAdd(container, repoPath, [
+        '--branch',
+        'human-remove-branch',
+        '--path',
+        '../worktrees/human-remove-branch',
+        '--skip-rsync',
+      ])
+
+      // Remove with branch deletion
+      const result = await pandoRemoveHuman(container, repoPath, [
+        '--path',
+        '../worktrees/human-remove-branch',
+        '--delete-branch',
+        'local',
+        '--force',
+      ])
+
+      expectWorktreeRemoveHuman(result, {
+        pathContains: 'human-remove-branch',
+        branchDeleted: 'human-remove-branch',
+      })
+    })
+
+    it('should show error message with not found for nonexistent path', async () => {
+      const result = await pandoRemoveHuman(container, repoPath, [
+        '--path',
+        '../worktrees/human-nonexistent',
+      ])
+
+      expectErrorMessage(result, 'not found')
     })
   })
 })

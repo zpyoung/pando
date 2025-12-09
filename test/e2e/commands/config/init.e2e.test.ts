@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../../helpers/container.js'
 import { setupGitRepo } from '../../helpers/git-repo.js'
-import { pandoConfigInit, runPando } from '../../helpers/cli-runner.js'
-import { expectSuccess, expectConfigCreated } from '../../helpers/assertions.js'
+import { pandoConfigInit, runPando, pandoConfigInitHuman } from '../../helpers/cli-runner.js'
+import {
+  expectSuccess,
+  expectConfigCreated,
+  expectConfigInitHuman,
+} from '../../helpers/assertions.js'
 
 describe('pando config init (E2E)', () => {
   let container: E2EContainer
@@ -10,7 +14,7 @@ describe('pando config init (E2E)', () => {
 
   beforeAll(async () => {
     container = await createE2EContainer()
-  }, 120000)
+  })
 
   afterAll(async () => {
     if (container) {
@@ -160,6 +164,89 @@ EOF`,
         `(ls ${repoPath}/.pando.toml 2>/dev/null || ls ${repoPath}/subdir/.pando.toml 2>/dev/null) && echo "CONFIG_FOUND" || echo "NOT_FOUND"`,
       ])
       expect(rootCheck.stdout).toContain('CONFIG_FOUND')
+    })
+  })
+
+  describe('human-readable output', () => {
+    it('should show complete config created output with checkmark, path, and next steps', async () => {
+      const result = await pandoConfigInitHuman(container, repoPath)
+
+      // Comprehensive check: ✓, "Configuration file created", .pando.toml, Next steps
+      expectConfigInitHuman(result, {
+        action: 'created',
+      })
+    })
+
+    it('should show path to .pando.toml config file', async () => {
+      const result = await pandoConfigInitHuman(container, repoPath)
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must have checkmark
+      expect(output).toContain('✓')
+
+      // Must show "Configuration" and file path
+      expect(output.toLowerCase()).toContain('configuration')
+      expect(output).toContain('.pando.toml')
+    })
+
+    it('should show Next steps section with edit and verify instructions', async () => {
+      const result = await pandoConfigInitHuman(container, repoPath)
+
+      expectSuccess(result)
+      const output = result.stdout.toLowerCase()
+
+      // Must show "Next steps:" section
+      expect(output).toContain('next steps')
+
+      // Must show instructions
+      expect(output).toContain('edit the file')
+      expect(output).toContain('pando config show')
+    })
+
+    it('should show merge details with Added settings count', async () => {
+      // Create partial config first
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '[rsync]\nenabled = false' > ${repoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoConfigInitHuman(container, repoPath, ['--merge'])
+
+      expectConfigInitHuman(result, {
+        action: 'updated',
+        hasMergeDetails: true,
+      })
+    })
+
+    it('should show config overwritten output with --force on existing file', async () => {
+      // Create existing config
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '[custom]\nkey = "value"' > ${repoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoConfigInitHuman(container, repoPath, ['--force'])
+
+      // Should show "overwritten" message
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must have checkmark
+      expect(output).toContain('✓')
+
+      // Must show "Configuration file overwritten" message
+      expect(output.toLowerCase()).toContain('configuration')
+      expect(output.toLowerCase()).toContain('overwritten')
+
+      // Must show .pando.toml path
+      expect(output).toContain('.pando.toml')
+
+      // Must show Next steps
+      expect(output.toLowerCase()).toContain('next steps')
     })
   })
 })

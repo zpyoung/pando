@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../helpers/container.js'
 import { setupGitRepo } from '../helpers/git-repo.js'
-import { pandoAdd, pandoList } from '../helpers/cli-runner.js'
+import { pandoAdd, pandoList, pandoAddHuman } from '../helpers/cli-runner.js'
 import {
   expectSuccess,
   expectJsonSuccess,
   expectJsonError,
   expectWorktreeCreated,
+  expectWorktreeAddHuman,
+  expectWorktreeAddError,
 } from '../helpers/assertions.js'
 
 describe('pando add (E2E)', () => {
@@ -24,7 +26,7 @@ describe('pando add (E2E)', () => {
       ],
       branches: ['existing-branch'],
     })
-  }, 120000)
+  })
 
   afterAll(async () => {
     if (container) {
@@ -248,6 +250,103 @@ describe('pando add (E2E)', () => {
       ])
 
       expectJsonError(result, '--force flag requires --branch')
+    })
+  })
+
+  describe('human-readable output', () => {
+    it('should show complete success output with checkmark, path, branch, and commit', async () => {
+      const result = await pandoAddHuman(container, repoPath, [
+        '--branch',
+        'human-test-1',
+        '--path',
+        '../worktrees/human-test-1',
+        '--skip-rsync',
+      ])
+
+      // Comprehensive check: ✓, "Worktree created at", Branch:, Commit:, Ready to use, Duration
+      expectWorktreeAddHuman(result, {
+        pathContains: 'human-test-1',
+        branch: 'human-test-1',
+      })
+    })
+
+    it('should show Branch and Commit details after worktree creation', async () => {
+      const result = await pandoAddHuman(container, repoPath, [
+        '--branch',
+        'human-test-2',
+        '--path',
+        '../worktrees/human-test-2',
+        '--skip-rsync',
+      ])
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must have checkmark
+      expect(output).toContain('✓')
+
+      // Must have "Worktree created at" with path
+      expect(output.toLowerCase()).toContain('worktree created at')
+      expect(output).toContain('human-test-2')
+
+      // Must show Branch: label
+      expect(output.toLowerCase()).toContain('branch:')
+
+      // Must show Commit: label with hash (7 chars)
+      expect(output.toLowerCase()).toContain('commit:')
+    })
+
+    it('should show Ready to use footer with cd command', async () => {
+      const result = await pandoAddHuman(container, repoPath, [
+        '--branch',
+        'human-test-3',
+        '--path',
+        '../worktrees/human-test-3',
+        '--skip-rsync',
+      ])
+
+      expectSuccess(result)
+      const output = result.stdout.toLowerCase()
+
+      // Must have "Ready to use: cd" message
+      expect(output).toContain('ready to use')
+      expect(output).toContain('cd')
+
+      // Must have Duration: message
+      expect(output).toContain('duration:')
+    })
+
+    it('should show rsync file count and size when rsync enabled', async () => {
+      const result = await pandoAddHuman(container, repoPath, [
+        '--branch',
+        'human-rsync-test',
+        '--path',
+        '../worktrees/human-rsync-test',
+      ])
+
+      expectWorktreeAddHuman(result, {
+        hasRsync: true,
+      })
+
+      // Should show "Files synced: X files (Y MB)"
+      const output = result.stdout.toLowerCase()
+      expect(output).toContain('files synced')
+      expect(output).toMatch(/\d+\s*(files|mb)/i)
+    })
+
+    it('should show error message with path already exists', async () => {
+      // Create the path first to cause error
+      await container.exec(['mkdir', '-p', `${repoPath}/../worktrees/human-exists`])
+
+      const result = await pandoAddHuman(container, repoPath, [
+        '--branch',
+        'human-exists',
+        '--path',
+        '../worktrees/human-exists',
+        '--skip-rsync',
+      ])
+
+      expectWorktreeAddError(result, 'exists')
     })
   })
 })

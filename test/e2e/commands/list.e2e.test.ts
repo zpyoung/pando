@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../helpers/container.js'
 import { setupGitRepo } from '../helpers/git-repo.js'
-import { pandoList, pandoAdd } from '../helpers/cli-runner.js'
-import { expectSuccess, expectWorktreeList } from '../helpers/assertions.js'
+import { pandoList, pandoAdd, pandoListHuman } from '../helpers/cli-runner.js'
+import {
+  expectSuccess,
+  expectWorktreeList,
+  expectSuccessMessage,
+  expectHumanOutput,
+  expectWorktreeListHuman,
+} from '../helpers/assertions.js'
 
 describe('pando list (E2E)', () => {
   let container: E2EContainer
@@ -17,7 +23,7 @@ describe('pando list (E2E)', () => {
         { path: 'src/index.ts', content: 'export const main = () => {}' },
       ],
     })
-  }, 120000) // 2 minute timeout for container setup
+  })
 
   afterAll(async () => {
     if (container) {
@@ -111,6 +117,50 @@ describe('pando list (E2E)', () => {
       const result = await pandoList(container, '/tmp/not-a-repo')
 
       expect(result.exitCode).not.toBe(0)
+    })
+  })
+
+  describe('human-readable output', () => {
+    it('should display formatted worktree list with header and count', async () => {
+      const result = await pandoListHuman(container, repoPath)
+
+      // Comprehensive check: header, count, paths, branches, commits
+      expectWorktreeListHuman(result, {
+        minCount: 1,
+        branches: ['main'],
+      })
+    })
+
+    it('should show all worktree details with Branch labels and paths', async () => {
+      const result = await pandoListHuman(container, repoPath)
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Must have "Found X worktree(s):" header
+      expect(output).toMatch(/Found \d+ worktree/i)
+
+      // Must show "Branch:" label
+      expect(output.toLowerCase()).toContain('branch:')
+
+      // Must show absolute paths
+      expect(output).toContain('/repos/')
+    })
+
+    it('should show feature branch names in multi-worktree output', async () => {
+      const result = await pandoListHuman(container, repoPath)
+
+      expectWorktreeListHuman(result, {
+        branches: ['main', 'feature-list-1', 'feature-list-2'],
+      })
+    })
+
+    it('should indicate detached HEAD worktrees with special formatting', async () => {
+      const result = await pandoListHuman(container, repoPath)
+
+      expectWorktreeListHuman(result, {
+        hasDetachedHead: true,
+      })
     })
   })
 })
