@@ -414,6 +414,34 @@ export class GitHelper {
       return null
     }
   }
+
+  /**
+   * Mark files as skip-worktree to hide symlink mode changes from git status
+   *
+   * When files are replaced with symlinks, git sees a mode change (100644 -> 120000)
+   * and reports them as modified. This method tells git to ignore these changes.
+   *
+   * @param worktreePath - Path to the worktree where files reside
+   * @param files - Array of relative file paths to mark as skip-worktree
+   * @returns Object with success status, optional error message, and count of files marked
+   */
+  async setSkipWorktree(
+    worktreePath: string,
+    files: string[]
+  ): Promise<{ success: boolean; error?: string; filesMarked: number }> {
+    if (files.length === 0) {
+      return { success: true, filesMarked: 0 }
+    }
+
+    try {
+      const gitInWorktree = simpleGit(worktreePath)
+      await gitInWorktree.raw(['update-index', '--skip-worktree', ...files])
+      return { success: true, filesMarked: files.length }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      return { success: false, error: errorMsg, filesMarked: 0 }
+    }
+  }
 }
 
 /**

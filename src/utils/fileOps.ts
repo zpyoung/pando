@@ -476,15 +476,20 @@ export class RsyncHelper {
     source: string,
     destination: string,
     config: RsyncConfig,
-    additionalExcludes: string[] = []
+    additionalExcludes: string[] = [],
+    internalFlags: string[] = []
   ): string[] {
     const args: string[] = []
 
-    // Add flags from config (sanitized to remove internally-managed flags)
+    // Add flags from config (sanitized to remove internally-managed flags from user config)
     if (config.flags && config.flags.length > 0) {
       const sanitizedFlags = this.sanitizeFlags(config.flags)
       args.push(...sanitizedFlags)
     }
+
+    // Add internal flags (--stats, --progress) that are managed by the code
+    // These are added AFTER sanitization to ensure they're always included
+    args.push(...internalFlags)
 
     // Collect all exclude patterns
     const excludes: string[] = []
@@ -573,23 +578,25 @@ export class RsyncHelper {
       throw new RsyncNotInstalledError()
     }
 
-    // Build config with --stats and --progress flags for real-time output
+    // Build internal flags for --stats and --progress (real-time output)
     // These flags require rsync 2.6.0+ (released 2004), but we check just in case
-    const additionalFlags: string[] = []
+    const internalFlags: string[] = []
     if (versionInfo.supportsStats) {
-      additionalFlags.push('--stats')
+      internalFlags.push('--stats')
     }
     if (versionInfo.supportsProgress) {
-      additionalFlags.push('--progress')
-    }
-
-    const configWithFlags: RsyncConfig = {
-      ...config,
-      flags: [...(config.flags || []), ...additionalFlags],
+      internalFlags.push('--progress')
     }
 
     // Build args array for spawn
-    const args = this.buildArgs(source, destination, configWithFlags, options.excludePatterns || [])
+    // Pass internal flags separately so they aren't filtered by sanitizeFlags
+    const args = this.buildArgs(
+      source,
+      destination,
+      config,
+      options.excludePatterns || [],
+      internalFlags
+    )
 
     // Record start time
     const startTime = Date.now()
@@ -704,9 +711,11 @@ export class RsyncHelper {
     // Total transferred file size: 1,000,000 bytes
     // sent 1,234,567 bytes  received 890 bytes  2,470,914.00 bytes/sec
 
-    const filesMatch = output.match(/Number of created files: (\d+)/)
+    // Handle rsync 3.x output format: "Number of created files: 1 (reg: 1)"
+    // or older format: "Number of created files: 1"
+    const filesMatch = output.match(/Number of created files:\s*([\d,]+)/)
     if (filesMatch && filesMatch[1]) {
-      result.filesTransferred = parseInt(filesMatch[1], 10)
+      result.filesTransferred = parseInt(filesMatch[1].replace(/,/g, ''), 10)
     }
 
     const sentMatch = output.match(/sent ([\d,]+) bytes/)
@@ -714,7 +723,9 @@ export class RsyncHelper {
       result.bytesSent = parseInt(sentMatch[1].replace(/,/g, ''), 10)
     }
 
-    const totalSizeMatch = output.match(/Total file size: ([\d,]+) bytes/)
+    // Handle rsync 3.x output format with or without commas
+    // "Total file size: 2,097,152 bytes" or "Total file size: 13 bytes"
+    const totalSizeMatch = output.match(/Total file size:\s*([\d,]+)\s*bytes/)
     if (totalSizeMatch && totalSizeMatch[1]) {
       result.totalSize = parseInt(totalSizeMatch[1].replace(/,/g, ''), 10)
     }

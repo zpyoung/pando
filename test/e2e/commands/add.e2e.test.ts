@@ -171,6 +171,44 @@ describe('pando add (E2E)', () => {
       expectJsonSuccess(result)
       expect(result.json?.setup?.symlink).toBeNull()
     })
+
+    it('should not show symlinked files as uncommitted changes (skip-worktree)', async () => {
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'skip-worktree-test',
+        '--path',
+        '../worktrees/skip-worktree-test',
+        '--symlink',
+        'package.json',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+
+      // Verify symlinks were created and skip-worktree was applied
+      expect(result.json?.setup?.symlink).toBeDefined()
+      expect(
+        (result.json?.setup?.symlink as { created: number }).created
+      ).toBeGreaterThanOrEqual(1)
+      expect(result.json?.setup?.skipWorktree).toBeDefined()
+      expect(
+        (result.json?.setup?.skipWorktree as { filesMarked: number }).filesMarked
+      ).toBeGreaterThanOrEqual(1)
+
+      // Verify git status in the new worktree shows clean (no uncommitted changes)
+      const worktreePath = `${repoPath}/../worktrees/skip-worktree-test`
+      const statusResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && git status --porcelain`,
+      ])
+
+      // Should be empty (no uncommitted changes from symlinked files)
+      expect(
+        statusResult.stdout.trim(),
+        `Expected clean git status but got: ${statusResult.stdout}`
+      ).toBe('')
+    })
   })
 
   describe('force flag', () => {
@@ -332,6 +370,43 @@ describe('pando add (E2E)', () => {
       const output = result.stdout.toLowerCase()
       expect(output).toContain('files synced')
       expect(output).toMatch(/\d+\s*(files|mb)/i)
+    })
+
+    it('should show valid MB value greater than 0 for rsync operations', async () => {
+      // Create a file larger than 1MB to ensure measurable rsync output
+      await container.exec([
+        'sh',
+        '-c',
+        `dd if=/dev/zero of=${repoPath}/large-file.bin bs=1M count=2 2>/dev/null`,
+      ])
+
+      // Run pando add with human-readable output
+      const result = await pandoAddHuman(container, repoPath, [
+        '--branch',
+        'rsync-mb-test',
+        '--path',
+        '../worktrees/rsync-mb-test',
+      ])
+
+      expectSuccess(result)
+      const output = result.stdout
+
+      // Verify the file was actually synced to the new worktree
+      const worktreePath = `${repoPath}/../worktrees/rsync-mb-test`
+      const fileCheck = await container.exec(['ls', '-la', `${worktreePath}/large-file.bin`])
+      expect(
+        fileCheck.exitCode,
+        `Large file should have been synced to worktree`
+      ).toBe(0)
+
+      // Extract MB value from "Files synced: X files (Y MB)" pattern
+      const mbMatch = output.match(/\(([0-9.]+)\s*MB\)/i)
+      expect(mbMatch, `Expected MB value in output.\nActual output:\n${output}`).not.toBeNull()
+
+      if (mbMatch) {
+        const mbValue = parseFloat(mbMatch[1])
+        expect(mbValue, `MB value should be > 0, got ${mbValue}`).toBeGreaterThan(0)
+      }
     })
 
     it('should show error message with path already exists', async () => {
