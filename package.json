@@ -34,7 +34,7 @@
     "ci": "pnpm run format:check && pnpm run lint && pnpm run test:run",
     "postpack": "rm -f oclif.manifest.json",
     "prepack": "pnpm build && oclif manifest",
-    "prepare": "pnpm build",
+    "prepare": "husky",
     "ai:context": "npx tsx scripts/ai-context.ts",
     "ai:validate": "npx tsx scripts/validate-docs.ts",
     "pack:tarballs": "oclif pack tarballs --targets darwin-x64,darwin-arm64,linux-x64,linux-arm64"
@@ -75,6 +75,12 @@
     "simple-git": "^3.30.0",
     "zod": "^3.25.76"
   },
+  "lint-staged": {
+    "*.ts": [
+      "prettier --write",
+      "eslint --fix"
+    ]
+  },
   "devDependencies": {
     "@oclif/test": "^4.1.15",
     "@types/fs-extra": "^11.0.4",
@@ -85,6 +91,8 @@
     "@vitest/coverage-v8": "^2.1.9",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^9.1.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "oclif": "^4.22.57",
     "prettier": "^3.7.4",
     "testcontainers": "^10.28.0",

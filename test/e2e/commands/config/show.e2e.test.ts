@@ -7,10 +7,7 @@ import {
   runPando,
   pandoConfigShowHuman,
 } from '../../helpers/cli-runner.js'
-import {
-  expectSuccess,
-  expectConfigShowHuman,
-} from '../../helpers/assertions.js'
+import { expectSuccess, expectConfigShowHuman } from '../../helpers/assertions.js'
 
 describe('pando config show (E2E)', () => {
   let container: E2EContainer
@@ -78,9 +75,7 @@ EOF`,
 
       expectSuccess(result)
       expect((result.json?.rsync as { enabled: boolean })?.enabled).toBe(false)
-      expect((result.json?.symlink as { patterns: string[] })?.patterns).toContain(
-        'package.json'
-      )
+      expect((result.json?.symlink as { patterns: string[] })?.patterns).toContain('package.json')
     })
   })
 

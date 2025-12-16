@@ -7,10 +7,7 @@ export interface PandoCommand {
   json?: boolean
 }
 
-export async function runPando(
-  container: E2EContainer,
-  cmd: PandoCommand
-): Promise<PandoResult> {
+export async function runPando(container: E2EContainer, cmd: PandoCommand): Promise<PandoResult> {
   const args = [cmd.command, ...(cmd.args || [])]
 
   if (cmd.json) {
@@ -29,10 +26,7 @@ export function pandoAdd(
   return runPando(container, { command: 'add', args, cwd, json: true })
 }
 
-export function pandoList(
-  container: E2EContainer,
-  cwd: string
-): Promise<PandoResult> {
+export function pandoList(container: E2EContainer, cwd: string): Promise<PandoResult> {
   return runPando(container, { command: 'list', cwd, json: true })
 }
 
@@ -77,10 +71,7 @@ export function pandoAddHuman(
   return runPando(container, { command: 'add', args, cwd, json: false })
 }
 
-export function pandoListHuman(
-  container: E2EContainer,
-  cwd: string
-): Promise<PandoResult> {
+export function pandoListHuman(container: E2EContainer, cwd: string): Promise<PandoResult> {
   return runPando(container, { command: 'list', cwd, json: false })
 }
 

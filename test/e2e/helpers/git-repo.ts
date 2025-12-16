@@ -21,27 +21,15 @@ export async function setupGitRepo(
       await container.exec(['mkdir', '-p', dir])
       // Escape content for shell
       const escapedContent = file.content.replace(/'/g, "'\\''")
-      await container.exec([
-        'sh',
-        '-c',
-        `echo '${escapedContent}' > ${fullPath}`,
-      ])
+      await container.exec(['sh', '-c', `echo '${escapedContent}' > ${fullPath}`])
     }
-    await container.exec([
-      'sh',
-      '-c',
-      `cd ${repoPath} && git add . && git commit -m "Add files"`,
-    ])
+    await container.exec(['sh', '-c', `cd ${repoPath} && git add . && git commit -m "Add files"`])
   }
 
   // Create additional branches
   if (options.branches && options.branches.length > 0) {
     for (const branch of options.branches) {
-      await container.exec([
-        'sh',
-        '-c',
-        `cd ${repoPath} && git branch ${branch}`,
-      ])
+      await container.exec(['sh', '-c', `cd ${repoPath} && git branch ${branch}`])
     }
   }
 

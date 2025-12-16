@@ -1,17 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../helpers/container.js'
 import { setupGitRepo } from '../helpers/git-repo.js'
-import {
-  pandoAdd,
-  pandoSymlink,
-  runPando,
-  pandoSymlinkHuman,
-} from '../helpers/cli-runner.js'
-import {
-  expectSuccess,
-  expectSymlinkHuman,
-  expectErrorMessage,
-} from '../helpers/assertions.js'
+import { pandoAdd, pandoSymlink, runPando, pandoSymlinkHuman } from '../helpers/cli-runner.js'
+import { expectSuccess, expectSymlinkHuman, expectErrorMessage } from '../helpers/assertions.js'
 
 describe('pando symlink (E2E)', () => {
   let container: E2EContainer
@@ -49,11 +40,7 @@ describe('pando symlink (E2E)', () => {
       const worktreePath = `${repoPath}/../worktrees/symlink-cmd-test`
 
       // Create a file in the worktree
-      await container.exec([
-        'sh',
-        '-c',
-        `echo "local content" > ${worktreePath}/local-file.txt`,
-      ])
+      await container.exec(['sh', '-c', `echo "local content" > ${worktreePath}/local-file.txt`])
 
       // Run symlink command from worktree
       const result = await pandoSymlink(container, worktreePath, ['local-file.txt'])
@@ -61,11 +48,7 @@ describe('pando symlink (E2E)', () => {
       expectSuccess(result)
 
       // Verify symlink was created
-      const linkCheck = await container.exec([
-        'sh',
-        '-c',
-        `ls -la ${worktreePath}/local-file.txt`,
-      ])
+      const linkCheck = await container.exec(['sh', '-c', `ls -la ${worktreePath}/local-file.txt`])
       expect(linkCheck.stdout).toContain('->')
 
       // Verify file exists in main worktree
@@ -106,16 +89,14 @@ describe('pando symlink (E2E)', () => {
       const result = await pandoSymlink(container, worktreePath, ['nonexistent.txt'])
 
       // Should fail with non-zero exit code or error
-      expect(result.exitCode !== 0 || result.json?.success === false || result.stderr.length > 0).toBe(true)
+      expect(
+        result.exitCode !== 0 || result.json?.success === false || result.stderr.length > 0
+      ).toBe(true)
     })
 
     it('should fail when run from main worktree', async () => {
       // Create a file in main worktree
-      await container.exec([
-        'sh',
-        '-c',
-        `echo "main content" > ${repoPath}/main-file.txt`,
-      ])
+      await container.exec(['sh', '-c', `echo "main content" > ${repoPath}/main-file.txt`])
 
       const result = await pandoSymlink(container, repoPath, ['main-file.txt'])
 
@@ -210,11 +191,7 @@ describe('pando symlink (E2E)', () => {
       const worktreePath = `${repoPath}/../worktrees/human-symlink-2`
 
       // Create a file
-      await container.exec([
-        'sh',
-        '-c',
-        `echo "moved content" > ${worktreePath}/moved-file.txt`,
-      ])
+      await container.exec(['sh', '-c', `echo "moved content" > ${worktreePath}/moved-file.txt`])
 
       // Run symlink with human output
       const result = await pandoSymlinkHuman(container, worktreePath, ['moved-file.txt'])
@@ -250,14 +227,13 @@ describe('pando symlink (E2E)', () => {
       const worktreePath = `${repoPath}/../worktrees/human-dry-run`
 
       // Create a file
-      await container.exec([
-        'sh',
-        '-c',
-        `echo "dry run human" > ${worktreePath}/dry-human.txt`,
-      ])
+      await container.exec(['sh', '-c', `echo "dry run human" > ${worktreePath}/dry-human.txt`])
 
       // Run symlink with dry-run
-      const result = await pandoSymlinkHuman(container, worktreePath, ['dry-human.txt', '--dry-run'])
+      const result = await pandoSymlinkHuman(container, worktreePath, [
+        'dry-human.txt',
+        '--dry-run',
+      ])
 
       // Comprehensive dry-run check: "Dry run:", Move:, To:, Link:
       expectSymlinkHuman(result, {

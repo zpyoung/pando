@@ -153,9 +153,7 @@ describe('pando add (E2E)', () => {
 
       expectJsonSuccess(result)
       expect(result.json?.setup?.symlink).toBeDefined()
-      expect(
-        (result.json?.setup?.symlink as { created: number }).created
-      ).toBeGreaterThanOrEqual(1)
+      expect((result.json?.setup?.symlink as { created: number }).created).toBeGreaterThanOrEqual(1)
     })
 
     it('should skip symlinks when --skip-symlink is set', async () => {
@@ -187,9 +185,7 @@ describe('pando add (E2E)', () => {
 
       // Verify symlinks were created and skip-worktree was applied
       expect(result.json?.setup?.symlink).toBeDefined()
-      expect(
-        (result.json?.setup?.symlink as { created: number }).created
-      ).toBeGreaterThanOrEqual(1)
+      expect((result.json?.setup?.symlink as { created: number }).created).toBeGreaterThanOrEqual(1)
       expect(result.json?.setup?.skipWorktree).toBeDefined()
       expect(
         (result.json?.setup?.skipWorktree as { filesMarked: number }).filesMarked
@@ -394,10 +390,7 @@ describe('pando add (E2E)', () => {
       // Verify the file was actually synced to the new worktree
       const worktreePath = `${repoPath}/../worktrees/rsync-mb-test`
       const fileCheck = await container.exec(['ls', '-la', `${worktreePath}/large-file.bin`])
-      expect(
-        fileCheck.exitCode,
-        `Large file should have been synced to worktree`
-      ).toBe(0)
+      expect(fileCheck.exitCode, `Large file should have been synced to worktree`).toBe(0)
 
       // Extract MB value from "Files synced: X files (Y MB)" pattern
       const mbMatch = output.match(/\(([0-9.]+)\s*MB\)/i)

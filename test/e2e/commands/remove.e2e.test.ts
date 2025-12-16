@@ -1,12 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../helpers/container.js'
 import { setupGitRepo } from '../helpers/git-repo.js'
-import {
-  pandoAdd,
-  pandoRemove,
-  pandoList,
-  pandoRemoveHuman,
-} from '../helpers/cli-runner.js'
+import { pandoAdd, pandoRemove, pandoList, pandoRemoveHuman } from '../helpers/cli-runner.js'
 import {
   expectSuccess,
   expectJsonError,
@@ -44,10 +39,7 @@ describe('pando remove (E2E)', () => {
       ])
 
       // Remove it
-      const result = await pandoRemove(container, repoPath, [
-        '--path',
-        '../worktrees/to-remove-1',
-      ])
+      const result = await pandoRemove(container, repoPath, ['--path', '../worktrees/to-remove-1'])
 
       expectSuccess(result)
       expect(result.json?.success).toBe(true)
@@ -60,10 +52,7 @@ describe('pando remove (E2E)', () => {
     })
 
     it('should fail when worktree path does not exist', async () => {
-      const result = await pandoRemove(container, repoPath, [
-        '--path',
-        '../worktrees/nonexistent',
-      ])
+      const result = await pandoRemove(container, repoPath, ['--path', '../worktrees/nonexistent'])
 
       expectJsonError(result, 'not found')
     })
@@ -120,7 +109,9 @@ describe('pando remove (E2E)', () => {
 
       expectSuccess(result)
       // Branch deletion might be skipped or not present in response
-      expect(result.json?.branchDeletion?.skipped || result.json?.branchDeletion === undefined).toBe(true)
+      expect(
+        result.json?.branchDeletion?.skipped || result.json?.branchDeletion === undefined
+      ).toBe(true)
 
       // Verify branch still exists
       const branchCheck = await container.exec([
@@ -151,15 +142,13 @@ describe('pando remove (E2E)', () => {
       ])
 
       // Try to remove without force
-      const result = await pandoRemove(container, repoPath, [
-        '--path',
-        '../worktrees/dirty-wt',
-      ])
+      const result = await pandoRemove(container, repoPath, ['--path', '../worktrees/dirty-wt'])
 
       // Should fail or report error about uncommitted changes
-      const hasError = result.json?.success === false ||
-                       result.json?.error?.toLowerCase().includes('uncommitted') ||
-                       result.exitCode !== 0
+      const hasError =
+        result.json?.success === false ||
+        result.json?.error?.toLowerCase().includes('uncommitted') ||
+        result.exitCode !== 0
       expect(hasError).toBe(true)
     })
 
@@ -197,15 +186,13 @@ describe('pando remove (E2E)', () => {
     it('should fail when not in a git repository', async () => {
       await container.exec(['mkdir', '-p', '/tmp/not-a-repo'])
 
-      const result = await pandoRemove(container, '/tmp/not-a-repo', [
-        '--path',
-        './some-worktree',
-      ])
+      const result = await pandoRemove(container, '/tmp/not-a-repo', ['--path', './some-worktree'])
 
       // Should fail with non-zero exit code or error message
-      const hasError = result.exitCode !== 0 ||
-                       result.json?.success === false ||
-                       (result.stderr + result.stdout).toLowerCase().includes('not a git repository')
+      const hasError =
+        result.exitCode !== 0 ||
+        result.json?.success === false ||
+        (result.stderr + result.stdout).toLowerCase().includes('not a git repository')
       expect(hasError).toBe(true)
     })
 

@@ -28,10 +28,9 @@ export async function createE2EContainer(): Promise<E2EContainer> {
   const dockerfilePath = path.resolve(__dirname, '..')
 
   // Build custom image with git + rsync
-  const container = await GenericContainer.fromDockerfile(dockerfilePath).build(
-    'pando-e2e-test',
-    { deleteOnExit: false }
-  )
+  const container = await GenericContainer.fromDockerfile(dockerfilePath).build('pando-e2e-test', {
+    deleteOnExit: false,
+  })
 
   // Start container with project files copied in
   const startedContainer = await container
@@ -62,10 +61,7 @@ export async function createE2EContainer(): Promise<E2EContainer> {
     }
   }
 
-  const execPandoFn = async (
-    args: string[],
-    cwd?: string
-  ): Promise<PandoResult> => {
+  const execPandoFn = async (args: string[], cwd?: string): Promise<PandoResult> => {
     let result: ExecResult
 
     if (cwd) {

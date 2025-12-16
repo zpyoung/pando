@@ -31,10 +31,7 @@ export function expectJsonSuccess(result: PandoResult): void {
   ).toBe(true)
 }
 
-export function expectJsonError(
-  result: PandoResult,
-  errorContains?: string
-): void {
+export function expectJsonError(result: PandoResult, errorContains?: string): void {
   // Error could be in JSON or in stderr/stdout
   const hasJsonError =
     result.json &&
@@ -78,12 +75,8 @@ export function expectWorktreeCreated(
   expect(result.json).toBeDefined()
 
   // The worktree info might be under different keys
-  const worktree =
-    result.json?.worktree ?? result.json?.data?.worktree ?? result.json?.result
-  expect(
-    worktree,
-    `Expected worktree in response: ${JSON.stringify(result.json)}`
-  ).toBeDefined()
+  const worktree = result.json?.worktree ?? result.json?.data?.worktree ?? result.json?.result
+  expect(worktree, `Expected worktree in response: ${JSON.stringify(result.json)}`).toBeDefined()
 
   const wtPath = (worktree as Record<string, unknown>)?.path as string
   expect(wtPath).toContain(expectedPathContains)
@@ -93,10 +86,7 @@ export function expectWorktreeCreated(
   }
 }
 
-export function expectWorktreeList(
-  result: PandoResult,
-  expectedCount: number
-): void {
+export function expectWorktreeList(result: PandoResult, expectedCount: number): void {
   expectSuccess(result)
   expect(result.json).toBeDefined()
 
@@ -124,10 +114,7 @@ export function expectConfigCreated(result: PandoResult): void {
 /**
  * Assert that stdout contains all specified patterns (case-insensitive)
  */
-export function expectHumanOutput(
-  result: PandoResult,
-  patterns: string[]
-): void {
+export function expectHumanOutput(result: PandoResult, patterns: string[]): void {
   const output = result.stdout.toLowerCase()
   for (const pattern of patterns) {
     expect(
@@ -151,10 +138,7 @@ export function expectSuccessMessage(result: PandoResult): void {
 /**
  * Assert that output contains an error message (✗ or error text)
  */
-export function expectErrorMessage(
-  result: PandoResult,
-  errorPattern?: string
-): void {
+export function expectErrorMessage(result: PandoResult, errorPattern?: string): void {
   const combined = (result.stdout + result.stderr).toLowerCase()
   const hasErrorIndicator =
     result.stdout.includes('✗') ||
@@ -219,10 +203,9 @@ export function expectWorktreeListHuman(
   }
 
   // Should show worktree paths (absolute paths starting with /)
-  expect(
-    output.includes('/'),
-    `Expected worktree path (/) in output.\nActual:\n${output}`
-  ).toBe(true)
+  expect(output.includes('/'), `Expected worktree path (/) in output.\nActual:\n${output}`).toBe(
+    true
+  )
 
   // Should show "Branch:" label for each worktree
   expect(
@@ -353,10 +336,7 @@ export function expectWorktreeAddHuman(
 /**
  * Assert worktree add error output
  */
-export function expectWorktreeAddError(
-  result: PandoResult,
-  errorContains: string
-): void {
+export function expectWorktreeAddError(result: PandoResult, errorContains: string): void {
   expectFailure(result)
   const combined = (result.stdout + result.stderr).toLowerCase()
 
@@ -395,10 +375,9 @@ export function expectWorktreeRemoveHuman(
   ).toBe(true)
 
   // Must show "removed" message
-  expect(
-    outputLower.includes('removed'),
-    `Expected "removed" in output.\nActual:\n${output}`
-  ).toBe(true)
+  expect(outputLower.includes('removed'), `Expected "removed" in output.\nActual:\n${output}`).toBe(
+    true
+  )
 
   // Verify path if specified
   if (options.pathContains) {
@@ -452,10 +431,9 @@ export function expectSymlinkHuman(
 
   if (options.isDryRun) {
     // Dry run output format
-    expect(
-      outputLower.includes('dry run'),
-      `Expected "Dry run:" prefix.\nActual:\n${output}`
-    ).toBe(true)
+    expect(outputLower.includes('dry run'), `Expected "Dry run:" prefix.\nActual:\n${output}`).toBe(
+      true
+    )
 
     expect(
       outputLower.includes('move:'),
@@ -478,20 +456,18 @@ export function expectSymlinkHuman(
       `Expected success checkmark (✓) in output.\nActual:\n${output}`
     ).toBe(true)
 
-    expect(
-      outputLower.includes('moved'),
-      `Expected "Moved" in output.\nActual:\n${output}`
-    ).toBe(true)
+    expect(outputLower.includes('moved'), `Expected "Moved" in output.\nActual:\n${output}`).toBe(
+      true
+    )
 
     expect(
       outputLower.includes('source:'),
       `Expected "Source:" in output.\nActual:\n${output}`
     ).toBe(true)
 
-    expect(
-      outputLower.includes('dest:'),
-      `Expected "Dest:" in output.\nActual:\n${output}`
-    ).toBe(true)
+    expect(outputLower.includes('dest:'), `Expected "Dest:" in output.\nActual:\n${output}`).toBe(
+      true
+    )
 
     expect(
       outputLower.includes('created symlink'),
@@ -706,10 +682,7 @@ export function expectConfigShowHuman(
 /**
  * Assert config output shows expected sections (simpler version)
  */
-export function expectConfigSections(
-  result: PandoResult,
-  sections: string[]
-): void {
+export function expectConfigSections(result: PandoResult, sections: string[]): void {
   expectSuccess(result)
   const output = result.stdout
 

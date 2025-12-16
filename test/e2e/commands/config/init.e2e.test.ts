@@ -102,11 +102,7 @@ EOF`,
   describe('overwriting config', () => {
     it('should overwrite existing config with --force', async () => {
       // Create custom config
-      await container.exec([
-        'sh',
-        '-c',
-        `echo '[custom]\nkey = "value"' > ${repoPath}/.pando.toml`,
-      ])
+      await container.exec(['sh', '-c', `echo '[custom]\nkey = "value"' > ${repoPath}/.pando.toml`])
 
       const result = await pandoConfigInit(container, repoPath, ['--force'])
 
@@ -120,11 +116,7 @@ EOF`,
 
     it('should handle existing config appropriately', async () => {
       // Create existing config
-      await container.exec([
-        'sh',
-        '-c',
-        `echo '[rsync]\nenabled = true' > ${repoPath}/.pando.toml`,
-      ])
+      await container.exec(['sh', '-c', `echo '[rsync]\nenabled = true' > ${repoPath}/.pando.toml`])
 
       // Try to init without --force or --merge
       const result = await pandoConfigInit(container, repoPath, [])
@@ -223,11 +215,7 @@ EOF`,
 
     it('should show config overwritten output with --force on existing file', async () => {
       // Create existing config
-      await container.exec([
-        'sh',
-        '-c',
-        `echo '[custom]\nkey = "value"' > ${repoPath}/.pando.toml`,
-      ])
+      await container.exec(['sh', '-c', `echo '[custom]\nkey = "value"' > ${repoPath}/.pando.toml`])
 
       const result = await pandoConfigInitHuman(container, repoPath, ['--force'])
 
