@@ -395,11 +395,8 @@ describe('pando add (E2E)', () => {
       // Extract MB value from "Files synced: X files (Y MB)" pattern
       const mbMatch = output.match(/\(([0-9.]+)\s*MB\)/i)
       expect(mbMatch, `Expected MB value in output.\nActual output:\n${output}`).not.toBeNull()
-
-      if (mbMatch) {
-        const mbValue = parseFloat(mbMatch[1])
-        expect(mbValue, `MB value should be > 0, got ${mbValue}`).toBeGreaterThan(0)
-      }
+      const mbValue = parseFloat(mbMatch![1])
+      expect(mbValue, `MB value should be > 0, got ${mbValue}`).toBeGreaterThan(0)
     })
 
     it('should show error message with path already exists', async () => {

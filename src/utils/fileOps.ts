@@ -711,8 +711,9 @@ export class RsyncHelper {
     // Total transferred file size: 1,000,000 bytes
     // sent 1,234,567 bytes  received 890 bytes  2,470,914.00 bytes/sec
 
-    // Handle rsync 3.x output format: "Number of created files: 1 (reg: 1)"
-    // or older format: "Number of created files: 1"
+    // Capture the number after "Number of created files:" in both rsync 3.x output
+    // (e.g., "Number of created files: 1 (reg: 1)") and older formats ("Number of created files: 1").
+    // Only the first number is captured; any parenthetical part is ignored.
     const filesMatch = output.match(/Number of created files:\s*([\d,]+)/)
     if (filesMatch && filesMatch[1]) {
       result.filesTransferred = parseInt(filesMatch[1].replace(/,/g, ''), 10)

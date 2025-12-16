@@ -196,10 +196,8 @@ export function expectWorktreeListHuman(
   if (options.minCount !== undefined) {
     const countMatch = output.match(/Found (\d+) worktree/i)
     expect(countMatch, `Expected worktree count in output.\nActual:\n${output}`).not.toBeNull()
-    if (countMatch) {
-      const count = parseInt(countMatch[1], 10)
-      expect(count).toBeGreaterThanOrEqual(options.minCount)
-    }
+    const count = parseInt(countMatch![1], 10)
+    expect(count).toBeGreaterThanOrEqual(options.minCount)
   }
 
   // Should show worktree paths (absolute paths starting with /)
