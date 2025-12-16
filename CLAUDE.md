@@ -366,10 +366,11 @@ When adding a new configuration option, update all integration points:
 
 2. **Add environment variable** in `src/config/env.ts`:
    - Add to `ENV_VAR_MAP` (e.g., `PANDO_WORKTREE_REBASE_ON_ADD: 'worktree.rebaseOnAdd'`)
-   - Update `parseEnvValue()` if needed for type detection
+   - Update `parseEnvValue()` if needed for type detection (add pattern like `USE_` for booleans)
 
 3. **Update config init** in `src/commands/config/init.ts`:
    - Add description to the relevant section comment in `generateTomlContent()`
+   - **Add to merge block** so `config init --merge` includes the new option for existing configs
 
 4. **Update example config** in `.pando.toml.example`:
    - Add the new option with documentation
@@ -880,6 +881,18 @@ describe('worktree add', () => {
 })
 ```
 
+### Cross-Platform Path Assertions
+
+Never hard-code POSIX path separators in test expectations. Use `path.join()` to ensure tests pass on Windows:
+
+```typescript
+// Good: Cross-platform
+expect(worktreePath).toBe(path.join('..', 'worktrees', 'myproject', 'feature-x'))
+
+// Bad: Fails on Windows where path.join uses backslashes
+expect(worktreePath).toBe('../worktrees/myproject/feature-x')
+```
+
 ### Running Tests
 
 ```bash
@@ -1149,6 +1162,20 @@ async run() {
 **Why**: Configuration may provide defaults (like `worktree.defaultPath`) that affect validation logic. Loading config first allows validation to account for these defaults.
 
 **Location**: Commands that use config defaults (e.g., `src/commands/add.ts`)
+
+### Parent Directory Creation for Worktrees
+
+`git worktree add` only creates the final worktree directory, not intermediate parents. Always ensure parent directories exist before calling git:
+
+```typescript
+// Ensure parent directory exists before git worktree add
+// Required for useProjectSubfolder and nested defaultPath values
+await fs.ensureDir(path.dirname(resolvedPath))
+```
+
+**Why**: Without this, `git worktree add` fails with `fatal: could not create leading directories` when parent directories don't exist (e.g., `../worktrees/projectName/` when only `../worktrees/` exists).
+
+**Location**: `src/commands/add.ts` (in `validateAndInitialize`, after path validation)
 
 ### Real-time Progress with Spawn
 

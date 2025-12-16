@@ -657,6 +657,48 @@ describe('RsyncHelper', () => {
       const result = rsyncHelper.parseProgressLine('Number of files: 123')
       expect(result.isFileComplete).toBe(false)
     })
+
+    // Tests for isFileName detection
+    it('should detect filename line', () => {
+      const result = rsyncHelper.parseProgressLine('src/utils/git.ts')
+      expect(result.isFileName).toBe(true)
+      expect(result.isFileComplete).toBe(false)
+    })
+
+    it('should not detect filename for sending incremental line', () => {
+      const result = rsyncHelper.parseProgressLine('sending incremental file list')
+      expect(result.isFileName).toBe(false)
+    })
+
+    it('should not detect filename for stats line', () => {
+      const result = rsyncHelper.parseProgressLine('Number of files: 123')
+      expect(result.isFileName).toBe(false)
+    })
+
+    it('should not detect filename for progress percentage line', () => {
+      const result = rsyncHelper.parseProgressLine('14.71M  50% 237.69MB/s 0:00:01')
+      expect(result.isFileName).toBe(false)
+    })
+
+    it('should not detect filename for empty line', () => {
+      const result = rsyncHelper.parseProgressLine('')
+      expect(result.isFileName).toBe(false)
+    })
+
+    it('should not detect filename for sent bytes line', () => {
+      const result = rsyncHelper.parseProgressLine('sent 1,234 bytes')
+      expect(result.isFileName).toBe(false)
+    })
+
+    it('should not detect filename for received bytes line', () => {
+      const result = rsyncHelper.parseProgressLine('received 5,678 bytes')
+      expect(result.isFileName).toBe(false)
+    })
+
+    it('should not detect filename for total size line', () => {
+      const result = rsyncHelper.parseProgressLine('total size is 12,345')
+      expect(result.isFileName).toBe(false)
+    })
   })
 })
 

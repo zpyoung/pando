@@ -1,4 +1,4 @@
-import * as fs from 'fs-extra'
+import fs from 'fs-extra'
 import { symlink as fsSymlink, readlink as fsReadlink, lstat as fsLstat } from 'fs/promises'
 import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
@@ -219,7 +219,7 @@ export class FileOperationTransaction {
               try {
                 const items = await fs.readdir(op.path)
                 if (items.length === 0) {
-                  await fs.rmdir(op.path)
+                  await fs.remove(op.path)
                   rolledBackOperations.push(op)
                 } else {
                   // Directory not empty - skip with warning
@@ -517,19 +517,33 @@ export class RsyncHelper {
   }
 
   /**
-   * Parse rsync progress output line to detect file completion
-   * Returns true when a file transfer is complete (detected by xfer# pattern)
+   * Parse rsync progress output line to detect file transfers
+   * Returns flags for file completion (xfer#N pattern) and filename detection
    */
-  parseProgressLine(line: string): { isFileComplete: boolean } {
+  parseProgressLine(line: string): { isFileComplete: boolean; isFileName: boolean } {
     // Rsync --progress output format for completed file:
     // 14.71M 100% 237.69MB/s 0:00:00 (xfer#1, to-check=1/2)
     // The (xfer#N) pattern indicates Nth file transfer completed
-    const xferMatch = line.match(/\(xfer#\d+/)
-    if (xferMatch) {
-      return { isFileComplete: true }
+    if (line.match(/\(xfer#\d+/)) {
+      return { isFileComplete: true, isFileName: false }
     }
 
-    return { isFileComplete: false }
+    // Detect filename lines - rsync outputs each filename being synced
+    // Skip status/stats lines to only count actual file transfers
+    const trimmed = line.trim()
+    if (
+      trimmed &&
+      !trimmed.startsWith('sending ') &&
+      !trimmed.startsWith('total ') &&
+      !trimmed.startsWith('Number of ') &&
+      !trimmed.match(/^\d+.*%/) && // Skip progress percentage lines
+      !trimmed.match(/^sent \d+/) &&
+      !trimmed.match(/^received \d+/)
+    ) {
+      return { isFileComplete: false, isFileName: true }
+    }
+
+    return { isFileComplete: false, isFileName: false }
   }
 
   /**
@@ -597,10 +611,21 @@ export class RsyncHelper {
           const lines = chunk.split('\n')
           for (const line of lines) {
             const parsed = this.parseProgressLine(line)
-            if (parsed.isFileComplete) {
-              filesTransferred++
 
-              // Throttle updates to avoid flickering
+            // Count files from filename lines (rsync outputs each file being processed)
+            if (parsed.isFileName) {
+              filesTransferred++
+            }
+            // If xfer# pattern detected, use exact count (authoritative)
+            if (parsed.isFileComplete) {
+              const match = line.match(/\(xfer#(\d+)/)
+              if (match && match[1]) {
+                filesTransferred = parseInt(match[1], 10)
+              }
+            }
+
+            // Throttle updates to avoid flickering
+            if (parsed.isFileName || parsed.isFileComplete) {
               const now = Date.now()
               if (now - lastProgressUpdate >= throttleMs) {
                 lastProgressUpdate = now
@@ -934,7 +959,7 @@ export class SymlinkHelper {
           if (stats.isSymbolicLink() || stats.isFile()) {
             await fs.unlink(target)
           } else if (stats.isDirectory()) {
-            await fs.rmdir(target)
+            await fs.remove(target)
           }
         } else {
           throw new FileOperationError(`Target already exists: ${target}`)

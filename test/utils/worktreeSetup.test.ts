@@ -62,11 +62,11 @@ describe('WorktreeSetupOrchestrator', () => {
   let mockRemove: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
-    // Get reference to mocked fs-extra
-    const fsExtra = await import('fs-extra')
-    mockPathExists = fsExtra.pathExists as any
-    mockStat = (fsExtra as any).stat
-    mockRemove = (fsExtra as any).remove
+    // Get reference to mocked fs-extra (using default export as production code does)
+    const fsExtra = (await import('fs-extra')).default as any
+    mockPathExists = fsExtra.pathExists
+    mockStat = fsExtra.stat
+    mockRemove = fsExtra.remove
     vi.mocked(mockPathExists).mockReset()
     vi.mocked(mockStat).mockReset()
     vi.mocked(mockRemove).mockReset()
@@ -377,7 +377,7 @@ describe('WorktreeSetupOrchestrator', () => {
 
       await orchestrator.setupNewWorktree('/repo/feature', options)
 
-      expect(onProgress).toHaveBeenCalledWith(SetupPhase.RSYNC, 'Copying files with rsync')
+      expect(onProgress).toHaveBeenCalledWith(SetupPhase.RSYNC, 'Syncing files with rsync...')
     })
   })
 
@@ -708,7 +708,7 @@ describe('WorktreeSetupOrchestrator', () => {
         SetupPhase.SYMLINK_BEFORE,
         'Creating symlinks (before rsync)'
       )
-      expect(onProgress).toHaveBeenCalledWith(SetupPhase.RSYNC, 'Copying files with rsync')
+      expect(onProgress).toHaveBeenCalledWith(SetupPhase.RSYNC, 'Syncing files with rsync...')
       expect(onProgress).toHaveBeenCalledWith(SetupPhase.VALIDATION, 'Validating setup')
       expect(onProgress).toHaveBeenCalledWith(SetupPhase.COMPLETE, 'Setup complete')
     })
