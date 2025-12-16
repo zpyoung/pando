@@ -1,6 +1,28 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { GitHelper, WorktreeInfo } from '../../src/utils/git'
 
+// Mock simpleGit for worktree-specific operations
+const mockWorktreeGit = {
+  raw: vi.fn(),
+  status: vi.fn(),
+  rebase: vi.fn(),
+}
+
+vi.mock('simple-git', async () => {
+  const actual = await vi.importActual('simple-git')
+  return {
+    ...actual,
+    simpleGit: vi.fn((path?: string) => {
+      // Return worktree mock for non-undefined paths
+      if (path) {
+        return mockWorktreeGit
+      }
+      // Return actual for default path (used by constructor)
+      return (actual as { simpleGit: (path?: string) => unknown }).simpleGit(path)
+    }),
+  }
+})
+
 /**
  * Tests for GitHelper utility class
  *
@@ -12,6 +34,7 @@ describe('GitHelper', () => {
   let mockGit: any
 
   beforeEach(() => {
+    vi.clearAllMocks()
     gitHelper = new GitHelper()
     // Access private git instance through type assertion for testing
     mockGit = (gitHelper as any).git
@@ -502,6 +525,60 @@ branch refs/heads/main
       await expect(gitHelper.getCurrentBranch()).rejects.toThrow(
         'Unable to determine current branch: fatal: not a git repository'
       )
+    })
+  })
+
+  describe('setSkipWorktree', () => {
+    it('should mark files as skip-worktree', async () => {
+      mockWorktreeGit.raw.mockResolvedValue('')
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', [
+        'package.json',
+        'pnpm-lock.yaml',
+      ])
+
+      expect(result.success).toBe(true)
+      expect(result.filesMarked).toBe(2)
+      expect(result.error).toBeUndefined()
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'update-index',
+        '--skip-worktree',
+        'package.json',
+        'pnpm-lock.yaml',
+      ])
+    })
+
+    it('should return success with 0 files when array is empty', async () => {
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', [])
+
+      expect(result.success).toBe(true)
+      expect(result.filesMarked).toBe(0)
+      // No git calls should be made for empty array
+      expect(mockWorktreeGit.raw).not.toHaveBeenCalled()
+    })
+
+    it('should handle errors gracefully', async () => {
+      mockWorktreeGit.raw.mockRejectedValue(new Error('fatal: Unable to mark file'))
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['invalid-file'])
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Unable to mark file')
+      expect(result.filesMarked).toBe(0)
+    })
+
+    it('should handle single file', async () => {
+      mockWorktreeGit.raw.mockResolvedValue('')
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['node_modules'])
+
+      expect(result.success).toBe(true)
+      expect(result.filesMarked).toBe(1)
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'update-index',
+        '--skip-worktree',
+        'node_modules',
+      ])
     })
   })
 })

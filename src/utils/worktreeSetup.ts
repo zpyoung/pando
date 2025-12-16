@@ -62,6 +62,7 @@ export enum SetupPhase {
   SYMLINK_BEFORE = 'symlink_before',
   RSYNC = 'rsync',
   SYMLINK_AFTER = 'symlink_after',
+  SKIP_WORKTREE = 'skip_worktree',
   VALIDATION = 'validation',
   COMPLETE = 'complete',
   ROLLBACK = 'rollback',
@@ -74,6 +75,7 @@ export interface SetupResult {
   success: boolean
   rsyncResult?: RsyncResult
   symlinkResult?: SymlinkResult
+  skipWorktreeResult?: { filesMarked: number; success: boolean }
   duration: number
   warnings: string[]
   rolledBack: boolean
@@ -121,6 +123,7 @@ export class WorktreeSetupOrchestrator {
     const warnings: string[] = []
     let rsyncResult: RsyncResult | undefined
     let symlinkResult: SymlinkResult | undefined
+    let skipWorktreeResult: { filesMarked: number; success: boolean } | undefined
     let rolledBack = false
 
     try {
@@ -315,6 +318,37 @@ export class WorktreeSetupOrchestrator {
       }
 
       // ============================================================
+      // Phase 5.5: Mark symlinked files as skip-worktree
+      // ============================================================
+      if (symlinkResult && symlinkResult.created > 0) {
+        this.reportProgress(
+          options.onProgress,
+          SetupPhase.SKIP_WORKTREE,
+          'Marking symlinked files as skip-worktree'
+        )
+
+        // Get relative paths of all symlinked files
+        const symlinkPaths = await this.getSymlinkedFilePaths(worktreePath)
+
+        if (symlinkPaths.length > 0) {
+          const result = await this.gitHelper.setSkipWorktree(worktreePath, symlinkPaths)
+
+          skipWorktreeResult = {
+            filesMarked: result.filesMarked,
+            success: result.success,
+          }
+
+          if (!result.success) {
+            // Add warning but don't fail - worktree is still functional
+            warnings.push(
+              `Could not mark symlinked files as skip-worktree: ${result.error}. ` +
+                `Git may show these files as modified.`
+            )
+          }
+        }
+      }
+
+      // ============================================================
       // Phase 6: Validation
       // ============================================================
       this.reportProgress(options.onProgress, SetupPhase.VALIDATION, 'Validating setup')
@@ -357,6 +391,7 @@ export class WorktreeSetupOrchestrator {
         success: true,
         rsyncResult,
         symlinkResult,
+        skipWorktreeResult,
         duration,
         warnings,
         rolledBack: false,
@@ -422,6 +457,7 @@ export class WorktreeSetupOrchestrator {
           success: false,
           rsyncResult,
           symlinkResult,
+          skipWorktreeResult,
           duration,
           warnings,
           rolledBack,
@@ -442,6 +478,26 @@ export class WorktreeSetupOrchestrator {
     if (callback) {
       callback(phase, message)
     }
+  }
+
+  /**
+   * Extract relative paths of symlinked files from transaction operations
+   *
+   * @param worktreePath - Base worktree path to make paths relative
+   * @returns Array of relative file paths that were symlinked
+   */
+  private async getSymlinkedFilePaths(worktreePath: string): Promise<string[]> {
+    const { OperationType } = await import('./fileOps.js')
+    const path = await import('path')
+    const symlinkOps = this.transaction
+      .getOperations()
+      .filter((op: Operation) => op.type === OperationType.CREATE_SYMLINK)
+
+    return symlinkOps.map((op) => {
+      // op.path is absolute (e.g., '/repo/feature/package.json')
+      // Convert to relative path for git update-index
+      return path.default.relative(worktreePath, op.path)
+    })
   }
 
   /**

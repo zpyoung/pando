@@ -120,9 +120,7 @@ export default class RemoveWorktree extends Command {
     const chalk = (await import('chalk')).default
 
     this.log(
-      chalk.yellow(
-        `\n⚠ You are about to delete branch '${branchName}' from remote '${remoteName}'`
-      )
+      chalk.yellow(`\n⚠ You are about to delete branch '${branchName}' from remote '${remoteName}'`)
     )
     this.log(chalk.yellow('  This action cannot be undone.'))
 

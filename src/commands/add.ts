@@ -543,6 +543,12 @@ export default class AddWorktree extends Command {
                     conflicts: setupResult.symlinkResult.conflicts,
                   }
                 : null,
+              skipWorktree: setupResult.skipWorktreeResult
+                ? {
+                    filesMarked: setupResult.skipWorktreeResult.filesMarked,
+                    success: setupResult.skipWorktreeResult.success,
+                  }
+                : null,
             },
             duration,
             warnings: setupResult.warnings,
