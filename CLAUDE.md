@@ -82,6 +82,24 @@ ErrorHelper.warn(this, 'Non-fatal warning', flags.json)  // Warnings
 - **Async/Await**: All I/O uses promises
 - **Type guards** for error objects: `function isExecError(e): e is ExecError`
 
+### Type Safety Patterns
+```typescript
+// TOML parsing - define interface, cast after parse
+interface ParsedTomlConfig { rsync?: Partial<RsyncConfig>; symlink?: Partial<SymlinkConfig> }
+interface PyprojectToml { tool?: { pando?: ParsedTomlConfig } }
+
+// Inquirer - type the prompt interface
+interface PromptQuestion { type: 'checkbox'|'confirm'|'input'|'list'; name: string; message: string; choices?: Array<{name:string;value:string}> }
+const inquirer = (await import('inquirer')).default as { prompt: <T>(q: PromptQuestion[]) => Promise<T> }
+
+// Error objects - type guard pattern
+interface ExecError extends Error { stderr?: string; stdout?: string; code?: string|number }
+function isExecError(e: unknown): e is ExecError { return e instanceof Error && ('stderr' in e || 'code' in e) }
+
+// Generic merging - use Record<string,unknown> then cast back
+const result: Record<string, unknown> = { ...base }; return result as PartialPandoConfig
+```
+
 ### Naming
 - Commands: `Verb` (top-level) or `VerbTopic` (nested)
 - Files: `kebab-case.ts`
@@ -97,23 +115,41 @@ Keep files <250 lines. Extract utilities if longer.
 ## Common Tasks
 
 ### Adding a New Command
-1. Create `src/commands/verb.ts` (or `topic/verb.ts`)
+1. Create `src/commands/verb.ts` (or `topic/verb.ts` for nested)
 2. Create `test/commands/verb.test.ts`
 3. Update README.md with examples
 4. Verify: `pnpm dev verb --help`
+
+**Command structure**: imports → class → static (description, examples, flags) → `async run()`
+**Nested imports**: Use `../../utils/` instead of `../utils/`
 
 ### Adding Git Operations
 1. Add method to `GitHelper` in `src/utils/git.ts`
 2. Add tests in `test/utils/git.test.ts`
 3. Use in command layer
 
+**Method pattern**:
+```typescript
+async newOperation(params: Type): Promise<ResultType> {
+  // 1. Use this.git (simple-git)  2. Handle errors  3. Return typed result
+}
+```
+
 ### Adding Config Values
 1. **Schema** (`src/config/schema.ts`): Zod schema + interface + `DEFAULT_CONFIG`
-2. **Env** (`src/config/env.ts`): `ENV_VAR_MAP` entry
+2. **Env** (`src/config/env.ts`): `ENV_VAR_MAP` entry (e.g., `PANDO_WORKTREE_REBASE: 'worktree.rebase'`)
 3. **Config init** (`src/commands/config/init.ts`): `generateTomlContent()` + merge block
 4. **Example** (`.pando.toml.example`): Document option
 5. **README.md**: Flag/env documentation
 6. **Tests**: For new option
+
+### Implementing TODOs
+Look for `// TODO:` comments with step-by-step hints:
+```typescript
+// TODO: Implement worktree add logic
+// 1. Validate git repo  2. Check path exists  3. Validate branch/commit
+// 4. Execute git worktree add  5. Handle errors  6. Format output (--json)
+```
 
 ## Key Patterns
 
@@ -125,6 +161,13 @@ if (flags.json) {
   this.log(chalk.green(`✓ Done`))
 }
 ```
+
+### JSON Output Consistency
+When adding new fields to result interfaces (e.g., `SetupResult`), ensure all consumers are updated:
+1. The interface definition (e.g., `worktreeSetup.ts`)
+2. The `formatOutput` method in the command
+3. Error handlers that output partial results
+4. E2E tests that verify the JSON structure
 
 ### User-Friendly Errors
 ```typescript
@@ -198,6 +241,11 @@ pnpm test:watch        # Watch mode
 pnpm test:coverage     # Coverage
 ```
 
+**E2E tests (Docker)**: Use `--hookTimeout=60000` for container setup time:
+```bash
+pnpm vitest run test/e2e/ --hookTimeout=60000
+```
+
 **Cross-platform paths**: Use `path.join()` in assertions, never hardcode separators.
 
 ### Mocking simpleGit for Worktree Operations (Unit Tests Only)
@@ -233,88 +281,18 @@ vi.mock('simple-git', async () => {
 **Core**: `@oclif/core`, `simple-git`, `chalk`, `inquirer`, `ora`
 **Dev**: `typescript`, `vitest`, `@oclif/test`, `eslint`, `prettier`
 
-## Beads Task Management
-
-AI-first issue tracker with dependency tracking. DB: `.beads/pando.db`, State: `.beads/issues.jsonl` (git)
-
-### Workflow
-```bash
-# Start session
-bd ready --limit 10 --json
-
-# Claim & work
-bd update pando-3 --status in_progress --json
-bd comments add pando-3 "Progress note" --json
-
-# Discovered work
-bd create "New task" -t task -p 1 --json
-bd dep add pando-11 pando-3 --type discovered-from --json
-
-# Complete
-bd close pando-3 --reason "Done" --json
-bd sync  # Always at session end
-```
-
-### Dependency Types
-- `blocks`: Hard blocker
-- `related`: Soft link
-- `parent-child`: Epic/subtask
-- `discovered-from`: Links to parent task
-
-### MCP
-```python
-mcp__plugin_beads_beads__set_context(workspace_root="/path")  # First!
-mcp__plugin_beads_beads__ready|list|show|create|update|close|stats|blocked()
-```
-
-### Lifecycle
-`open → in_progress → closed` (can go to `blocked` from any state)
-
-## Documentation Rules
-
-**Auto-update docs with code changes** - don't ask, just do it.
-
-| Change Type | Update |
-|-------------|--------|
-| User-facing behavior | README.md |
-| Architecture changes | ARCHITECTURE.md |
-| Module add/modify | DESIGN.md in folder |
-| Project patterns | CLAUDE.md |
-
-**Create ARCHITECTURE.md**: Major dirs, 5+ files, new patterns
-**Create DESIGN.md**: Feature dirs with 2+ files, utility modules
-
-### SDD Files (`ai-docs/`)
-- `SPEC.md`: Goals/stories (start here)
-- `PLAN.md`: Architecture
-- `TASKS.md`: Checklist
-- `CONTEXT.md`: Glossary
-- `LESSONS.md`: Patterns to keep/avoid
-
-## AI Implementation Checklist
-
-### Session Start
-1. `bd ready --json` - find work
-2. `bd update <id> --status in_progress` - claim
-
-### During Work
-- Read ARCHITECTURE.md, DESIGN.md
-- Follow existing patterns
-- Implement incrementally, test alongside
-- Track discoveries: create issues with `discovered-from`
-
-### Session End
-1. `bd close <id> --reason "msg"` - complete tasks
-2. `bd sync` - commit to git
-
-### Code Review
+## Code Review Checklist
 - [ ] TypeScript strict passes
 - [ ] Tests pass
 - [ ] Naming conventions followed
 - [ ] Errors handled with ErrorHelper
 - [ ] `--json` flag supported
-- [ ] Docs updated (README, DESIGN, ARCHITECTURE, CLAUDE as needed)
-- [ ] Beads synced
+- [ ] Docs updated as needed
+
+## Additional Rules
+See `.claude/rules/` for:
+- `beads.md` - Task management workflow
+- `documentation.md` - Doc maintenance & SDD workflow
 
 ## Resources
 
