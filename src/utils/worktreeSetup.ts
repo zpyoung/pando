@@ -149,7 +149,7 @@ export class WorktreeSetupOrchestrator {
       const sourceTreePath = await this.gitHelper.getMainWorktreePath()
 
       // Validate paths exist
-      const fs = await import('fs-extra')
+      const fs = (await import('fs-extra')).default
       if (!(await fs.pathExists(sourceTreePath))) {
         throw new Error(`Source tree path does not exist: ${sourceTreePath}`)
       }
@@ -210,18 +210,13 @@ export class WorktreeSetupOrchestrator {
       // Phase 4: Rsync
       // ============================================================
       if (!options.skipRsync && this.config.rsync.enabled) {
-        this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Estimating file count...')
+        this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Syncing files with rsync...')
 
         // Check rsync is installed
         const { RsyncNotInstalledError } = await import('./fileOps.js')
         if (!(await this.rsyncHelper.isInstalled())) {
           throw new RsyncNotInstalledError()
         }
-
-        // Estimate total file count for progress display
-        const totalFiles = await this.rsyncHelper.estimateFileCount(sourceTreePath, rsyncConfig)
-
-        this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Copying files with rsync')
 
         // Build exclude patterns
         const excludePatterns: string[] = [
@@ -263,21 +258,12 @@ export class WorktreeSetupOrchestrator {
           }
         }
 
-        // Execute rsync with structured progress callback
+        // Execute rsync with progress callback
         rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
           excludePatterns,
-          totalFiles,
           onProgress: options.onProgress
             ? (progress: RsyncProgressData): void => {
-                // Format progress message based on whether we have a total
-                let message: string
-                if (progress.totalFiles > 0 && progress.percentage !== undefined) {
-                  // Format percentage with one decimal place for precision
-                  const percentStr = progress.percentage.toFixed(1)
-                  message = `Syncing files: ${progress.filesTransferred}/${progress.totalFiles} (${percentStr}%)`
-                } else {
-                  message = `Synced: ${progress.filesTransferred} files`
-                }
+                const message = `Synced: ${progress.filesTransferred} files`
                 options.onProgress!(SetupPhase.RSYNC, message)
               }
             : undefined,
@@ -404,7 +390,7 @@ export class WorktreeSetupOrchestrator {
             await this.gitHelper.removeWorktree(worktreePath, true) // force=true
           } catch (gitError) {
             // Fallback: remove directory if git metadata cleanup fails
-            const fs = await import('fs-extra')
+            const fs = (await import('fs-extra')).default
             let directoryRemoved = false
             if (await fs.pathExists(worktreePath)) {
               await fs.remove(worktreePath)
