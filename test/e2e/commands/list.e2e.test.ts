@@ -5,8 +5,6 @@ import { pandoList, pandoAdd, pandoListHuman } from '../helpers/cli-runner.js'
 import {
   expectSuccess,
   expectWorktreeList,
-  expectSuccessMessage,
-  expectHumanOutput,
   expectWorktreeListHuman,
 } from '../helpers/assertions.js'
 
