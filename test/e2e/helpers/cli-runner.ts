@@ -106,3 +106,36 @@ export function pandoConfigShowHuman(
 ): Promise<PandoResult> {
   return runPando(container, { command: 'config show', args, cwd, json: false })
 }
+
+// Branch backup/restore commands
+export function pandoBranchBackup(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'branch backup', args, cwd, json: true })
+}
+
+export function pandoBranchBackupHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'branch backup', args, cwd, json: false })
+}
+
+export function pandoBranchRestore(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'branch restore', args, cwd, json: true })
+}
+
+export function pandoBranchRestoreHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'branch restore', args, cwd, json: false })
+}

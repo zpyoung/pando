@@ -161,7 +161,8 @@ pnpm dev branch restore --help
 pnpm test:run
 ```
 
-### [ ] Step: Add E2E coverage for backup/restore
+### [x] Step: Add E2E coverage for backup/restore
+<!-- chat-id: 06c3eb6a-c868-458f-80f2-4d6ff31af5d6 -->
 
 **Goal**: Validate real git behavior end-to-end without interactive prompts.
 
