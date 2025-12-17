@@ -116,6 +116,24 @@ deleteBranchOnRemove = "local"
 #   false → ../worktrees/feature
 # useProjectSubfolder = true
 
+# Target branch for merge checks (used by clean command)
+# The branch to check if feature branches are merged into
+# Default: "main"
+# targetBranch = "main"
+
+# ============================================================================
+# Clean Configuration
+# ============================================================================
+# Controls behavior of the clean command for detecting and removing
+# stale worktrees (merged branches, gone upstream, prunable)
+
+[clean]
+# Run git fetch --prune before detection
+# When true, fetches from remote to update tracking branch state
+# before checking for stale worktrees
+# Default: false
+# fetch = true
+
 # ============================================================================
 # Project-Specific Examples
 # ============================================================================
@@ -159,6 +177,8 @@ deleteBranchOnRemove = "local"
 #   PANDO_WORKTREE_REBASE_ON_ADD=false
 #   PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE=local
 #   PANDO_WORKTREE_USE_PROJECT_SUBFOLDER=true
+#   PANDO_WORKTREE_TARGET_BRANCH=main
+#   PANDO_CLEAN_FETCH=true
 
 # ============================================================================
 # CLI Flag Overrides
@@ -173,3 +193,5 @@ deleteBranchOnRemove = "local"
 #   pando add --branch existing-feature --no-rebase
 #   pando remove --path ../feature --keep-branch
 #   pando remove --path ../feature --delete-branch remote --force
+#   pando clean --fetch --target-branch develop
+#   pando clean --keep-branch --force

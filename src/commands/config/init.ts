@@ -275,6 +275,7 @@ export default class ConfigInit extends Command {
       rsync: { ...DEFAULT_CONFIG.rsync },
       symlink: { ...DEFAULT_CONFIG.symlink },
       worktree: { ...DEFAULT_CONFIG.worktree },
+      clean: { ...DEFAULT_CONFIG.clean },
     }
 
     // Merge rsync section
@@ -354,8 +355,28 @@ export default class ConfigInit extends Command {
           value: DEFAULT_CONFIG.worktree.useProjectSubfolder,
         })
       }
+
+      if (existing.worktree.targetBranch !== undefined) {
+        merged.worktree.targetBranch = existing.worktree.targetBranch
+      } else {
+        added.push({
+          path: 'worktree.targetBranch',
+          value: DEFAULT_CONFIG.worktree.targetBranch,
+        })
+      }
     } else {
       added.push({ path: 'worktree', value: DEFAULT_CONFIG.worktree })
+    }
+
+    // Merge clean section
+    if (existing.clean) {
+      if (existing.clean.fetch !== undefined) {
+        merged.clean.fetch = existing.clean.fetch
+      } else {
+        added.push({ path: 'clean.fetch', value: DEFAULT_CONFIG.clean.fetch })
+      }
+    } else {
+      added.push({ path: 'clean', value: DEFAULT_CONFIG.clean })
     }
 
     return { merged, added }
@@ -406,6 +427,17 @@ export default class ConfigInit extends Command {
       '#   none: Do not delete branches (use --keep-branch flag)',
       '#   local: Delete local branch only (default)',
       '#   remote: Delete both local and remote branches',
+      '# targetBranch - Target branch for merge checks (used by clean command)',
+      '#   Default: "main"',
+      '',
+    ].join('\n')
+
+    const cleanComment = [
+      '',
+      '# Clean Configuration',
+      '# Controls behavior of the clean command',
+      '# fetch - Run git fetch --prune before detection',
+      '#   Set to true to automatically update remote tracking state',
       '',
     ].join('\n')
 
@@ -413,6 +445,7 @@ export default class ConfigInit extends Command {
     let result = header + sections + toml
     result = result.replace('[symlink]', symlinkComment + '[symlink]')
     result = result.replace('[worktree]', worktreeComment + '[worktree]')
+    result = result.replace('[clean]', cleanComment + '[clean]')
     return result
   }
 }

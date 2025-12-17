@@ -159,6 +159,50 @@ pando remove --path ../feature-x --delete-branch remote --force
 pando remove --force
 ```
 
+### `pando clean`
+
+Clean stale git worktrees (merged branches, gone upstream, prunable)
+
+**Detection Categories:**
+
+- **Merged**: Branch fully merged into main/master (or specified target branch)
+- **Gone**: Remote tracking branch was deleted upstream
+- **Prunable**: Worktree directory was already deleted
+
+**Flags:**
+
+- `--fetch`: Run `git fetch --prune` before detection to update remote tracking branch state (configurable: `clean.fetch`)
+- `-f, --force`: Skip confirmation prompts and clean all stale worktrees
+- `-k, --keep-branch`: Keep local branch after worktree removal (configurable: `worktree.deleteBranchOnRemove = "none"`)
+- `--dry-run`: Show what would be removed without acting
+- `-t, --target-branch`: Branch to check merges against (default: main or master) (configurable: `worktree.targetBranch`)
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+
+```bash
+# Interactive selection of stale worktrees
+pando clean
+
+# Fetch latest and detect stale worktrees
+pando clean --fetch
+
+# See what would be cleaned without acting
+pando clean --dry-run
+
+# Clean all stale worktrees without prompts
+pando clean --force
+
+# Check merges against develop branch
+pando clean --target-branch develop
+
+# Keep branches after removing worktrees
+pando clean --keep-branch
+
+# JSON output for scripting
+pando clean --json
+```
+
 ### `pando symlink`
 
 Move a file from the current worktree to the main worktree and replace it with a symlink. Useful for keeping configuration files, dependencies, or other shared files in sync across all worktrees.
@@ -313,6 +357,11 @@ beforeRsync = true
 defaultPath = "../worktrees"  # Default parent directory for worktrees
 rebaseOnAdd = true            # Rebase existing branches when adding worktree
 deleteBranchOnRemove = "none" # Delete branch on worktree remove: "none", "local", "remote"
+targetBranch = "main"         # Target branch for merge checks (used by clean command)
+
+# Clean Configuration
+[clean]
+fetch = false                 # Run git fetch --prune before detection
 ```
 
 ### Embedding in Project Files
@@ -382,6 +431,12 @@ export PANDO_WORKTREE_REBASE_ON_ADD=false
 
 # Delete local branch when removing worktree
 export PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE=local
+
+# Set target branch for merge checks (clean command)
+export PANDO_WORKTREE_TARGET_BRANCH=main
+
+# Always fetch before detecting stale worktrees
+export PANDO_CLEAN_FETCH=true
 
 # Now you can omit --path
 pando add --branch feature-x

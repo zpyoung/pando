@@ -22,6 +22,15 @@ export interface BranchInfo {
   label: string
 }
 
+/**
+ * Stale worktree information with detection reason
+ */
+export interface StaleWorktreeInfo extends WorktreeInfo {
+  staleReason: 'merged' | 'gone' | 'prunable' | null
+  hasUncommittedChanges: boolean
+  trackingBranch?: string
+}
+
 export class GitHelper {
   private git: SimpleGit
 
@@ -441,6 +450,165 @@ export class GitHelper {
       const errorMsg = error instanceof Error ? error.message : String(error)
       return { success: false, error: errorMsg, filesMarked: 0 }
     }
+  }
+
+  /**
+   * Fetch from remote with pruning to update remote tracking branch state
+   *
+   * @param remote - Remote name (default: 'origin')
+   */
+  async fetchWithPrune(remote: string = 'origin'): Promise<void> {
+    await this.git.fetch([remote, '--prune'])
+  }
+
+  /**
+   * Detect the main branch name (main or master)
+   *
+   * @returns Main branch name
+   */
+  async getMainBranch(): Promise<string> {
+    try {
+      await this.git.raw(['rev-parse', '--verify', 'refs/heads/main'])
+      return 'main'
+    } catch {
+      try {
+        await this.git.raw(['rev-parse', '--verify', 'refs/heads/master'])
+        return 'master'
+      } catch {
+        // Default to 'main' if neither exists
+        return 'main'
+      }
+    }
+  }
+
+  /**
+   * Get list of branches merged into target branch
+   *
+   * @param targetBranch - Branch to check merges against
+   * @returns Array of merged branch names
+   */
+  async getMergedBranches(targetBranch: string = 'main'): Promise<string[]> {
+    try {
+      const output = await this.git.raw(['branch', '--merged', targetBranch])
+      return output
+        .split('\n')
+        .map((line: string) => line.trim().replace(/^\*\s*/, ''))
+        .filter((name: string) => name && name !== targetBranch)
+    } catch {
+      // If target branch doesn't exist, try 'master' as fallback
+      if (targetBranch === 'main') {
+        try {
+          return await this.getMergedBranches('master')
+        } catch {
+          return []
+        }
+      }
+      return []
+    }
+  }
+
+  /**
+   * Get branches whose upstream tracking branch no longer exists
+   * Uses git for-each-ref to detect [gone] status
+   *
+   * @returns Map of branch name to tracking branch reference
+   */
+  async getGoneBranches(): Promise<Map<string, string>> {
+    const goneBranches = new Map<string, string>()
+
+    try {
+      // Format: "branch-name [gone]" or "branch-name [ahead 1, behind 2]" or "branch-name "
+      const output = await this.git.raw([
+        'for-each-ref',
+        '--format=%(refname:short) %(upstream:track)',
+        'refs/heads/',
+      ])
+
+      for (const line of output.split('\n')) {
+        if (line.includes('[gone]')) {
+          const match = line.match(/^(\S+)\s+\[gone\]/)
+          const branchName = match?.[1]
+          if (branchName) {
+            // Get the tracking branch reference for display
+            try {
+              const upstream = await this.git.raw(['config', `branch.${branchName}.merge`])
+              goneBranches.set(branchName, upstream.trim())
+            } catch {
+              goneBranches.set(branchName, 'unknown')
+            }
+          }
+        }
+      }
+    } catch {
+      // If for-each-ref fails, return empty map
+    }
+
+    return goneBranches
+  }
+
+  /**
+   * Get worktrees that are stale (merged, gone, or prunable)
+   *
+   * Detection priority: prunable > gone > merged
+   * Main worktree is always excluded from results.
+   *
+   * @param targetBranch - Branch to check merges against (default: auto-detect main/master)
+   * @returns Array of stale worktrees with reason and metadata
+   */
+  async getStaleWorktrees(targetBranch?: string): Promise<StaleWorktreeInfo[]> {
+    // 1. Get all worktrees
+    const worktrees = await this.listWorktrees()
+
+    // 2. Determine target branch for merge check
+    const mergeTarget = targetBranch || (await this.getMainBranch())
+
+    // 3. Get merged branches
+    const mergedBranches = await this.getMergedBranches(mergeTarget)
+
+    // 4. Get gone branches
+    const goneBranches = await this.getGoneBranches()
+
+    // 5. Get main worktree path to exclude it
+    const mainWorktreePath = await this.getMainWorktreePath()
+
+    // 6. Enrich worktrees with stale information
+    const staleWorktrees: StaleWorktreeInfo[] = []
+
+    for (const worktree of worktrees) {
+      // Skip main worktree - never clean it
+      if (worktree.path === mainWorktreePath) {
+        continue
+      }
+
+      // Determine stale reason (priority: prunable > gone > merged)
+      let staleReason: 'merged' | 'gone' | 'prunable' | null = null
+      let trackingBranch: string | undefined
+
+      if (worktree.isPrunable) {
+        staleReason = 'prunable'
+      } else if (worktree.branch && goneBranches.has(worktree.branch)) {
+        staleReason = 'gone'
+        trackingBranch = goneBranches.get(worktree.branch)
+      } else if (worktree.branch && mergedBranches.includes(worktree.branch)) {
+        staleReason = 'merged'
+      }
+
+      // Only include worktrees that are actually stale
+      if (staleReason !== null) {
+        // Check for uncommitted changes (skip for prunable - no directory exists)
+        const hasUncommittedChanges =
+          staleReason === 'prunable' ? false : await this.hasUncommittedChanges(worktree.path)
+
+        staleWorktrees.push({
+          ...worktree,
+          staleReason,
+          hasUncommittedChanges,
+          trackingBranch,
+        })
+      }
+    }
+
+    return staleWorktrees
   }
 }
 
