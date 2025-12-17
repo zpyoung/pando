@@ -140,16 +140,14 @@ export default class BranchBackup extends Command {
     }
 
     // Step 7: Store optional message as branch description
+    let messageWarning: string | undefined
     if (flags.message) {
       try {
         await gitHelper.setBranchDescription(backupName, flags.message)
       } catch (error) {
-        // Warn but don't fail - the backup was created successfully
-        ErrorHelper.warn(
-          this,
-          `Backup created but failed to store message: ${(error as Error).message}`,
-          flags.json
-        )
+        // Warn but don't fail - the backup was created successfully.
+        // In --json mode, keep stdout as a single JSON document.
+        messageWarning = `Failed to store backup message: ${(error as Error).message}`
       }
     }
 
@@ -162,24 +160,26 @@ export default class BranchBackup extends Command {
       ...(flags.message && { message: flags.message }),
     }
 
-    await this.formatOutput(flags.json, result)
+    await this.formatOutput(flags.json, result, messageWarning)
   }
 
   /**
    * Format and output the backup result
    */
-  private async formatOutput(isJson: boolean, result: BackupCreateResult): Promise<void> {
+  private async formatOutput(
+    isJson: boolean,
+    result: BackupCreateResult,
+    warning?: string
+  ): Promise<void> {
     if (isJson) {
-      this.log(
-        JSON.stringify(
-          {
-            status: 'success',
-            backup: result,
-          },
-          null,
-          2
-        )
-      )
+      const output: Record<string, unknown> = {
+        status: warning ? 'warning' : 'success',
+        backup: result,
+      }
+      if (warning) {
+        output.warning = warning
+      }
+      this.log(JSON.stringify(output, null, 2))
     } else {
       const chalk = (await import('chalk')).default
       const output: string[] = []
@@ -192,6 +192,11 @@ export default class BranchBackup extends Command {
       }
       output.push('')
       output.push(chalk.cyan(`To restore: pando branch restore --backup ${result.name}`))
+
+      if (warning) {
+        output.push('')
+        output.push(chalk.yellow(`⚠ ${warning}`))
+      }
 
       this.log(output.join('\n'))
     }

@@ -215,3 +215,9 @@ pnpm test:e2e
 | `pnpm typecheck` | ✓ No type errors |
 | `pnpm test:run` | ✓ 457 unit tests passed |
 | `pnpm test:e2e` | ✓ 104 E2E tests passed |
+
+### [x] Step: Review
+<!-- chat-id: e2c62212-773a-4ef7-a62d-17bedfce307a -->
+<!-- agent: CODEX -->
+
+Review all changes for this branch
