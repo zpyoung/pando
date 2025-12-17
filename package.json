@@ -56,6 +56,9 @@
     "commands": "./dist/src/commands",
     "topicSeparator": " ",
     "topics": {
+      "branch": {
+        "description": "Manage branch backups and restoration"
+      },
       "config": {
         "description": "Manage pando configuration"
       }

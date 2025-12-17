@@ -196,6 +196,83 @@ pando symlink .env --json
 - **IDE settings** (`.vscode/settings.json`): Share editor configuration
 - **Build cache directories**: Avoid duplicate downloads/compilation
 
+### `pando branch backup`
+
+Create a timestamped backup of a branch. Backup branches are named `backup/<sourceBranch>/<timestamp>` where timestamp is UTC YYYYMMDD-HHmmss format.
+
+**Flags:**
+
+- `-b, --branch`: Source branch to backup (default: current branch)
+- `-m, --message`: Optional message to store with the backup
+- `-j, --json`: Output in JSON format
+
+**Examples:**
+
+```bash
+# Backup the current branch
+pando branch backup
+
+# Backup with a descriptive message
+pando branch backup -m "Before risky refactor"
+
+# Backup a specific branch
+pando branch backup --branch main
+
+# Backup with JSON output for scripts
+pando branch backup --branch feature/auth -m "Pre-merge backup" --json
+```
+
+**Use Cases:**
+
+- **Before rebasing**: Create a safety net before interactive rebase
+- **Before merging**: Snapshot a feature branch before merging to main
+- **Experimenting**: Save current state before trying something risky
+- **Checkpointing**: Regular backups during long-running work
+
+### `pando branch restore`
+
+Restore a branch to a previous backup state. Resets the target branch to match the commit of a selected backup branch.
+
+**Flags:**
+
+- `-b, --branch`: Target branch to restore (default: current branch)
+- `--backup`: Backup branch to restore from (interactive selection if omitted)
+- `-f, --force`: Skip confirmation prompt
+- `-d, --delete-backup`: Delete the backup branch after successful restore
+- `-j, --json`: Output in JSON format (requires `--backup`)
+
+**Safety Features:**
+
+- Checks for uncommitted changes before restoring current branch
+- Prevents restoring branches checked out in other worktrees
+- Shows commits that will become unreachable before confirmation
+- Requires explicit `--backup` flag with `--json` (no interactive mode)
+
+**Examples:**
+
+```bash
+# Interactive restore - select from available backups
+pando branch restore
+
+# Restore from a specific backup
+pando branch restore --backup backup/main/20250117-153045
+
+# Restore a specific branch with force (no confirmation)
+pando branch restore --branch main --backup backup/main/20250117-153045 --force
+
+# Restore and delete the backup afterward
+pando branch restore --backup backup/feature/20250117-100000 -f -d
+
+# JSON output for automation (requires explicit backup)
+pando branch restore --backup backup/feature/20250117-100000 --force --json
+```
+
+**Use Cases:**
+
+- **Undo a rebase**: Restore to pre-rebase state if conflicts are too complex
+- **Recover from mistakes**: Quickly get back to a known good state
+- **A/B testing approaches**: Restore and try a different implementation
+
 ## Configuration
 
 Pando supports flexible configuration through multiple sources with a clear priority hierarchy.

@@ -182,7 +182,8 @@ pnpm test:run
 pnpm test:e2e
 ```
 
-### [ ] Step: Wire CLI metadata + docs
+### [x] Step: Wire CLI metadata + docs
+<!-- chat-id: 1037aaac-beb1-413f-9a66-891cc0b652ad -->
 
 **Code changes**:
 - `package.json`: add `oclif.topics.branch` description (improves `--help` output)
