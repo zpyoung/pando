@@ -12,6 +12,7 @@ import CleanWorktree from '../../src/commands/clean.js'
 vi.mock('../../src/utils/git.js', () => {
   const mockGitHelper = {
     isRepository: vi.fn(),
+    getRepositoryRoot: vi.fn(),
     getStaleWorktrees: vi.fn(),
     fetchWithPrune: vi.fn(),
     removeWorktree: vi.fn(),
@@ -23,6 +24,21 @@ vi.mock('../../src/utils/git.js', () => {
     createGitHelper: vi.fn(() => mockGitHelper),
   }
 })
+
+// Mock the config loader
+vi.mock('../../src/config/loader.js', () => ({
+  loadConfig: vi.fn().mockResolvedValue({
+    rsync: { enabled: true, flags: [], exclude: [] },
+    symlink: { patterns: [], relative: true, beforeRsync: true },
+    worktree: {
+      rebaseOnAdd: true,
+      deleteBranchOnRemove: 'local',
+      useProjectSubfolder: false,
+      targetBranch: 'main',
+    },
+    clean: { fetch: false },
+  }),
+}))
 
 // Mock @inquirer/prompts
 vi.mock('@inquirer/prompts', () => ({
@@ -38,6 +54,7 @@ describe('clean', () => {
   function _getMockGitHelper() {
     return {
       isRepository: vi.fn(),
+      getRepositoryRoot: vi.fn(),
       getStaleWorktrees: vi.fn(),
       fetchWithPrune: vi.fn(),
       removeWorktree: vi.fn(),
@@ -72,6 +89,7 @@ describe('clean', () => {
   describe('nothing to clean', () => {
     it('should output nothing_to_clean when no stale worktrees', async () => {
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue([])
 
       command.argv = ['--json']
@@ -82,6 +100,7 @@ describe('clean', () => {
 
     it('should show friendly message in non-json mode', async () => {
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue([])
 
       command.argv = []
@@ -105,6 +124,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
 
       command.argv = ['--dry-run', '--json']
@@ -133,6 +153,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
       mockGitHelper.deleteBranch.mockResolvedValue(undefined)
@@ -158,6 +179,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
       mockGitHelper.deleteBranch.mockResolvedValue(undefined)
@@ -184,6 +206,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
 
@@ -209,6 +232,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
       mockGitHelper.deleteBranch.mockResolvedValue(undefined)
@@ -242,6 +266,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
       mockGitHelper.removeWorktree.mockRejectedValue(new Error('Cannot remove worktree'))
 
@@ -255,6 +280,7 @@ describe('clean', () => {
   describe('fetch flag', () => {
     it('should run git fetch --prune with --fetch', async () => {
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.fetchWithPrune.mockResolvedValue(undefined)
       mockGitHelper.getStaleWorktrees.mockResolvedValue([])
 
@@ -266,6 +292,7 @@ describe('clean', () => {
 
     it('should continue on fetch failure', async () => {
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.fetchWithPrune.mockRejectedValue(new Error('Network error'))
       mockGitHelper.getStaleWorktrees.mockResolvedValue([])
 
@@ -280,6 +307,7 @@ describe('clean', () => {
   describe('target-branch flag', () => {
     it('should pass target branch to getStaleWorktrees', async () => {
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue([])
 
       command.argv = ['--target-branch', 'develop', '--json']
@@ -322,6 +350,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
       mockGitHelper.deleteBranch.mockResolvedValue(undefined)
@@ -347,6 +376,7 @@ describe('clean', () => {
       ]
 
       mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/test/repo')
       mockGitHelper.getStaleWorktrees.mockResolvedValue(staleWorktrees)
       mockGitHelper.removeWorktree.mockResolvedValue(undefined)
       mockGitHelper.deleteBranch.mockResolvedValue(undefined)

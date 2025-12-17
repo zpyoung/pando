@@ -62,6 +62,7 @@ export const WorktreeConfigSchema = z.object({
   rebaseOnAdd: z.boolean().default(true),
   deleteBranchOnRemove: DeleteBranchOptionSchema.default('local'),
   useProjectSubfolder: z.boolean().default(false),
+  targetBranch: z.string().default('main'),
 })
 
 /**
@@ -72,6 +73,21 @@ export const WorktreeConfigSchemaPartial = z.object({
   rebaseOnAdd: z.boolean().optional(),
   deleteBranchOnRemove: DeleteBranchOptionSchema.optional(),
   useProjectSubfolder: z.boolean().optional(),
+  targetBranch: z.string().optional(),
+})
+
+/**
+ * Clean configuration schema
+ */
+export const CleanConfigSchema = z.object({
+  fetch: z.boolean().default(false),
+})
+
+/**
+ * Clean configuration schema without defaults (for partial config validation)
+ */
+export const CleanConfigSchemaPartial = z.object({
+  fetch: z.boolean().optional(),
 })
 
 /**
@@ -81,6 +97,7 @@ export const PandoConfigSchema = z.object({
   rsync: RsyncConfigSchema,
   symlink: SymlinkConfigSchema,
   worktree: WorktreeConfigSchema,
+  clean: CleanConfigSchema,
 })
 
 /**
@@ -90,6 +107,7 @@ export const PartialPandoConfigSchema = z.object({
   rsync: RsyncConfigSchemaPartial.optional(),
   symlink: SymlinkConfigSchemaPartial.optional(),
   worktree: WorktreeConfigSchemaPartial.optional(),
+  clean: CleanConfigSchemaPartial.optional(),
 })
 
 // ============================================================================
@@ -187,6 +205,25 @@ export interface WorktreeConfig {
    *          false -> ../worktrees/feature
    */
   useProjectSubfolder?: boolean
+
+  /**
+   * Target branch for merge checks (used by clean command)
+   * @default 'main'
+   */
+  targetBranch?: string
+}
+
+/**
+ * Clean configuration options
+ *
+ * Controls behavior of the clean command
+ */
+export interface CleanConfig {
+  /**
+   * Run git fetch --prune before detection
+   * @default false
+   */
+  fetch: boolean
 }
 
 /**
@@ -196,6 +233,7 @@ export interface PandoConfig {
   rsync: RsyncConfig
   symlink: SymlinkConfig
   worktree: WorktreeConfig
+  clean: CleanConfig
 }
 
 /**
@@ -205,6 +243,7 @@ export type PartialPandoConfig = {
   rsync?: Partial<RsyncConfig>
   symlink?: Partial<SymlinkConfig>
   worktree?: Partial<WorktreeConfig>
+  clean?: Partial<CleanConfig>
 }
 
 // ============================================================================
@@ -273,6 +312,10 @@ export const DEFAULT_CONFIG: PandoConfig = {
     rebaseOnAdd: true,
     deleteBranchOnRemove: 'local',
     useProjectSubfolder: false,
+    targetBranch: 'main',
+  },
+  clean: {
+    fetch: false,
   },
 }
 
@@ -335,6 +378,18 @@ export function isSymlinkConfig(value: unknown): value is SymlinkConfig {
 export function isWorktreeConfig(value: unknown): value is WorktreeConfig {
   try {
     WorktreeConfigSchema.parse(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Check if value is a valid CleanConfig
+ */
+export function isCleanConfig(value: unknown): value is CleanConfig {
+  try {
+    CleanConfigSchema.parse(value)
     return true
   } catch {
     return false

@@ -3,6 +3,7 @@ import { createGitHelper, type StaleWorktreeInfo, type GitHelper } from '../util
 import { jsonFlag, forceFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
 import { checkbox, confirm } from '@inquirer/prompts'
+import { loadConfig } from '../config/loader.js'
 
 /**
  * Result interfaces for JSON output
@@ -290,8 +291,19 @@ export default class CleanWorktree extends Command {
         return
       }
 
-      // 2. Optionally fetch with prune
-      if (flags.fetch) {
+      // 2. Load config
+      const gitRoot = await gitHelper.getRepositoryRoot()
+      const config = await loadConfig({ gitRoot })
+
+      // Apply config with flag precedence (flag > config > default)
+      const shouldFetch = flags.fetch || config.clean.fetch
+      const targetBranch = flags['target-branch'] || config.worktree.targetBranch
+      // Reuse worktree.deleteBranchOnRemove for branch deletion behavior
+      // --keep-branch flag overrides config (deleteBranchOnRemove='none' is equivalent to keepBranch=true)
+      const keepBranch = flags['keep-branch'] || config.worktree.deleteBranchOnRemove === 'none'
+
+      // 3. Optionally fetch with prune
+      if (shouldFetch) {
         try {
           if (!flags.json) {
             const chalk = (await import('chalk')).default
@@ -308,10 +320,10 @@ export default class CleanWorktree extends Command {
         }
       }
 
-      // 3. Detect stale worktrees
-      const staleWorktrees = await gitHelper.getStaleWorktrees(flags['target-branch'])
+      // 4. Detect stale worktrees
+      const staleWorktrees = await gitHelper.getStaleWorktrees(targetBranch)
 
-      // 4. Handle "nothing to clean" case
+      // 5. Handle "nothing to clean" case
       if (staleWorktrees.length === 0) {
         if (flags.json) {
           const result: CleanResult = {
@@ -329,13 +341,13 @@ export default class CleanWorktree extends Command {
         return
       }
 
-      // 5. Dry run - just show what would be removed
+      // 6. Dry run - just show what would be removed
       if (flags['dry-run']) {
         await this.outputDryRun(staleWorktrees, flags.json ?? false)
         return
       }
 
-      // 6. Interactive or force selection
+      // 7. Interactive or force selection
       let selectedPaths: string[]
       if (flags.force || flags.json) {
         // Force/JSON mode: clean all stale worktrees
@@ -363,11 +375,15 @@ export default class CleanWorktree extends Command {
         }
       }
 
-      // 7. Execute cleanup
+      // 8. Execute cleanup
       const selectedWorktrees = staleWorktrees.filter((wt) => selectedPaths.includes(wt.path))
-      const result = await this.executeCleanup(gitHelper, selectedWorktrees, flags)
+      const result = await this.executeCleanup(gitHelper, selectedWorktrees, {
+        force: flags.force,
+        'keep-branch': keepBranch,
+        json: flags.json,
+      })
 
-      // 8. Output results
+      // 9. Output results
       await this.outputResults(result, flags.json ?? false)
     } catch (error) {
       if (flags.json) {
