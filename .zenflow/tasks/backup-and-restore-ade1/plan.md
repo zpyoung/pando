@@ -55,7 +55,8 @@ Save to `{@artifacts_path}/plan.md`.
 
 ## Implementation Plan
 
-### [ ] Step: Extend GitHelper for backups
+### [x] Step: Extend GitHelper for backups
+<!-- chat-id: 6a6acfad-c618-478b-b2b7-73903073cacd -->
 
 **Goal**: Add the Git primitives and data models required by `branch backup` and `branch restore`.
 

@@ -22,6 +22,22 @@ export interface BranchInfo {
   label: string
 }
 
+/**
+ * Information about a backup branch created by `pando branch backup`
+ */
+export interface BackupBranchInfo {
+  /** Full backup branch name (e.g., backup/feature/20250117-153045) */
+  name: string
+  /** The source branch this backup was created from */
+  sourceBranch: string
+  /** Commit SHA the backup points to */
+  commit: string
+  /** UTC timestamp string (ISO format) */
+  timestamp: string
+  /** Optional user-provided message stored in branch description */
+  message?: string
+}
+
 export class GitHelper {
   private git: SimpleGit
 
@@ -413,6 +429,175 @@ export class GitHelper {
     } catch {
       return null
     }
+  }
+
+  /**
+   * Get the commit hash for a given ref (branch, tag, or commit)
+   *
+   * @param ref - Git reference (branch name, tag, or commit SHA)
+   * @returns Full commit SHA
+   */
+  async getCommitHash(ref: string): Promise<string> {
+    try {
+      const output = await this.git.raw(['rev-parse', ref])
+      return output.trim()
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Unable to resolve ref '${ref}': ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Force update a branch to point to a specific commit
+   *
+   * @param branch - Name of the branch to update
+   * @param commit - Commit SHA to point the branch to
+   */
+  async forceUpdateBranch(branch: string, commit: string): Promise<void> {
+    try {
+      await this.git.raw(['branch', '-f', branch, commit])
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to update branch '${branch}': ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Reset the current HEAD to a specific commit (hard reset)
+   *
+   * @param commit - Commit SHA to reset to
+   */
+  async resetHard(commit: string): Promise<void> {
+    try {
+      await this.git.raw(['reset', '--hard', commit])
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to reset to '${commit}': ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Set a description for a branch
+   *
+   * @param branch - Name of the branch
+   * @param description - Description text to store
+   */
+  async setBranchDescription(branch: string, description: string): Promise<void> {
+    try {
+      await this.git.raw(['config', `branch.${branch}.description`, description])
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to set description for branch '${branch}': ${errorMessage}`)
+    }
+  }
+
+  /**
+   * Get the description for a branch
+   *
+   * @param branch - Name of the branch
+   * @returns Description text or null if not set
+   */
+  async getBranchDescription(branch: string): Promise<string | null> {
+    try {
+      const output = await this.git.raw(['config', '--get', `branch.${branch}.description`])
+      return output.trim() || null
+    } catch {
+      // Config key not set
+      return null
+    }
+  }
+
+  /**
+   * List all backup branches for a given source branch
+   *
+   * Backup branches follow the naming convention: backup/<sourceBranch>/<timestamp>
+   *
+   * @param sourceBranch - Name of the source branch to find backups for
+   * @returns Array of backup branch info, sorted by timestamp (newest first)
+   */
+  async listBackupBranches(sourceBranch: string): Promise<BackupBranchInfo[]> {
+    const prefix = `backup/${sourceBranch}/`
+
+    try {
+      // Use for-each-ref to get branches and their commits efficiently
+      const output = await this.git.raw([
+        'for-each-ref',
+        '--format=%(refname:short)%00%(objectname)',
+        `refs/heads/${prefix}*`,
+      ])
+
+      if (!output.trim()) {
+        return []
+      }
+
+      const lines = output.trim().split('\n')
+      const backups: BackupBranchInfo[] = []
+
+      for (const line of lines) {
+        const [name, commit] = line.split('\x00')
+        if (!name || !commit) continue
+
+        // Extract timestamp from branch name
+        const timestampStr = name.slice(prefix.length)
+        const timestamp = this.parseBackupTimestamp(timestampStr)
+
+        if (!timestamp) continue
+
+        // Fetch optional message
+        const message = await this.getBranchDescription(name)
+
+        backups.push({
+          name,
+          sourceBranch,
+          commit,
+          timestamp,
+          message: message ?? undefined,
+        })
+      }
+
+      // Sort by timestamp, newest first
+      backups.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+
+      return backups
+    } catch {
+      // No backup branches found or other error
+      return []
+    }
+  }
+
+  /**
+   * Parse a backup timestamp string (YYYYMMDD-HHmmss) to ISO format
+   *
+   * @param timestampStr - Timestamp in format YYYYMMDD-HHmmss
+   * @returns ISO timestamp string or null if invalid
+   */
+  private parseBackupTimestamp(timestampStr: string): string | null {
+    // Expected format: YYYYMMDD-HHmmss
+    const match = timestampStr.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/)
+    if (!match) return null
+
+    const [, year, month, day, hour, minute, second] = match
+    const isoStr = `${year}-${month}-${day}T${hour}:${minute}:${second}Z`
+
+    // Validate it's a real date
+    const date = new Date(isoStr)
+    if (isNaN(date.getTime())) return null
+
+    return isoStr
+  }
+
+  /**
+   * Find a worktree by exact branch name match only
+   *
+   * Unlike findWorktreeByBranch, this does NOT do fuzzy matching,
+   * which is important for safety checks during restore operations.
+   *
+   * @param branchName - Exact branch name to find
+   * @returns WorktreeInfo if found, null otherwise
+   */
+  async findWorktreeByBranchExact(branchName: string): Promise<WorktreeInfo | null> {
+    const worktrees = await this.listWorktrees()
+    return worktrees.find((w) => w.branch === branchName) ?? null
   }
 
   /**
