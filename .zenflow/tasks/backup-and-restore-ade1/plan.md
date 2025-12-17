@@ -194,7 +194,8 @@ pnpm test:e2e
 pnpm dev --help
 ```
 
-### [ ] Step: Final validation
+### [x] Step: Final validation
+<!-- chat-id: 58a749c1-de6a-4089-b8c9-3486c6a63347 -->
 
 Run the standard project checks and record results here.
 
@@ -205,3 +206,12 @@ pnpm typecheck
 pnpm test:run
 pnpm test:e2e
 ```
+
+**Results (2025-12-17)**:
+| Check | Status |
+|-------|--------|
+| `pnpm format` | ✓ All files unchanged |
+| `pnpm lint` | ✓ No errors |
+| `pnpm typecheck` | ✓ No type errors |
+| `pnpm test:run` | ✓ 457 unit tests passed |
+| `pnpm test:e2e` | ✓ 104 E2E tests passed |
