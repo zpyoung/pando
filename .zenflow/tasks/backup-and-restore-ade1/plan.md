@@ -94,7 +94,8 @@ Save to `{@artifacts_path}/plan.md`.
 pnpm test:run test/utils/git.test.ts
 ```
 
-### [ ] Step: Implement `pando branch backup`
+### [x] Step: Implement `pando branch backup`
+<!-- chat-id: 16fdb837-f5a4-4b49-90bb-c2bc29f121f6 -->
 
 **Goal**: Create a timestamped backup branch for the current/specified branch.
 
@@ -121,7 +122,8 @@ pnpm dev branch backup --help
 pnpm test:run
 ```
 
-### [ ] Step: Implement `pando branch restore`
+### [x] Step: Implement `pando branch restore`
+<!-- chat-id: 94b88264-f23e-4fe8-9377-fde10455de3a -->
 
 **Goal**: Reset a target branch to match a selected backup branch.
 

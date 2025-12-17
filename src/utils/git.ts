@@ -627,6 +627,23 @@ export class GitHelper {
       return { success: false, error: errorMsg, filesMarked: 0 }
     }
   }
+
+  /**
+   * Count commits between two refs using rev-list
+   *
+   * @param from - Starting ref (exclusive)
+   * @param to - Ending ref (inclusive, defaults to HEAD)
+   * @returns Number of commits from..to, or null if unable to count
+   */
+  async countCommitsBetween(from: string, to: string = 'HEAD'): Promise<number | null> {
+    try {
+      const output = await this.git.raw(['rev-list', '--count', `${from}..${to}`])
+      const count = parseInt(output.trim(), 10)
+      return isNaN(count) ? null : count
+    } catch {
+      return null
+    }
+  }
 }
 
 /**
