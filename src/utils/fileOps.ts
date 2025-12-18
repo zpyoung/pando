@@ -693,8 +693,13 @@ export class RsyncHelper {
 
   /**
    * Parse rsync statistics from output
+   *
+   * Supports multiple rsync implementations:
+   * - rsync 3.x (GNU rsync): "Number of created files:", "Total file size: N bytes"
+   * - openrsync (macOS): "Number of files transferred:", "Total file size: N B"
+   * - rsync 2.x: Various formats
    */
-  private parseRsyncStats(output: string, duration: number): RsyncResult {
+  parseRsyncStats(output: string, duration: number): RsyncResult {
     const result: RsyncResult = {
       success: true,
       filesTransferred: 0,
@@ -704,19 +709,27 @@ export class RsyncHelper {
     }
 
     // Parse statistics from rsync output
-    // Example output:
-    // Number of files: 123 (reg: 100, dir: 23)
-    // Number of created files: 50
-    // Total file size: 1,234,567 bytes
-    // Total transferred file size: 1,000,000 bytes
-    // sent 1,234,567 bytes  received 890 bytes  2,470,914.00 bytes/sec
+    // Supports multiple rsync implementations:
+    // - rsync 3.x (GNU): "Number of created files:", "Total file size: N bytes"
+    // - openrsync (macOS): "Number of files transferred:", "Total file size: N B"
+    // - rsync 2.x/older: Various formats
 
-    // Capture the number after "Number of created files:" in both rsync 3.x output
-    // (e.g., "Number of created files: 1 (reg: 1)") and older formats ("Number of created files: 1").
-    // Only the first number is captured; any parenthetical part is ignored.
-    const filesMatch = output.match(/Number of created files:\s*([\d,]+)/)
-    if (filesMatch && filesMatch[1]) {
-      result.filesTransferred = parseInt(filesMatch[1].replace(/,/g, ''), 10)
+    // Parse file count with priority order:
+    // 1. "Number of created files:" (rsync 3.x)
+    // 2. "Number of regular files transferred:" (some rsync versions)
+    // 3. "Number of files transferred:" (openrsync/older rsync)
+    const createdFilesMatch = output.match(/Number of created files:\s*([\d,]+)/)
+    const regularFilesTransferredMatch = output.match(
+      /Number of regular files transferred:\s*([\d,]+)/
+    )
+    const filesTransferredMatch = output.match(/Number of files transferred:\s*([\d,]+)/)
+
+    if (createdFilesMatch && createdFilesMatch[1]) {
+      result.filesTransferred = parseInt(createdFilesMatch[1].replace(/,/g, ''), 10)
+    } else if (regularFilesTransferredMatch && regularFilesTransferredMatch[1]) {
+      result.filesTransferred = parseInt(regularFilesTransferredMatch[1].replace(/,/g, ''), 10)
+    } else if (filesTransferredMatch && filesTransferredMatch[1]) {
+      result.filesTransferred = parseInt(filesTransferredMatch[1].replace(/,/g, ''), 10)
     }
 
     const sentMatch = output.match(/sent ([\d,]+) bytes/)
@@ -724,11 +737,20 @@ export class RsyncHelper {
       result.bytesSent = parseInt(sentMatch[1].replace(/,/g, ''), 10)
     }
 
-    // Handle rsync 3.x output format with or without commas
-    // "Total file size: 2,097,152 bytes" or "Total file size: 13 bytes"
-    const totalSizeMatch = output.match(/Total file size:\s*([\d,]+)\s*bytes/)
+    // Parse total size with support for multiple formats:
+    // - "Total file size: N bytes" (rsync 3.x)
+    // - "Total file size: N B" (openrsync)
+    // - "Total transferred file size: N bytes/B" (fallback)
+    // Supports both "bytes" and "B" suffixes
+    const totalSizeMatch = output.match(/Total file size:\s*([\d,]+)\s*(?:bytes|B)\b/)
+    const transferredSizeMatch = output.match(
+      /Total transferred file size:\s*([\d,]+)\s*(?:bytes|B)\b/
+    )
+
     if (totalSizeMatch && totalSizeMatch[1]) {
       result.totalSize = parseInt(totalSizeMatch[1].replace(/,/g, ''), 10)
+    } else if (transferredSizeMatch && transferredSizeMatch[1]) {
+      result.totalSize = parseInt(transferredSizeMatch[1].replace(/,/g, ''), 10)
     }
 
     return result

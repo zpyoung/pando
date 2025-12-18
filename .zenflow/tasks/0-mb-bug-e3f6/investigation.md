@@ -65,3 +65,36 @@ Those zeros then propagate to the display in `src/commands/add.ts`.
 - If no files transfer, expected values remain `0 files (0.00 MB)`.
 - Parsing should tolerate commas in numbers and stray `\r` characters from progress output.
 
+## Implementation notes
+
+### Changes made
+
+**`src/utils/fileOps.ts`** - Updated `parseRsyncStats()` method:
+
+1. **File count parsing** - Now supports multiple formats with priority order:
+   - `Number of created files:` (rsync 3.x) - highest priority
+   - `Number of regular files transferred:` (some rsync versions)
+   - `Number of files transferred:` (openrsync/older rsync)
+
+2. **Size parsing** - Now supports multiple formats:
+   - `Total file size: N bytes` (rsync 3.x)
+   - `Total file size: N B` (openrsync)
+   - `Total transferred file size: N bytes/B` (fallback)
+   - Uses `(?:bytes|B)\b` pattern to match either suffix
+
+3. **Method visibility** - Changed from `private` to public to enable direct unit testing
+
+**`test/utils/fileOps.test.ts`** - Added 8 regression tests:
+- rsync 3.x output parsing (GNU rsync)
+- openrsync output parsing (macOS)
+- Numbers with commas
+- Unrecognized output format (returns zeros)
+- Transferred file size fallback
+- Priority of "created files" over "files transferred"
+- Fallback to "regular files transferred"
+- Size with B suffix (openrsync format)
+
+### Test results
+- All 76 fileOps tests pass
+- All 447 unit tests pass across the entire codebase
+- No regressions introduced
