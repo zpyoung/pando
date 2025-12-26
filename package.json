@@ -5,6 +5,14 @@
   "description": "A TypeScript-based CLI for managing Git worktrees with automation-first design",
   "author": "zpyoung <zach@fabledfreedom.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zpyoung/pando.git"
+  },
+  "homepage": "https://github.com/zpyoung/pando#readme",
+  "bugs": {
+    "url": "https://github.com/zpyoung/pando/issues"
+  },
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "bin": {
@@ -34,6 +42,7 @@
     "ci": "pnpm run format:check && pnpm run lint && pnpm run test:run",
     "postpack": "rm -f oclif.manifest.json",
     "prepack": "pnpm build && oclif manifest",
+    "prepublishOnly": "pnpm validate",
     "prepare": "husky",
     "ai:context": "npx tsx scripts/ai-context.ts",
     "ai:validate": "npx tsx scripts/validate-docs.ts",
