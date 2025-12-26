@@ -24,13 +24,13 @@ brew install pando
 ### Using pnpm
 
 ```bash
-pnpm install -g pando
+pnpm install -g @zpyoung/pando
 ```
 
 ### Using npm
 
 ```bash
-npm install -g pando
+npm install -g @zpyoung/pando
 ```
 
 ### From source
