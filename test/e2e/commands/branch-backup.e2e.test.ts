@@ -1,13 +1,41 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { createE2EContainer, type E2EContainer } from '../helpers/container.js'
 import { setupGitRepo } from '../helpers/git-repo.js'
-import { pandoBranchBackup, pandoBranchBackupHuman } from '../helpers/cli-runner.js'
+import { pandoBranchBackup, pandoBranchBackupHuman, runPando } from '../helpers/cli-runner.js'
 import {
   expectSuccess,
   expectJsonSuccess,
   expectSuccessMessage,
   expectJsonError,
 } from '../helpers/assertions.js'
+
+// Helper for backup clear with JSON output
+function pandoBranchBackupClear(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): ReturnType<typeof runPando> {
+  return runPando(container, {
+    command: 'branch backup',
+    args: ['--clear', ...args],
+    cwd,
+    json: true,
+  })
+}
+
+// Helper for backup clear with human-readable output
+function pandoBranchBackupClearHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): ReturnType<typeof runPando> {
+  return runPando(container, {
+    command: 'branch backup',
+    args: ['--clear', ...args],
+    cwd,
+    json: false,
+  })
+}
 
 describe('pando branch backup (E2E)', () => {
   let container: E2EContainer
@@ -233,6 +261,125 @@ describe('pando branch backup (E2E)', () => {
       ])
       expect(listResult.stdout).toContain(backup1Name.replace('backup/', ''))
       expect(listResult.stdout).toContain(backup2Name.replace('backup/', ''))
+    })
+  })
+
+  describe('backup clear (--clear)', () => {
+    it('should fail when no backups exist', async () => {
+      const result = await pandoBranchBackupClear(container, repoPath, ['--all'])
+
+      expectJsonError(result, 'no backups found')
+    })
+
+    it('should delete all backups with --all flag', async () => {
+      // Create multiple backups
+      const backup1 = await pandoBranchBackup(container, repoPath, [])
+      expectJsonSuccess(backup1)
+
+      await new Promise((resolve) => setTimeout(resolve, 1100))
+
+      const backup2 = await pandoBranchBackup(container, repoPath, [])
+      expectJsonSuccess(backup2)
+
+      // Clear all backups
+      const clearResult = await pandoBranchBackupClear(container, repoPath, ['--all'])
+
+      expectJsonSuccess(clearResult)
+      expect(clearResult.json?.clear).toBeDefined()
+
+      const clear = clearResult.json?.clear as {
+        sourceBranch: string
+        totalBackups: number
+        deletedCount: number
+        failedCount: number
+        deleted: Array<{ name: string; deleted: boolean }>
+      }
+
+      expect(clear.sourceBranch).toBe('main')
+      expect(clear.totalBackups).toBe(2)
+      expect(clear.deletedCount).toBe(2)
+      expect(clear.failedCount).toBe(0)
+
+      // Verify backups no longer exist
+      const branchCheck = await container.exec([
+        'sh',
+        '-c',
+        `cd ${repoPath} && git branch --list 'backup/main/*'`,
+      ])
+      expect(branchCheck.stdout.trim()).toBe('')
+    })
+
+    it('should delete specific backup with --target flag', async () => {
+      // Create two backups
+      const backup1 = await pandoBranchBackup(container, repoPath, [])
+      expectJsonSuccess(backup1)
+      const backup1Name = (backup1.json?.backup as { name: string }).name
+
+      await new Promise((resolve) => setTimeout(resolve, 1100))
+
+      const backup2 = await pandoBranchBackup(container, repoPath, [])
+      expectJsonSuccess(backup2)
+      const backup2Name = (backup2.json?.backup as { name: string }).name
+
+      // Delete only the first backup
+      const clearResult = await pandoBranchBackupClear(container, repoPath, [
+        '--target',
+        backup1Name,
+      ])
+
+      expectJsonSuccess(clearResult)
+      const clear = clearResult.json?.clear as {
+        deletedCount: number
+        deleted: Array<{ name: string; deleted: boolean }>
+      }
+
+      expect(clear.deletedCount).toBe(1)
+      expect(clear.deleted[0].name).toBe(backup1Name)
+
+      // Verify first backup is gone, second still exists
+      const branchCheck = await container.exec([
+        'sh',
+        '-c',
+        `cd ${repoPath} && git branch --list 'backup/main/*'`,
+      ])
+      expect(branchCheck.stdout).not.toContain(backup1Name.split('/').pop())
+      expect(branchCheck.stdout).toContain(backup2Name.split('/').pop())
+    })
+
+    it('should fail in JSON mode without --target or --all', async () => {
+      // Create a backup first
+      await pandoBranchBackup(container, repoPath, [])
+
+      // Try to clear without required flags
+      const result = await pandoBranchBackupClear(container, repoPath, [])
+
+      expectJsonError(result, 'requires either --target')
+    })
+
+    it('should fail when target backup does not exist', async () => {
+      // Create a backup first
+      await pandoBranchBackup(container, repoPath, [])
+
+      // Try to delete non-existent backup
+      const result = await pandoBranchBackupClear(container, repoPath, [
+        '--target',
+        'backup/main/99999999-999999',
+      ])
+
+      expectJsonError(result, 'not found')
+    })
+
+    it('should show success message in human-readable output', async () => {
+      // Create a backup
+      const backup = await pandoBranchBackup(container, repoPath, [])
+      expectJsonSuccess(backup)
+
+      // Clear with human-readable output
+      const result = await pandoBranchBackupClearHuman(container, repoPath, ['--all', '--force'])
+
+      expectSuccess(result)
+      expect(result.stdout).toContain('Deleted')
+      expect(result.stdout).toContain('main')
     })
   })
 })

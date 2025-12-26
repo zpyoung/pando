@@ -518,6 +518,19 @@ export class GitHelper {
   }
 
   /**
+   * Delete the description for a branch from git config
+   *
+   * @param branch - Name of the branch
+   */
+  async deleteBranchDescription(branch: string): Promise<void> {
+    try {
+      await this.git.raw(['config', '--unset', `branch.${branch}.description`])
+    } catch {
+      // Config key not set - ignore
+    }
+  }
+
+  /**
    * List all backup branches for a given source branch
    *
    * Backup branches follow the naming convention: backup/<sourceBranch>/<timestamp>
