@@ -1,5 +1,5 @@
 {
-  "name": "@zpyoung/pando",
+  "name": "@zyoung-ff/pando",
   "version": "0.1.0",
   "type": "module",
   "description": "A TypeScript-based CLI for managing Git worktrees with automation-first design",

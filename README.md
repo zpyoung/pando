@@ -1,5 +1,9 @@
 # Pando
 
+[![npm version](https://img.shields.io/npm/v/@zyoung-ff/pando.svg)](https://www.npmjs.com/package/@zyoung-ff/pando)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/node/v/@zyoung-ff/pando.svg)](https://nodejs.org/)
+
 > A TypeScript-based CLI for managing Git worktrees with automation-first design
 
 Pando makes it effortless to work on multiple branches simultaneously using Git worktrees. Built for modern developer workflows, it provides both human-friendly commands and machine-readable output for CI/CD automation.
@@ -24,13 +28,13 @@ brew install pando
 ### Using pnpm
 
 ```bash
-pnpm install -g @zpyoung/pando
+pnpm install -g @zyoung-ff/pando
 ```
 
 ### Using npm
 
 ```bash
-npm install -g @zpyoung/pando
+npm install -g @zyoung-ff/pando
 ```
 
 ### From source
