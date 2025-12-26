@@ -582,6 +582,193 @@ branch refs/heads/main
     })
   })
 
+  describe('getCommitHash', () => {
+    it('should return commit hash for a valid ref', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('abc123def456789\n')
+
+      const result = await gitHelper.getCommitHash('main')
+
+      expect(result).toBe('abc123def456789')
+      expect(mockGit.raw).toHaveBeenCalledWith(['rev-parse', 'main'])
+    })
+
+    it('should throw error for invalid ref', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('unknown revision'))
+
+      await expect(gitHelper.getCommitHash('nonexistent')).rejects.toThrow(
+        "Unable to resolve ref 'nonexistent'"
+      )
+    })
+  })
+
+  describe('forceUpdateBranch', () => {
+    it('should force update branch to commit', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('')
+
+      await gitHelper.forceUpdateBranch('feature', 'abc123')
+
+      expect(mockGit.raw).toHaveBeenCalledWith(['branch', '-f', 'feature', 'abc123'])
+    })
+
+    it('should throw error on failure', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('cannot update'))
+
+      await expect(gitHelper.forceUpdateBranch('feature', 'abc123')).rejects.toThrow(
+        "Failed to update branch 'feature'"
+      )
+    })
+  })
+
+  describe('resetHard', () => {
+    it('should reset to specified commit', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('')
+
+      await gitHelper.resetHard('abc123')
+
+      expect(mockGit.raw).toHaveBeenCalledWith(['reset', '--hard', 'abc123'])
+    })
+
+    it('should throw error on failure', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('bad revision'))
+
+      await expect(gitHelper.resetHard('invalid')).rejects.toThrow("Failed to reset to 'invalid'")
+    })
+  })
+
+  describe('setBranchDescription', () => {
+    it('should set branch description', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('')
+
+      await gitHelper.setBranchDescription('feature', 'My description')
+
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'config',
+        'branch.feature.description',
+        'My description',
+      ])
+    })
+
+    it('should throw error on failure', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('config error'))
+
+      await expect(gitHelper.setBranchDescription('feature', 'desc')).rejects.toThrow(
+        "Failed to set description for branch 'feature'"
+      )
+    })
+  })
+
+  describe('getBranchDescription', () => {
+    it('should get branch description', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('My backup description\n')
+
+      const result = await gitHelper.getBranchDescription('backup/feature/20250117-120000')
+
+      expect(result).toBe('My backup description')
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'config',
+        '--get',
+        'branch.backup/feature/20250117-120000.description',
+      ])
+    })
+
+    it('should return null if description not set', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('key not found'))
+
+      const result = await gitHelper.getBranchDescription('feature')
+
+      expect(result).toBeNull()
+    })
+
+    it('should return null for empty description', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('   \n')
+
+      const result = await gitHelper.getBranchDescription('feature')
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('listBackupBranches', () => {
+    it('should list backup branches for a source branch', async () => {
+      const mockOutput =
+        'backup/feature/20250117-120000\x00abc123\n' + 'backup/feature/20250116-100000\x00def456\n'
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(mockOutput) // for-each-ref
+        .mockRejectedValueOnce(new Error('no description')) // getBranchDescription first
+        .mockResolvedValueOnce('Before rebase\n') // getBranchDescription second
+
+      const result = await gitHelper.listBackupBranches('feature')
+
+      expect(result).toHaveLength(2)
+      // Should be sorted newest first
+      expect(result[0]).toEqual({
+        name: 'backup/feature/20250117-120000',
+        sourceBranch: 'feature',
+        commit: 'abc123',
+        timestamp: '2025-01-17T12:00:00Z',
+        message: undefined,
+      })
+      expect(result[1]).toEqual({
+        name: 'backup/feature/20250116-100000',
+        sourceBranch: 'feature',
+        commit: 'def456',
+        timestamp: '2025-01-16T10:00:00Z',
+        message: 'Before rebase',
+      })
+    })
+
+    it('should return empty array if no backups found', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('')
+
+      const result = await gitHelper.listBackupBranches('feature')
+
+      expect(result).toEqual([])
+    })
+
+    it('should return empty array on error', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('git error'))
+
+      const result = await gitHelper.listBackupBranches('feature')
+
+      expect(result).toEqual([])
+    })
+
+    it('should skip branches with invalid timestamp format', async () => {
+      const mockOutput =
+        'backup/feature/invalid-timestamp\x00abc123\n' +
+        'backup/feature/20250117-120000\x00def456\n'
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(mockOutput)
+        .mockRejectedValueOnce(new Error('no description'))
+
+      const result = await gitHelper.listBackupBranches('feature')
+
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('backup/feature/20250117-120000')
+    })
+
+    it('should handle nested source branches', async () => {
+      const mockOutput = 'backup/feature/auth/20250117-120000\x00abc123\n'
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(mockOutput)
+        .mockRejectedValueOnce(new Error('no description'))
+
+      const result = await gitHelper.listBackupBranches('feature/auth')
+
+      expect(result).toHaveLength(1)
+      expect(result[0]).toEqual({
+        name: 'backup/feature/auth/20250117-120000',
+        sourceBranch: 'feature/auth',
+        commit: 'abc123',
+        timestamp: '2025-01-17T12:00:00Z',
+        message: undefined,
+      })
+    })
+  })
+
   describe('fetchWithPrune', () => {
     it('should fetch with prune from default remote', async () => {
       mockGit.fetch = vi.fn().mockResolvedValue({})
@@ -717,9 +904,156 @@ main
     })
   })
 
+  describe('findWorktreeByBranchExact', () => {
+    it('should find worktree by exact branch name', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456
+branch refs/heads/feature-auth
+`)
+
+      const result = await gitHelper.findWorktreeByBranchExact('feature-auth')
+
+      expect(result).toEqual({
+        path: '/path/to/feature',
+        branch: 'feature-auth',
+        commit: 'def456',
+        isPrunable: false,
+      })
+    })
+
+    it('should return null for partial match (unlike fuzzy method)', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(`worktree /path/to/feature
+HEAD def456
+branch refs/heads/feature-authentication
+`)
+
+      // findWorktreeByBranch would find this with "auth"
+      // findWorktreeByBranchExact should NOT
+      const result = await gitHelper.findWorktreeByBranchExact('auth')
+
+      expect(result).toBeNull()
+    })
+
+    it('should return null if branch not found', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+`)
+
+      const result = await gitHelper.findWorktreeByBranchExact('nonexistent')
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('getCommitLogBetween', () => {
+    it('should return commits between two refs', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('3\n') // rev-list --count
+        .mockResolvedValueOnce(
+          'abc1234 First commit\ndef5678 Second commit\nghi9012 Third commit\n'
+        )
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result).toEqual({
+        commits: [
+          { hash: 'abc1234', message: 'First commit' },
+          { hash: 'def5678', message: 'Second commit' },
+          { hash: 'ghi9012', message: 'Third commit' },
+        ],
+        totalCount: 3,
+      })
+      expect(mockGit.raw).toHaveBeenCalledWith(['rev-list', '--count', 'main..feature', '--'])
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'log',
+        'main..feature',
+        '--format=%h %s',
+        '-n',
+        '10',
+        '--',
+      ])
+    })
+
+    it('should return empty array when no commits between refs', async () => {
+      mockGit.raw = vi.fn().mockResolvedValueOnce('0\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'main')
+
+      expect(result).toEqual({ commits: [], totalCount: 0 })
+    })
+
+    it('should respect limit parameter', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('5\n')
+        .mockResolvedValueOnce('abc1234 Commit 1\ndef5678 Commit 2\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature', 2)
+
+      expect(result).toEqual({
+        commits: [
+          { hash: 'abc1234', message: 'Commit 1' },
+          { hash: 'def5678', message: 'Commit 2' },
+        ],
+        totalCount: 5,
+      })
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'log',
+        'main..feature',
+        '--format=%h %s',
+        '-n',
+        '2',
+        '--',
+      ])
+    })
+
+    it('should handle commits with no message', async () => {
+      mockGit.raw = vi.fn().mockResolvedValueOnce('1\n').mockResolvedValueOnce('abc1234\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result?.commits[0]).toEqual({ hash: 'abc1234', message: '' })
+    })
+
+    it('should handle commit messages with spaces', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('1\n')
+        .mockResolvedValueOnce('abc1234 Fix bug in user authentication module\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result?.commits[0]).toEqual({
+        hash: 'abc1234',
+        message: 'Fix bug in user authentication module',
+      })
+    })
+
+    it('should return null on git error', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('git error'))
+
+      const result = await gitHelper.getCommitLogBetween('invalid', 'refs')
+
+      expect(result).toBeNull()
+    })
+
+    it('should handle empty log output after count', async () => {
+      mockGit.raw = vi.fn().mockResolvedValueOnce('2\n').mockResolvedValueOnce('')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result).toEqual({ commits: [], totalCount: 2 })
+    })
+  })
+
   describe('getStaleWorktrees', () => {
     it('should detect merged worktrees', async () => {
-      // Mock listWorktrees
       mockGit.raw = vi
         .fn()
         .mockResolvedValueOnce(

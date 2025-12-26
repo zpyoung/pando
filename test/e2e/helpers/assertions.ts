@@ -33,13 +33,15 @@ export function expectJsonSuccess(result: PandoResult): void {
 
 export function expectJsonError(result: PandoResult, errorContains?: string): void {
   // Error could be in JSON or in stderr/stdout
-  const hasJsonError =
+  const hasJsonError = Boolean(
     result.json &&
     (result.json?.error ||
       result.json?.message ||
       result.json?.reason ||
-      result.json?.success === false)
-  const hasStderrError = result.stderr && result.stderr.length > 0
+      result.json?.success === false ||
+      result.json?.status === 'error')
+  )
+  const hasStderrError = Boolean(result.stderr && result.stderr.length > 0)
   const hasExitCodeError = result.exitCode !== 0
 
   expect(
