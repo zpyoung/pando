@@ -6,6 +6,8 @@ import {
   formatRelativeTime,
   parseBackupTimestamp,
   BACKUP_PREFIX,
+  formatCommitTree,
+  type CommitTreeOutput,
 } from '../../utils/branch-backups.js'
 import { jsonFlag, forceFlag } from '../../utils/common-flags.js'
 import { ErrorHelper } from '../../utils/errors.js'
@@ -24,6 +26,10 @@ export interface RestoreResult {
   newCommit: string
   /** Whether the backup branch was deleted after restore */
   backupDeleted: boolean
+  /** Commits that became unreachable after restore */
+  lostCommits?: { commits: Array<{ hash: string; message: string }>; total: number }
+  /** Commits that were restored from the backup */
+  gainedCommits?: { commits: Array<{ hash: string; message: string }>; total: number }
 }
 
 /**
@@ -256,6 +262,31 @@ export default class BranchRestore extends Command {
       }
     }
 
+    // Capture commit data for JSON output (must happen before restore changes HEAD)
+    let commitTreeData: CommitTreeOutput['json'] = {}
+    if (flags.json) {
+      const currentRef = isCurrentBranch ? 'HEAD' : targetBranch
+      const lostCommits = await gitHelper.getCommitLogBetween(selectedBackup.commit, currentRef, 10)
+      const gainedCommits = await gitHelper.getCommitLogBetween(
+        currentRef,
+        selectedBackup.commit,
+        10
+      )
+      // Build JSON data without chalk (we just need the data structure)
+      if (lostCommits && lostCommits.totalCount > 0) {
+        commitTreeData.lostCommits = {
+          commits: lostCommits.commits.map((c) => ({ hash: c.hash, message: c.message })),
+          total: lostCommits.totalCount,
+        }
+      }
+      if (gainedCommits && gainedCommits.totalCount > 0) {
+        commitTreeData.gainedCommits = {
+          commits: gainedCommits.commits.map((c) => ({ hash: c.hash, message: c.message })),
+          total: gainedCommits.totalCount,
+        }
+      }
+    }
+
     // Step 9: Perform the restore
     try {
       if (isCurrentBranch) {
@@ -296,6 +327,7 @@ export default class BranchRestore extends Command {
       previousCommit,
       newCommit: selectedBackup.commit,
       backupDeleted,
+      ...commitTreeData,
     }
 
     await this.formatOutput(flags.json, result, deleteWarning)
@@ -355,16 +387,19 @@ export default class BranchRestore extends Command {
       lines.push(`  Backup message:  ${chalk.gray(backup.message)}`)
     }
 
-    // Best-effort: show commits that may become unreachable
-    if (isCurrentBranch) {
-      const commitCount = await gitHelper.countCommitsBetween(backup.commit, 'HEAD')
-      if (commitCount !== null && commitCount > 0) {
-        lines.push('')
-        lines.push(
-          chalk.yellow(`  ${commitCount} commit(s) will become unreachable and may be lost.`)
-        )
-      }
-    }
+    // Get commit tree showing what will be lost and gained
+    // Use correct ref for current vs non-current branch
+    const currentRef = isCurrentBranch ? 'HEAD' : targetBranch
+
+    // Lost commits: on current but not in backup (currentRef has, backup doesn't)
+    const lostCommits = await gitHelper.getCommitLogBetween(backup.commit, currentRef, 10)
+
+    // Gained commits: in backup but not on current (backup has, currentRef doesn't)
+    const gainedCommits = await gitHelper.getCommitLogBetween(currentRef, backup.commit, 10)
+
+    // Format and display commit tree
+    const commitTree = formatCommitTree({ lostCommits, gainedCommits, chalk })
+    lines.push(...commitTree.lines)
 
     lines.push('')
     this.log(lines.join('\n'))

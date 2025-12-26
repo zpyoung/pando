@@ -814,4 +814,106 @@ branch refs/heads/main
       expect(result).toBeNull()
     })
   })
+
+  describe('getCommitLogBetween', () => {
+    it('should return commits between two refs', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('3\n') // rev-list --count
+        .mockResolvedValueOnce(
+          'abc1234 First commit\ndef5678 Second commit\nghi9012 Third commit\n'
+        )
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result).toEqual({
+        commits: [
+          { hash: 'abc1234', message: 'First commit' },
+          { hash: 'def5678', message: 'Second commit' },
+          { hash: 'ghi9012', message: 'Third commit' },
+        ],
+        totalCount: 3,
+      })
+      expect(mockGit.raw).toHaveBeenCalledWith(['rev-list', '--count', 'main..feature', '--'])
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'log',
+        'main..feature',
+        '--format=%h %s',
+        '-n',
+        '10',
+        '--',
+      ])
+    })
+
+    it('should return empty array when no commits between refs', async () => {
+      mockGit.raw = vi.fn().mockResolvedValueOnce('0\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'main')
+
+      expect(result).toEqual({ commits: [], totalCount: 0 })
+    })
+
+    it('should respect limit parameter', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('5\n')
+        .mockResolvedValueOnce('abc1234 Commit 1\ndef5678 Commit 2\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature', 2)
+
+      expect(result).toEqual({
+        commits: [
+          { hash: 'abc1234', message: 'Commit 1' },
+          { hash: 'def5678', message: 'Commit 2' },
+        ],
+        totalCount: 5,
+      })
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'log',
+        'main..feature',
+        '--format=%h %s',
+        '-n',
+        '2',
+        '--',
+      ])
+    })
+
+    it('should handle commits with no message', async () => {
+      mockGit.raw = vi.fn().mockResolvedValueOnce('1\n').mockResolvedValueOnce('abc1234\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result?.commits[0]).toEqual({ hash: 'abc1234', message: '' })
+    })
+
+    it('should handle commit messages with spaces', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('1\n')
+        .mockResolvedValueOnce('abc1234 Fix bug in user authentication module\n')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result?.commits[0]).toEqual({
+        hash: 'abc1234',
+        message: 'Fix bug in user authentication module',
+      })
+    })
+
+    it('should return null on git error', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('git error'))
+
+      const result = await gitHelper.getCommitLogBetween('invalid', 'refs')
+
+      expect(result).toBeNull()
+    })
+
+    it('should handle empty log output after count', async () => {
+      mockGit.raw = vi.fn().mockResolvedValueOnce('2\n').mockResolvedValueOnce('')
+
+      const result = await gitHelper.getCommitLogBetween('main', 'feature')
+
+      expect(result).toEqual({ commits: [], totalCount: 2 })
+    })
+  })
 })

@@ -5,6 +5,8 @@
  * for the backup/restore commands.
  */
 
+import type { CommitLogEntry } from './git.js'
+
 /** Backup branch naming convention: backup/<sourceBranch>/<timestamp> */
 export const BACKUP_PREFIX = 'backup/'
 
@@ -149,4 +151,102 @@ export function parseBackupTimestamp(timestampStr: string): Date | null {
   const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`)
 
   return isNaN(date.getTime()) ? null : date
+}
+
+/**
+ * Options for formatting commit tree display
+ */
+export interface FormatCommitTreeOptions {
+  /** Commits that will become unreachable (lost) */
+  lostCommits: { commits: CommitLogEntry[]; totalCount: number } | null
+  /** Commits that will be restored (gained) */
+  gainedCommits: { commits: CommitLogEntry[]; totalCount: number } | null
+  /** Chalk instance for terminal colors */
+  chalk: typeof import('chalk').default
+}
+
+/**
+ * Result of formatting the commit tree
+ */
+export interface CommitTreeOutput {
+  /** Lines to display in the terminal */
+  lines: string[]
+  /** Data for JSON output */
+  json: {
+    lostCommits?: { commits: Array<{ hash: string; message: string }>; total: number }
+    gainedCommits?: { commits: Array<{ hash: string; message: string }>; total: number }
+  }
+}
+
+/** Maximum message length before truncation */
+const MAX_MESSAGE_LENGTH = 72
+
+/**
+ * Truncate a message if it exceeds the maximum length
+ */
+function truncateMessage(message: string): string {
+  if (message.length <= MAX_MESSAGE_LENGTH) {
+    return message
+  }
+  return message.slice(0, MAX_MESSAGE_LENGTH - 3) + '...'
+}
+
+/**
+ * Format commit tree for display in restore confirmation
+ *
+ * Shows commits that will be lost and gained during restore:
+ * - Lost commits: shown with `-` prefix in red
+ * - Gained commits: shown with `+` prefix in green
+ *
+ * @param options - Formatting options with commit data and chalk instance
+ * @returns Formatted lines for terminal display and data for JSON output
+ */
+export function formatCommitTree(options: FormatCommitTreeOptions): CommitTreeOutput {
+  const { lostCommits, gainedCommits, chalk } = options
+  const lines: string[] = []
+  const json: CommitTreeOutput['json'] = {}
+
+  // Format lost commits (commits that will become unreachable)
+  if (lostCommits && lostCommits.totalCount > 0) {
+    lines.push('')
+    lines.push(chalk.red(`  Commits that will become unreachable (${lostCommits.totalCount}):`))
+
+    for (const commit of lostCommits.commits) {
+      const msg = truncateMessage(commit.message)
+      lines.push(chalk.red(`    - ${commit.hash} ${msg}`))
+    }
+
+    if (lostCommits.totalCount > lostCommits.commits.length) {
+      const remaining = lostCommits.totalCount - lostCommits.commits.length
+      lines.push(chalk.red(`    ...and ${remaining} more`))
+    }
+
+    json.lostCommits = {
+      commits: lostCommits.commits.map((c) => ({ hash: c.hash, message: c.message })),
+      total: lostCommits.totalCount,
+    }
+  }
+
+  // Format gained commits (commits that will be restored)
+  if (gainedCommits && gainedCommits.totalCount > 0) {
+    lines.push('')
+    lines.push(chalk.green(`  Commits that will be restored (${gainedCommits.totalCount}):`))
+
+    for (const commit of gainedCommits.commits) {
+      const msg = truncateMessage(commit.message)
+      lines.push(chalk.green(`    + ${commit.hash} ${msg}`))
+    }
+
+    if (gainedCommits.totalCount > gainedCommits.commits.length) {
+      const remaining = gainedCommits.totalCount - gainedCommits.commits.length
+      lines.push(chalk.green(`    ...and ${remaining} more`))
+    }
+
+    json.gainedCommits = {
+      commits: gainedCommits.commits.map((c) => ({ hash: c.hash, message: c.message })),
+      total: gainedCommits.totalCount,
+    }
+  }
+
+  return { lines, json }
 }

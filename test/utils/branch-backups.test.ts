@@ -7,8 +7,15 @@ import {
   isBackupOf,
   formatRelativeTime,
   parseBackupTimestamp,
+  formatCommitTree,
   BACKUP_PREFIX,
 } from '../../src/utils/branch-backups'
+
+// Mock chalk for tests - wraps text with markers for verification
+const mockChalk = {
+  red: (s: string) => `[RED]${s}[/RED]`,
+  green: (s: string) => `[GREEN]${s}[/GREEN]`,
+} as unknown as typeof import('chalk').default
 
 describe('branch-backups utilities', () => {
   describe('BACKUP_PREFIX', () => {
@@ -227,6 +234,125 @@ describe('branch-backups utilities', () => {
     it('should return null for too short string', () => {
       const result = parseBackupTimestamp('20250117')
       expect(result).toBeNull()
+    })
+  })
+
+  describe('formatCommitTree', () => {
+    it('should format lost commits with red prefix', () => {
+      const result = formatCommitTree({
+        lostCommits: {
+          commits: [
+            { hash: 'abc1234', message: 'Lost commit 1' },
+            { hash: 'def5678', message: 'Lost commit 2' },
+          ],
+          totalCount: 2,
+        },
+        gainedCommits: null,
+        chalk: mockChalk,
+      })
+
+      expect(result.lines).toContain('[RED]  Commits that will become unreachable (2):[/RED]')
+      expect(result.lines).toContain('[RED]    - abc1234 Lost commit 1[/RED]')
+      expect(result.lines).toContain('[RED]    - def5678 Lost commit 2[/RED]')
+      expect(result.json.lostCommits).toEqual({
+        commits: [
+          { hash: 'abc1234', message: 'Lost commit 1' },
+          { hash: 'def5678', message: 'Lost commit 2' },
+        ],
+        total: 2,
+      })
+    })
+
+    it('should format gained commits with green prefix', () => {
+      const result = formatCommitTree({
+        lostCommits: null,
+        gainedCommits: {
+          commits: [{ hash: 'ghi9012', message: 'Gained commit' }],
+          totalCount: 1,
+        },
+        chalk: mockChalk,
+      })
+
+      expect(result.lines).toContain('[GREEN]  Commits that will be restored (1):[/GREEN]')
+      expect(result.lines).toContain('[GREEN]    + ghi9012 Gained commit[/GREEN]')
+      expect(result.json.gainedCommits).toEqual({
+        commits: [{ hash: 'ghi9012', message: 'Gained commit' }],
+        total: 1,
+      })
+    })
+
+    it('should show "...and N more" when commits exceed limit', () => {
+      const result = formatCommitTree({
+        lostCommits: {
+          commits: [{ hash: 'abc1234', message: 'Commit' }],
+          totalCount: 15,
+        },
+        gainedCommits: null,
+        chalk: mockChalk,
+      })
+
+      expect(result.lines).toContain('[RED]    ...and 14 more[/RED]')
+    })
+
+    it('should handle both lost and gained commits', () => {
+      const result = formatCommitTree({
+        lostCommits: {
+          commits: [{ hash: 'abc1234', message: 'Lost' }],
+          totalCount: 1,
+        },
+        gainedCommits: {
+          commits: [{ hash: 'def5678', message: 'Gained' }],
+          totalCount: 1,
+        },
+        chalk: mockChalk,
+      })
+
+      expect(result.lines.some((l) => l.includes('unreachable'))).toBe(true)
+      expect(result.lines.some((l) => l.includes('restored'))).toBe(true)
+      expect(result.json.lostCommits).toBeDefined()
+      expect(result.json.gainedCommits).toBeDefined()
+    })
+
+    it('should return empty output when no commits', () => {
+      const result = formatCommitTree({
+        lostCommits: null,
+        gainedCommits: { commits: [], totalCount: 0 },
+        chalk: mockChalk,
+      })
+
+      expect(result.lines).toHaveLength(0)
+      expect(result.json).toEqual({})
+    })
+
+    it('should skip section when totalCount is 0', () => {
+      const result = formatCommitTree({
+        lostCommits: { commits: [], totalCount: 0 },
+        gainedCommits: null,
+        chalk: mockChalk,
+      })
+
+      expect(result.lines).toHaveLength(0)
+      expect(result.json.lostCommits).toBeUndefined()
+    })
+
+    it('should truncate long messages', () => {
+      const longMessage = 'A'.repeat(100)
+      const result = formatCommitTree({
+        lostCommits: {
+          commits: [{ hash: 'abc1234', message: longMessage }],
+          totalCount: 1,
+        },
+        gainedCommits: null,
+        chalk: mockChalk,
+      })
+
+      // The display line should be truncated (72 chars max, ending with ...)
+      const commitLine = result.lines.find((l) => l.includes('abc1234'))
+      expect(commitLine).toBeDefined()
+      expect(commitLine!.includes('...')).toBe(true)
+
+      // But JSON should have full message
+      expect(result.json.lostCommits?.commits[0].message).toBe(longMessage)
     })
   })
 })

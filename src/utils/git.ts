@@ -38,6 +38,16 @@ export interface BackupBranchInfo {
   message?: string
 }
 
+/**
+ * Represents a commit entry from git log
+ */
+export interface CommitLogEntry {
+  /** Short commit hash (7 characters) */
+  hash: string
+  /** First line of commit message */
+  message: string
+}
+
 export class GitHelper {
   private git: SimpleGit
 
@@ -640,6 +650,65 @@ export class GitHelper {
       const output = await this.git.raw(['rev-list', '--count', `${from}..${to}`])
       const count = parseInt(output.trim(), 10)
       return isNaN(count) ? null : count
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Get commit log entries between two refs
+   *
+   * Returns commits reachable from `to` but not from `from`.
+   * Equivalent to `git log from..to --format=%h %s`
+   *
+   * @param from - Starting ref (exclusive)
+   * @param to - Ending ref (inclusive)
+   * @param limit - Maximum number of commits to return (default: 10)
+   * @returns Object with commits array and total count, or null on git failure
+   */
+  async getCommitLogBetween(
+    from: string,
+    to: string,
+    limit: number = 10
+  ): Promise<{ commits: CommitLogEntry[]; totalCount: number } | null> {
+    try {
+      // First get total count
+      const countOutput = await this.git.raw(['rev-list', '--count', `${from}..${to}`, '--'])
+      const totalCount = parseInt(countOutput.trim(), 10)
+
+      if (isNaN(totalCount) || totalCount === 0) {
+        return { commits: [], totalCount: 0 }
+      }
+
+      // Get commit details with limit
+      const logOutput = await this.git.raw([
+        'log',
+        `${from}..${to}`,
+        '--format=%h %s',
+        `-n`,
+        String(limit),
+        '--',
+      ])
+
+      if (!logOutput.trim()) {
+        return { commits: [], totalCount }
+      }
+
+      const commits: CommitLogEntry[] = logOutput
+        .trim()
+        .split('\n')
+        .map((line) => {
+          const spaceIndex = line.indexOf(' ')
+          if (spaceIndex === -1) {
+            return { hash: line, message: '' }
+          }
+          return {
+            hash: line.substring(0, spaceIndex),
+            message: line.substring(spaceIndex + 1),
+          }
+        })
+
+      return { commits, totalCount }
     } catch {
       return null
     }
