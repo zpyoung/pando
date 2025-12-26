@@ -618,6 +618,142 @@ describe('RsyncHelper', () => {
     })
   })
 
+  describe('parseRsyncStats', () => {
+    it('should parse rsync 3.x stats output (GNU rsync)', () => {
+      // Typical rsync 3.x output with --stats flag
+      const rsync3Output = `
+sending incremental file list
+src/file.ts
+
+Number of files: 10 (reg: 8, dir: 2)
+Number of created files: 5 (reg: 5)
+Number of deleted files: 0
+Number of regular files transferred: 5
+Total file size: 2,097,152 bytes
+Total transferred file size: 1,048,576 bytes
+Literal data: 1,048,576 bytes
+Matched data: 0 bytes
+File list size: 123
+File list generation time: 0.001 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 1,048,789
+Total bytes received: 123
+sent 1,048,789 bytes  received 123 bytes  2,097,824.00 bytes/sec
+total size is 2,097,152  speedup is 2.00
+`
+      const result = rsyncHelper.parseRsyncStats(rsync3Output, 1000)
+
+      expect(result.success).toBe(true)
+      expect(result.filesTransferred).toBe(5)
+      expect(result.totalSize).toBe(2097152)
+      expect(result.bytesSent).toBe(1048789)
+      expect(result.duration).toBe(1000)
+    })
+
+    it('should parse openrsync stats output (macOS)', () => {
+      // Output from openrsync / rsync 2.6.9 compatible (macOS default)
+      const openrsyncOutput = `
+sending incremental file list
+src/file.ts
+       2097152 100%    0.00kB/s    0:00:00 (xfer#1, to-check=0/1)
+
+Number of files: 1
+Number of files transferred: 1
+Total file size: 2097152 B
+Total transferred file size: 2097152 B
+Literal data: 2097152 B
+Matched data: 0 B
+File list size: 0
+File list generation time: 0.000 seconds
+File list transfer time: 0.000 seconds
+Total bytes sent: 2097561
+Total bytes received: 42
+sent 2097561 bytes  received 42 bytes  4195206.00 bytes/sec
+total size is 2097152  speedup is 1.00
+`
+      const result = rsyncHelper.parseRsyncStats(openrsyncOutput, 500)
+
+      expect(result.success).toBe(true)
+      expect(result.filesTransferred).toBe(1)
+      expect(result.totalSize).toBe(2097152)
+      expect(result.bytesSent).toBe(2097561)
+      expect(result.duration).toBe(500)
+    })
+
+    it('should parse rsync output with commas in numbers', () => {
+      const output = `
+Number of created files: 1,234
+Total file size: 10,000,000 bytes
+sent 5,000,000 bytes  received 100 bytes
+`
+      const result = rsyncHelper.parseRsyncStats(output, 100)
+
+      expect(result.filesTransferred).toBe(1234)
+      expect(result.totalSize).toBe(10000000)
+      expect(result.bytesSent).toBe(5000000)
+    })
+
+    it('should return zeros for unrecognized output format', () => {
+      const output = 'some random output without stats'
+      const result = rsyncHelper.parseRsyncStats(output, 100)
+
+      expect(result.success).toBe(true)
+      expect(result.filesTransferred).toBe(0)
+      expect(result.totalSize).toBe(0)
+      expect(result.bytesSent).toBe(0)
+    })
+
+    it('should parse transferred file size when total file size is missing', () => {
+      // Some rsync versions only show transferred file size
+      const output = `
+Number of files transferred: 3
+Total transferred file size: 1048576 B
+sent 1048789 bytes  received 123 bytes
+`
+      const result = rsyncHelper.parseRsyncStats(output, 200)
+
+      expect(result.filesTransferred).toBe(3)
+      expect(result.totalSize).toBe(1048576)
+    })
+
+    it('should prefer "Number of created files" over "Number of files transferred"', () => {
+      // rsync 3.x shows both; created files is more accurate for new worktrees
+      const output = `
+Number of files: 100
+Number of created files: 50
+Number of regular files transferred: 50
+Number of files transferred: 50
+Total file size: 1000000 bytes
+`
+      const result = rsyncHelper.parseRsyncStats(output, 100)
+
+      // Should use "Number of created files" as primary
+      expect(result.filesTransferred).toBe(50)
+    })
+
+    it('should fallback to "Number of regular files transferred" when no created files', () => {
+      const output = `
+Number of files: 100
+Number of regular files transferred: 25
+Total file size: 500000 bytes
+`
+      const result = rsyncHelper.parseRsyncStats(output, 100)
+
+      expect(result.filesTransferred).toBe(25)
+    })
+
+    it('should parse size with B suffix (openrsync format)', () => {
+      const output = `
+Number of files transferred: 2
+Total file size: 4194304 B
+Total transferred file size: 2097152 B
+`
+      const result = rsyncHelper.parseRsyncStats(output, 100)
+
+      expect(result.totalSize).toBe(4194304)
+    })
+  })
+
   describe('parseProgressLine', () => {
     it('should detect completed file transfer from xfer pattern', () => {
       const result = rsyncHelper.parseProgressLine(

@@ -769,6 +769,141 @@ branch refs/heads/main
     })
   })
 
+  describe('fetchWithPrune', () => {
+    it('should fetch with prune from default remote', async () => {
+      mockGit.fetch = vi.fn().mockResolvedValue({})
+
+      await gitHelper.fetchWithPrune()
+
+      expect(mockGit.fetch).toHaveBeenCalledWith(['origin', '--prune'])
+    })
+
+    it('should fetch with prune from specified remote', async () => {
+      mockGit.fetch = vi.fn().mockResolvedValue({})
+
+      await gitHelper.fetchWithPrune('upstream')
+
+      expect(mockGit.fetch).toHaveBeenCalledWith(['upstream', '--prune'])
+    })
+  })
+
+  describe('getMainBranch', () => {
+    it('should return main if main branch exists', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('abc123\n')
+
+      const result = await gitHelper.getMainBranch()
+
+      expect(result).toBe('main')
+      expect(mockGit.raw).toHaveBeenCalledWith(['rev-parse', '--verify', 'refs/heads/main'])
+    })
+
+    it('should return master if main does not exist but master does', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('not a valid ref')) // main check
+        .mockResolvedValueOnce('abc123\n') // master check
+
+      const result = await gitHelper.getMainBranch()
+
+      expect(result).toBe('master')
+    })
+
+    it('should default to main if neither exists', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('not a valid ref')) // main check
+        .mockRejectedValueOnce(new Error('not a valid ref')) // master check
+
+      const result = await gitHelper.getMainBranch()
+
+      expect(result).toBe('main')
+    })
+  })
+
+  describe('getMergedBranches', () => {
+    it('should return list of merged branches', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(`  feature-1
+  feature-2
+* main
+`)
+
+      const result = await gitHelper.getMergedBranches('main')
+
+      expect(result).toEqual(['feature-1', 'feature-2'])
+      expect(mockGit.raw).toHaveBeenCalledWith(['branch', '--merged', 'main'])
+    })
+
+    it('should exclude target branch from results', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(`  develop
+* main
+`)
+
+      const result = await gitHelper.getMergedBranches('main')
+
+      expect(result).toEqual(['develop'])
+      expect(result).not.toContain('main')
+    })
+
+    it('should fallback to master if main does not exist', async () => {
+      mockGit.raw = vi.fn().mockRejectedValueOnce(new Error('not a valid ref')) // main
+        .mockResolvedValueOnce(`  feature-1
+`)
+
+      const result = await gitHelper.getMergedBranches('main')
+
+      expect(result).toEqual(['feature-1'])
+    })
+
+    it('should return empty array on error', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('not a valid ref')) // main
+        .mockRejectedValueOnce(new Error('not a valid ref')) // master fallback
+
+      const result = await gitHelper.getMergedBranches('main')
+
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('getGoneBranches', () => {
+    it('should detect branches with gone upstream', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(
+          `feature-1 [gone]
+feature-2 [ahead 1]
+feature-3
+`
+        ) // for-each-ref
+        .mockResolvedValueOnce('refs/heads/feature-1') // branch config
+
+      const result = await gitHelper.getGoneBranches()
+
+      expect(result.size).toBe(1)
+      expect(result.has('feature-1')).toBe(true)
+    })
+
+    it('should return empty map if no gone branches', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(`feature-1 [ahead 1]
+feature-2
+main
+`)
+
+      const result = await gitHelper.getGoneBranches()
+
+      expect(result.size).toBe(0)
+    })
+
+    it('should handle errors gracefully', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('git error'))
+
+      const result = await gitHelper.getGoneBranches()
+
+      expect(result.size).toBe(0)
+    })
+  })
+
   describe('findWorktreeByBranchExact', () => {
     it('should find worktree by exact branch name', async () => {
       mockGit.raw = vi.fn().mockResolvedValue(`worktree /path/to/main
@@ -914,6 +1049,208 @@ branch refs/heads/main
       const result = await gitHelper.getCommitLogBetween('main', 'feature')
 
       expect(result).toEqual({ commits: [], totalCount: 2 })
+    })
+  })
+
+  describe('getStaleWorktrees', () => {
+    it('should detect merged worktrees', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(
+          `worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456
+branch refs/heads/feature-merged
+`
+        ) // listWorktrees
+        .mockResolvedValueOnce('abc123\n') // getMainBranch (main exists)
+        .mockResolvedValueOnce(`  feature-merged
+* main
+`) // getMergedBranches
+        .mockResolvedValueOnce(`main
+feature-merged
+`) // getGoneBranches (for-each-ref)
+        .mockResolvedValueOnce(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456
+branch refs/heads/feature-merged
+`) // getMainWorktreePath
+
+      mockWorktreeGit.status.mockResolvedValue({ isClean: () => true })
+
+      const result = await gitHelper.getStaleWorktrees()
+
+      expect(result).toHaveLength(1)
+      expect(result[0]?.staleReason).toBe('merged')
+      expect(result[0]?.branch).toBe('feature-merged')
+    })
+
+    it('should detect prunable worktrees', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(
+          `worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/deleted
+HEAD def456
+branch refs/heads/deleted-branch
+prunable
+`
+        ) // listWorktrees
+        .mockResolvedValueOnce('abc123\n') // getMainBranch
+        .mockResolvedValueOnce('* main\n') // getMergedBranches
+        .mockResolvedValueOnce('main \n') // getGoneBranches
+        .mockResolvedValueOnce(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/deleted
+HEAD def456
+branch refs/heads/deleted-branch
+prunable
+`) // getMainWorktreePath
+
+      const result = await gitHelper.getStaleWorktrees()
+
+      expect(result).toHaveLength(1)
+      expect(result[0]?.staleReason).toBe('prunable')
+      expect(result[0]?.hasUncommittedChanges).toBe(false) // Prunable skips this check
+    })
+
+    it('should detect gone worktrees', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(
+          `worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/gone
+HEAD def456
+branch refs/heads/gone-branch
+`
+        ) // listWorktrees
+        .mockResolvedValueOnce('abc123\n') // getMainBranch
+        .mockResolvedValueOnce('* main\n') // getMergedBranches
+        .mockResolvedValueOnce(
+          `main
+gone-branch [gone]
+`
+        ) // getGoneBranches
+        .mockResolvedValueOnce('refs/heads/gone-branch') // branch config
+        .mockResolvedValueOnce(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/gone
+HEAD def456
+branch refs/heads/gone-branch
+`) // getMainWorktreePath
+
+      mockWorktreeGit.status.mockResolvedValue({ isClean: () => true })
+
+      const result = await gitHelper.getStaleWorktrees()
+
+      expect(result).toHaveLength(1)
+      expect(result[0]?.staleReason).toBe('gone')
+    })
+
+    it('should exclude main worktree from results', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(
+          `worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+`
+        ) // listWorktrees
+        .mockResolvedValueOnce('abc123\n') // getMainBranch
+        .mockResolvedValueOnce('* main\n') // getMergedBranches
+        .mockResolvedValueOnce('main \n') // getGoneBranches
+        .mockResolvedValueOnce(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+`) // getMainWorktreePath
+
+      const result = await gitHelper.getStaleWorktrees()
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('should prioritize prunable over other reasons', async () => {
+      // A branch that is both merged AND prunable should be marked as prunable
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(
+          `worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456
+branch refs/heads/merged-and-prunable
+prunable
+`
+        ) // listWorktrees
+        .mockResolvedValueOnce('abc123\n') // getMainBranch
+        .mockResolvedValueOnce(
+          `  merged-and-prunable
+* main
+`
+        ) // getMergedBranches
+        .mockResolvedValueOnce('main \n') // getGoneBranches
+        .mockResolvedValueOnce(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456
+branch refs/heads/merged-and-prunable
+prunable
+`) // getMainWorktreePath
+
+      const result = await gitHelper.getStaleWorktrees()
+
+      expect(result).toHaveLength(1)
+      expect(result[0]?.staleReason).toBe('prunable')
+    })
+
+    it('should return empty array if no stale worktrees', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce(
+          `worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456
+branch refs/heads/active-feature
+`
+        ) // listWorktrees
+        .mockResolvedValueOnce('abc123\n') // getMainBranch
+        .mockResolvedValueOnce('* main\n') // getMergedBranches (no merged branches except main)
+        .mockResolvedValueOnce('main \nactive-feature \n') // getGoneBranches (no gone)
+        .mockResolvedValueOnce(`worktree /path/to/main
+HEAD abc123
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456
+branch refs/heads/active-feature
+`) // getMainWorktreePath
+
+      const result = await gitHelper.getStaleWorktrees()
+
+      expect(result).toHaveLength(0)
     })
   })
 })
