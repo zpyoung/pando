@@ -1,6 +1,6 @@
 import { Command, Flags } from '@oclif/core'
-import { configLoader } from '../../config/loader.js'
-import type { ConfigWithSource } from '../../config/schema.js'
+import { configLoader, discoverConfigFiles } from '../../config/loader.js'
+import type { ConfigFile, ConfigWithSource } from '../../config/schema.js'
 import { jsonFlag } from '../../utils/common-flags.js'
 import { ErrorHelper } from '../../utils/errors.js'
 
@@ -49,24 +49,28 @@ export default class ConfigShow extends Command {
         // Not a git repo, use cwd
       }
 
-      // 3. Load configuration with source tracking
+      // 3. Discover config files
+      const configFiles = await discoverConfigFiles(cwd, gitRoot)
 
+      // 4. Load configuration with source tracking
       const configWithSources = await configLoader.loadWithSources({
         cwd,
         gitRoot,
       })
 
-      // 4. Format and display output
+      // 5. Format and display output
       if (flags.json) {
-        // JSON output
+        // JSON output - include files that exist (or all files with --sources)
+        const filesToInclude = flags.sources ? configFiles : configFiles.filter((f) => f.exists)
+
         if (flags.sources) {
-          this.log(JSON.stringify(configWithSources, null, 2))
+          this.log(JSON.stringify({ ...configWithSources, files: filesToInclude }, null, 2))
         } else {
-          this.log(JSON.stringify(configWithSources.config, null, 2))
+          this.log(JSON.stringify({ ...configWithSources.config, files: filesToInclude }, null, 2))
         }
       } else {
         // Human-readable output
-        await this.displayHumanReadable(configWithSources, flags.sources)
+        await this.displayHumanReadable(configWithSources, configFiles, flags.sources)
       }
     } catch (error) {
       ErrorHelper.operation(
@@ -83,6 +87,7 @@ export default class ConfigShow extends Command {
    */
   private async displayHumanReadable(
     configWithSources: ConfigWithSource,
+    configFiles: ConfigFile[],
     showSources: boolean
   ): Promise<void> {
     const chalk = (await import('chalk')).default
@@ -100,6 +105,31 @@ export default class ConfigShow extends Command {
         `\nConfiguration (merged from ${sourceCount} source${sourceCount === 1 ? '' : 's'}):\n`
       )
     )
+
+    // Config files section
+    if (showSources) {
+      // Show all searched locations with status
+      this.log(chalk.bold('Config files:'))
+      for (const file of configFiles) {
+        if (file.exists) {
+          this.log(chalk.green(`  ✓ ${file.path}`))
+        } else {
+          this.log(chalk.gray(`  ✗ ${file.path} (not found)`))
+        }
+      }
+    } else {
+      // Show only existing files
+      const existingFiles = configFiles.filter((f) => f.exists)
+      if (existingFiles.length > 0) {
+        this.log(chalk.bold('Config files found:'))
+        for (const file of existingFiles) {
+          this.log(chalk.green(`  ${file.path}`))
+        }
+      } else {
+        this.log(chalk.gray('No config files found (using defaults)'))
+      }
+    }
+    this.log('')
 
     // [rsync] section
     const rsyncConfig = config.rsync as unknown as Record<string, unknown>

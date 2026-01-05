@@ -958,6 +958,172 @@ relative = false
   })
 
   // ============================================================================
+  // GitHub Issue #6 - Project-level config ignored
+  // ============================================================================
+
+  describe('Project-level config with worktree.defaultPath (Issue #6)', () => {
+    let loader: ConfigLoader
+
+    beforeEach(() => {
+      loader = new ConfigLoader()
+    })
+
+    it('should load worktree.defaultPath from project .pando.toml', async () => {
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[worktree]
+defaultPath = "../worktrees"
+`
+      )
+
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      expect(config.worktree.defaultPath).toBe('../worktrees')
+    })
+
+    it('should load worktree.useProjectSubfolder from project .pando.toml', async () => {
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[worktree]
+defaultPath = "../worktrees"
+useProjectSubfolder = true
+`
+      )
+
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      expect(config.worktree.defaultPath).toBe('../worktrees')
+      expect(config.worktree.useProjectSubfolder).toBe(true)
+    })
+
+    it('should load config when cwd is subdirectory of git root', async () => {
+      // Create .pando.toml at root
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[worktree]
+defaultPath = "../worktrees"
+`
+      )
+
+      // Create subdirectory
+      const subDir = path.join(tempDir, 'src', 'components')
+      await fs.ensureDir(subDir)
+
+      // Load config from subdirectory with tempDir as git root
+      const config = await loader.load({ cwd: subDir, gitRoot: tempDir, skipCache: true })
+
+      // Should still find and load the config from git root
+      expect(config.worktree.defaultPath).toBe('../worktrees')
+    })
+
+    it('should discover .pando.toml when starting from subdirectory', async () => {
+      // Create .pando.toml at root
+      await fs.writeFile(path.join(tempDir, '.pando.toml'), '[worktree]\ndefaultPath = "../wt"')
+
+      // Create subdirectory
+      const subDir = path.join(tempDir, 'deep', 'nested', 'dir')
+      await fs.ensureDir(subDir)
+
+      // Discover config files from subdirectory
+      const configFiles = await discoverConfigFiles(subDir, tempDir)
+
+      // Should find the .pando.toml at root
+      const pandoToml = configFiles.find(
+        (f) => f.source === ConfigSource.PANDO_TOML && f.path === path.join(tempDir, '.pando.toml')
+      )
+      expect(pandoToml).toBeDefined()
+      expect(pandoToml?.exists).toBe(true)
+    })
+
+    it('should track worktree.defaultPath source correctly', async () => {
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[worktree]
+defaultPath = "../worktrees"
+`
+      )
+
+      const result = await loader.loadWithSources({ cwd: tempDir, gitRoot: tempDir })
+
+      expect(result.config.worktree.defaultPath).toBe('../worktrees')
+      expect(result.sources['worktree.defaultPath']).toBe(ConfigSource.PANDO_TOML)
+    })
+
+    it('should return undefined defaultPath when not configured', async () => {
+      // Empty config - no worktree.defaultPath set
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[rsync]
+enabled = true
+`
+      )
+
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      // defaultPath should be undefined (not set in config or defaults)
+      expect(config.worktree.defaultPath).toBeUndefined()
+    })
+
+    it('should load worktree config alongside rsync and symlink configs', async () => {
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[worktree]
+defaultPath = "../worktrees"
+rebaseOnAdd = false
+useProjectSubfolder = true
+
+[rsync]
+enabled = false
+
+[symlink]
+patterns = ["package.json"]
+`
+      )
+
+      const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+
+      // All sections should be loaded
+      expect(config.worktree.defaultPath).toBe('../worktrees')
+      expect(config.worktree.rebaseOnAdd).toBe(false)
+      expect(config.worktree.useProjectSubfolder).toBe(true)
+      expect(config.rsync.enabled).toBe(false)
+      expect(config.symlink.patterns).toEqual(['package.json'])
+    })
+
+    it('should prioritize env var over file config for defaultPath', async () => {
+      const originalEnv = process.env
+
+      // Set environment variable
+      process.env = {
+        ...originalEnv,
+        PANDO_WORKTREE_DEFAULT_PATH: '../env-worktrees',
+      }
+
+      await fs.writeFile(
+        path.join(tempDir, '.pando.toml'),
+        `
+[worktree]
+defaultPath = "../file-worktrees"
+`
+      )
+
+      try {
+        const config = await loader.load({ cwd: tempDir, gitRoot: tempDir, skipCache: true })
+        // Env var should override file config
+        expect(config.worktree.defaultPath).toBe('../env-worktrees')
+      } finally {
+        process.env = originalEnv
+      }
+    })
+  })
+
+  // ============================================================================
   // Edge Cases and Error Handling
   // ============================================================================
 
