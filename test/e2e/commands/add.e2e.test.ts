@@ -285,6 +285,38 @@ describe('pando add (E2E)', () => {
 
       expectJsonError(result, '--force flag requires --branch')
     })
+
+    it('should fail with malformed .pando.toml and direct to config show', async () => {
+      // Create a fresh repo for this test to avoid affecting other tests
+      const malformedRepoPath = await setupGitRepo(container, {
+        name: 'malformed-config-repo',
+        files: [{ path: 'README.md', content: '# Test' }],
+      })
+
+      // Create malformed .pando.toml
+      await container.exec([
+        'sh',
+        '-c',
+        `echo 'this is not valid toml [[[' > ${malformedRepoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoAdd(container, malformedRepoPath, [
+        '--branch',
+        'feature-test',
+        '--path',
+        '../worktrees/feature-test',
+        '--skip-rsync',
+      ])
+
+      // Should fail with error
+      expect(result.exitCode).not.toBe(0)
+
+      // Error should mention configuration error
+      expect(result.stdout + result.stderr).toMatch(/configuration error/i)
+
+      // Error should direct user to run config show
+      expect(result.stdout + result.stderr).toMatch(/config show/i)
+    })
   })
 
   describe('human-readable output', () => {

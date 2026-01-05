@@ -1128,25 +1128,29 @@ defaultPath = "../file-worktrees"
   // ============================================================================
 
   describe('Error Handling', () => {
-    it('should handle malformed TOML files gracefully', async () => {
+    it('should throw ConfigParseFailureError on malformed TOML files', async () => {
       const loader = new ConfigLoader()
       const configPath = path.join(tempDir, '.pando.toml')
       await fs.writeFile(configPath, 'this is not valid toml [[[')
 
-      // Should not throw, but log warning and continue
-      await expect(loader.load({ cwd: tempDir, gitRoot: tempDir })).resolves.toBeDefined()
+      // load() should throw on project config errors
+      await expect(loader.load({ cwd: tempDir, gitRoot: tempDir })).rejects.toThrow(
+        'Configuration error'
+      )
     })
 
-    it('should handle malformed JSON files gracefully', async () => {
+    it('should throw ConfigParseFailureError on malformed JSON files', async () => {
       const loader = new ConfigLoader()
       const configPath = path.join(tempDir, 'package.json')
       await fs.writeFile(configPath, '{ this is not valid json }')
 
-      // Should not throw, but log warning and continue
-      await expect(loader.load({ cwd: tempDir, gitRoot: tempDir })).resolves.toBeDefined()
+      // load() should throw on project config errors
+      await expect(loader.load({ cwd: tempDir, gitRoot: tempDir })).rejects.toThrow(
+        'Configuration error'
+      )
     })
 
-    it('should handle invalid config values', async () => {
+    it('should throw on invalid config values (Zod validation failure)', async () => {
       const configPath = path.join(tempDir, 'package.json')
       await fs.writeFile(
         configPath,
@@ -1161,12 +1165,55 @@ defaultPath = "../file-worktrees"
 
       const loader = new ConfigLoader()
 
-      // Validation errors are caught and logged, config loading continues with other sources
-      // So this test should pass (it doesn't throw, it logs warning and uses defaults)
+      // Zod validation errors are treated as parse errors
+      await expect(loader.load({ cwd: tempDir, gitRoot: tempDir })).rejects.toThrow(
+        'Configuration error'
+      )
+    })
+
+    it('should collect errors in loadWithSources without throwing', async () => {
+      const loader = new ConfigLoader()
+      const configPath = path.join(tempDir, '.pando.toml')
+      await fs.writeFile(configPath, 'this is not valid toml [[[')
+
+      // loadWithSources() should NOT throw - it collects errors
+      const result = await loader.loadWithSources({ cwd: tempDir, gitRoot: tempDir })
+
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].path).toBe(configPath)
+      expect(result.errors[0].isProjectConfig).toBe(true)
+      expect(result.errors[0].source).toBe('pando_toml')
+      // Config should still have defaults
+      expect(result.config.rsync.enabled).toBe(true)
+    })
+
+    it('should not cache when errors are present', async () => {
+      const loader = new ConfigLoader()
+      const configPath = path.join(tempDir, '.pando.toml')
+      await fs.writeFile(configPath, 'this is not valid toml [[[')
+
+      // First call throws
+      await expect(loader.load({ cwd: tempDir, gitRoot: tempDir })).rejects.toThrow()
+
+      // Fix the config
+      await fs.writeFile(configPath, '[rsync]\nenabled = false')
+
+      // Second call should work (not cached)
       const config = await loader.load({ cwd: tempDir, gitRoot: tempDir })
-      expect(config).toBeDefined()
-      // Should fall back to defaults since the invalid config was skipped
-      expect(config.rsync.enabled).toBe(true) // DEFAULT_CONFIG value
+      expect(config.rsync.enabled).toBe(false)
+    })
+
+    it('should extract line and column from TOML errors', async () => {
+      const loader = new ConfigLoader()
+      const configPath = path.join(tempDir, '.pando.toml')
+      await fs.writeFile(configPath, 'this is not valid toml [[[')
+
+      const result = await loader.loadWithSources({ cwd: tempDir, gitRoot: tempDir })
+
+      expect(result.errors).toHaveLength(1)
+      // @iarna/toml includes line/column info
+      expect(result.errors[0].line).toBeDefined()
+      expect(result.errors[0].column).toBeDefined()
     })
   })
 })

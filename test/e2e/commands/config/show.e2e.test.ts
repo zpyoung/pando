@@ -135,6 +135,97 @@ EOF`,
       // Should still show default config (or handle gracefully)
       expectSuccess(result)
     })
+
+    it('should display errors for malformed TOML config (JSON output)', async () => {
+      // Create malformed .pando.toml
+      await container.exec([
+        'sh',
+        '-c',
+        `echo 'this is not valid toml [[[' > ${repoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoConfigShow(container, repoPath)
+
+      // Should exit with code 1 for project config errors
+      expect(result.exitCode).toBe(1)
+
+      // Should have errors in JSON output
+      expect(result.json?.errors).toBeDefined()
+      const errors = result.json?.errors as Array<{
+        path: string
+        isProjectConfig: boolean
+        message: string
+      }>
+      expect(errors.length).toBeGreaterThan(0)
+      expect(errors[0].isProjectConfig).toBe(true)
+      expect(errors[0].path).toContain('.pando.toml')
+
+      // Should still include default config
+      expect(result.json?.rsync).toBeDefined()
+    })
+
+    it('should display errors for malformed TOML config (human-readable output)', async () => {
+      // Create malformed .pando.toml
+      await container.exec(['sh', '-c', `echo 'invalid = [[[' > ${repoPath}/.pando.toml`])
+
+      const result = await pandoConfigShowHuman(container, repoPath)
+
+      // Should exit with code 1 for project config errors
+      expect(result.exitCode).toBe(1)
+
+      // Should show error message with [PROJECT] label
+      expect(result.stdout).toContain('[PROJECT]')
+      expect(result.stdout).toContain('.pando.toml')
+      expect(result.stdout.toLowerCase()).toContain('error')
+
+      // Should still show configuration after errors
+      expect(result.stdout).toContain('[rsync]')
+    })
+
+    it('should show errors alongside valid config from other sources', async () => {
+      // Create malformed .pando.toml
+      await container.exec(['sh', '-c', `echo 'not valid toml' > ${repoPath}/.pando.toml`])
+
+      // Create valid package.json with pando config
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '{"name": "test", "pando": {"symlink": {"patterns": ["package.json"]}}}' > ${repoPath}/package.json`,
+      ])
+
+      const result = await pandoConfigShow(container, repoPath)
+
+      // Should exit with code 1 (project config has error)
+      expect(result.exitCode).toBe(1)
+
+      // Should have error for .pando.toml
+      const errors = result.json?.errors as Array<{ path: string }>
+      expect(errors.some((e) => e.path.includes('.pando.toml'))).toBe(true)
+
+      // Should still include config from valid package.json
+      const symlink = result.json?.symlink as { patterns: string[] }
+      expect(symlink?.patterns).toContain('package.json')
+    })
+
+    it('should exit with code 0 when config is valid', async () => {
+      // Create valid .pando.toml
+      await container.exec([
+        'sh',
+        '-c',
+        `cat > ${repoPath}/.pando.toml << 'EOF'
+[rsync]
+enabled = true
+EOF`,
+      ])
+
+      const result = await pandoConfigShow(container, repoPath)
+
+      // Should exit with code 0 for valid config
+      expect(result.exitCode).toBe(0)
+
+      // Should not have errors
+      expect(result.json?.errors).toBeUndefined()
+    })
   })
 
   describe('human-readable output', () => {

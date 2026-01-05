@@ -49,3 +49,4 @@ oclif.manifest.json
 .aider*
 .cursor/
 *.log
+.claude/settings.local.json
