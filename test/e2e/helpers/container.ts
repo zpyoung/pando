@@ -5,6 +5,9 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Detect mode from environment - tests against published npm package when true
+const isPublishedMode = process.env.PANDO_E2E_PUBLISHED === 'true'
+
 export interface ExecResult {
   stdout: string
   stderr: string
@@ -21,36 +24,49 @@ export interface E2EContainer {
   execPando: (args: string[], cwd?: string) => Promise<PandoResult>
   createGitRepo: (name: string) => Promise<string>
   stop: () => Promise<void>
+  /** True if testing against published npm package */
+  isPublishedMode: boolean
 }
 
 export async function createE2EContainer(): Promise<E2EContainer> {
   const projectRoot = path.resolve(__dirname, '../../..')
   const dockerfilePath = path.resolve(__dirname, '..')
 
-  // Build custom image with git + rsync
-  const container = await GenericContainer.fromDockerfile(dockerfilePath).build('pando-e2e-test', {
-    deleteOnExit: false,
-  })
+  // Select Dockerfile and image name based on mode
+  const dockerfile = isPublishedMode ? 'Dockerfile.published' : 'Dockerfile'
+  const imageName = isPublishedMode ? 'pando-e2e-published' : 'pando-e2e-test'
 
-  // Start container with project files copied in
-  const startedContainer = await container
-    .withCopyDirectoriesToContainer([
-      { source: path.join(projectRoot, 'dist'), target: '/app/dist' },
-      { source: path.join(projectRoot, 'bin'), target: '/app/bin' },
-      {
-        source: path.join(projectRoot, 'node_modules'),
-        target: '/app/node_modules',
-      },
-    ])
-    .withCopyFilesToContainer([
-      {
-        source: path.join(projectRoot, 'package.json'),
-        target: '/app/package.json',
-      },
-    ])
-    .withWorkingDir('/app')
-    .withCommand(['tail', '-f', '/dev/null'])
-    .start()
+  // Build custom image with git + rsync (+ pando from npm in published mode)
+  const container = await GenericContainer.fromDockerfile(dockerfilePath, dockerfile).build(
+    imageName,
+    {
+      deleteOnExit: false,
+    }
+  )
+
+  // Start container builder
+  let containerBuilder = container.withWorkingDir('/app').withCommand(['tail', '-f', '/dev/null'])
+
+  // Only copy local build files in local mode (not published mode)
+  if (!isPublishedMode) {
+    containerBuilder = containerBuilder
+      .withCopyDirectoriesToContainer([
+        { source: path.join(projectRoot, 'dist'), target: '/app/dist' },
+        { source: path.join(projectRoot, 'bin'), target: '/app/bin' },
+        {
+          source: path.join(projectRoot, 'node_modules'),
+          target: '/app/node_modules',
+        },
+      ])
+      .withCopyFilesToContainer([
+        {
+          source: path.join(projectRoot, 'package.json'),
+          target: '/app/package.json',
+        },
+      ])
+  }
+
+  const startedContainer = await containerBuilder.start()
 
   const execFn = async (cmd: string[]): Promise<ExecResult> => {
     const result = await startedContainer.exec(cmd)
@@ -61,15 +77,22 @@ export async function createE2EContainer(): Promise<E2EContainer> {
     }
   }
 
+  // CLI invocation differs based on mode
+  const cliCommand = isPublishedMode ? 'pando' : 'node /app/bin/run.js'
+
   const execPandoFn = async (args: string[], cwd?: string): Promise<PandoResult> => {
     let result: ExecResult
 
     if (cwd) {
       // Run from specific directory
-      const shellCmd = `cd ${cwd} && node /app/bin/run.js ${args.join(' ')}`
+      const shellCmd = `cd ${cwd} && ${cliCommand} ${args.join(' ')}`
       result = await execFn(['sh', '-c', shellCmd])
     } else {
-      result = await execFn(['node', '/app/bin/run.js', ...args])
+      if (isPublishedMode) {
+        result = await execFn(['pando', ...args])
+      } else {
+        result = await execFn(['node', '/app/bin/run.js', ...args])
+      }
     }
 
     let json: Record<string, unknown> | undefined
@@ -104,5 +127,6 @@ export async function createE2EContainer(): Promise<E2EContainer> {
     stop: async () => {
       await startedContainer.stop()
     },
+    isPublishedMode,
   }
 }

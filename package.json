@@ -32,6 +32,8 @@
     "test:coverage": "vitest --coverage",
     "test:e2e": "vitest run --config vitest.config.e2e.ts",
     "test:e2e:watch": "vitest --config vitest.config.e2e.ts",
+    "test:e2e:published": "vitest run --config vitest.config.e2e.published.ts",
+    "test:e2e:published:watch": "vitest --config vitest.config.e2e.published.ts",
     "test:all": "pnpm test:run && pnpm test:e2e",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
