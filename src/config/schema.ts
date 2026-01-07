@@ -288,6 +288,53 @@ export interface ConfigFile {
   exists: boolean
 }
 
+/**
+ * Represents a configuration parsing error
+ */
+export interface ConfigParseError {
+  /** Path to the config file that failed to parse */
+  path: string
+  /** The source type of the config file */
+  source: ConfigSource
+  /** Error message describing the parse failure */
+  message: string
+  /** Whether this is a project-level config (true) or global config (false) */
+  isProjectConfig: boolean
+  /** Line number if available from parser */
+  line?: number
+  /** Column number if available from parser */
+  column?: number
+}
+
+/**
+ * Extended result from config loading that includes errors
+ */
+export interface ConfigLoadResult {
+  /** The merged configuration (may use defaults if errors occurred) */
+  config: PandoConfig
+  /** Source tracking for each config value */
+  sources: { [key: string]: ConfigSource }
+  /** Any errors encountered during parsing */
+  errors: ConfigParseError[]
+  /** Files that were successfully parsed */
+  parsedFiles: ConfigFile[]
+}
+
+/**
+ * Custom error class for config parse failures
+ * Provides consistent "run pando config show" messaging across all commands
+ */
+export class ConfigParseFailureError extends Error {
+  constructor(public readonly errors: ConfigParseError[]) {
+    const paths = errors.map((e) => `  - ${e.path}`).join('\n')
+    super(
+      `Configuration error: Unable to parse project configuration files:\n${paths}\n\n` +
+        `Run 'pando config show' for detailed error information.`
+    )
+    this.name = 'ConfigParseFailureError'
+  }
+}
+
 // ============================================================================
 // Default Configuration
 // ============================================================================

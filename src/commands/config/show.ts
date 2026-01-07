@@ -1,6 +1,6 @@
 import { Command, Flags } from '@oclif/core'
-import { configLoader } from '../../config/loader.js'
-import type { ConfigWithSource } from '../../config/schema.js'
+import { configLoader, discoverConfigFiles, hasProjectConfigErrors } from '../../config/loader.js'
+import type { ConfigFile, ConfigLoadResult } from '../../config/schema.js'
 import { jsonFlag } from '../../utils/common-flags.js'
 import { ErrorHelper } from '../../utils/errors.js'
 
@@ -49,24 +49,26 @@ export default class ConfigShow extends Command {
         // Not a git repo, use cwd
       }
 
-      // 3. Load configuration with source tracking
+      // 3. Discover config files
+      const configFiles = await discoverConfigFiles(cwd, gitRoot)
 
-      const configWithSources = await configLoader.loadWithSources({
+      // 4. Load configuration with source tracking (doesn't throw on errors)
+      const result = await configLoader.loadWithSources({
         cwd,
         gitRoot,
       })
 
-      // 4. Format and display output
+      // 5. Format and display output
       if (flags.json) {
-        // JSON output
-        if (flags.sources) {
-          this.log(JSON.stringify(configWithSources, null, 2))
-        } else {
-          this.log(JSON.stringify(configWithSources.config, null, 2))
-        }
+        this.outputJson(result, configFiles, flags.sources)
       } else {
-        // Human-readable output
-        await this.displayHumanReadable(configWithSources, flags.sources)
+        await this.displayHumanReadable(result, configFiles, flags.sources)
+      }
+
+      // 6. Set exit code if there are project config errors
+      // (use process.exitCode instead of this.exit() to avoid interrupting output)
+      if (hasProjectConfigErrors(result)) {
+        process.exitCode = 1
       }
     } catch (error) {
       ErrorHelper.operation(
@@ -79,14 +81,75 @@ export default class ConfigShow extends Command {
   }
 
   /**
+   * Output JSON format with errors
+   */
+  private outputJson(
+    result: ConfigLoadResult,
+    configFiles: ConfigFile[],
+    showSources: boolean
+  ): void {
+    const filesToInclude = showSources ? configFiles : configFiles.filter((f) => f.exists)
+
+    // Build output object
+    const output: Record<string, unknown> = showSources
+      ? { config: result.config, sources: result.sources }
+      : { ...result.config }
+
+    // Always include files
+    output.files = filesToInclude
+
+    // Include errors if any exist
+    if (result.errors.length > 0) {
+      output.errors = result.errors.map((e) => ({
+        path: e.path,
+        source: e.source,
+        message: e.message,
+        isProjectConfig: e.isProjectConfig,
+        ...(e.line !== undefined && { line: e.line }),
+        ...(e.column !== undefined && { column: e.column }),
+      }))
+    }
+
+    this.log(JSON.stringify(output, null, 2))
+  }
+
+  /**
    * Display configuration in human-readable format
    */
   private async displayHumanReadable(
-    configWithSources: ConfigWithSource,
+    result: ConfigLoadResult,
+    configFiles: ConfigFile[],
     showSources: boolean
   ): Promise<void> {
     const chalk = (await import('chalk')).default
-    const { config, sources } = configWithSources
+    const { config, sources, errors } = result
+
+    // Display errors FIRST if any exist
+    if (errors.length > 0) {
+      this.log(chalk.red.bold('\nConfiguration Errors:\n'))
+
+      for (const error of errors) {
+        const typeLabel = error.isProjectConfig ? chalk.red('[PROJECT]') : chalk.yellow('[GLOBAL]')
+
+        const location =
+          error.line !== undefined
+            ? ` (line ${error.line}${error.column !== undefined ? `, column ${error.column}` : ''})`
+            : ''
+
+        this.log(`${typeLabel} ${chalk.cyan(error.path)}${location}`)
+        this.log(chalk.red(`  Error: ${error.message}`))
+        this.log('')
+      }
+
+      if (hasProjectConfigErrors(result)) {
+        this.log(
+          chalk.yellow(
+            'Note: Project configuration errors will cause other pando commands to fail.\n' +
+              'Please fix the errors above or remove the invalid configuration files.\n'
+          )
+        )
+      }
+    }
 
     // Count unique sources (excluding DEFAULT)
     const uniqueSources = new Set(
@@ -97,9 +160,43 @@ export default class ConfigShow extends Command {
     // Title
     this.log(
       chalk.bold(
-        `\nConfiguration (merged from ${sourceCount} source${sourceCount === 1 ? '' : 's'}):\n`
+        `Configuration (merged from ${sourceCount} source${sourceCount === 1 ? '' : 's'}):\n`
       )
     )
+
+    // Config files section
+    if (showSources) {
+      // Show all searched locations with status
+      this.log(chalk.bold('Config files:'))
+      for (const file of configFiles) {
+        // Check if this file had an error
+        const hasError = errors.some((e) => e.path === file.path)
+        if (hasError) {
+          this.log(chalk.red(`  ✗ ${file.path} (parse error)`))
+        } else if (file.exists) {
+          this.log(chalk.green(`  ✓ ${file.path}`))
+        } else {
+          this.log(chalk.gray(`  ✗ ${file.path} (not found)`))
+        }
+      }
+    } else {
+      // Show only existing files (including those with errors)
+      const existingFiles = configFiles.filter((f) => f.exists)
+      if (existingFiles.length > 0) {
+        this.log(chalk.bold('Config files found:'))
+        for (const file of existingFiles) {
+          const hasError = errors.some((e) => e.path === file.path)
+          if (hasError) {
+            this.log(chalk.red(`  ${file.path} (parse error)`))
+          } else {
+            this.log(chalk.green(`  ${file.path}`))
+          }
+        }
+      } else {
+        this.log(chalk.gray('No config files found (using defaults)'))
+      }
+    }
+    this.log('')
 
     // [rsync] section
     const rsyncConfig = config.rsync as unknown as Record<string, unknown>

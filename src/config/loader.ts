@@ -4,6 +4,8 @@ import * as os from 'os'
 import * as path from 'path'
 import type {
   ConfigFile,
+  ConfigLoadResult,
+  ConfigParseError,
   ConfigWithSource,
   PandoConfig,
   PartialPandoConfig,
@@ -11,7 +13,13 @@ import type {
   SymlinkConfig,
   WorktreeConfig,
 } from './schema.js'
-import { ConfigSource, DEFAULT_CONFIG, validateConfig, validatePartialConfig } from './schema.js'
+import {
+  ConfigParseFailureError,
+  ConfigSource,
+  DEFAULT_CONFIG,
+  validateConfig,
+  validatePartialConfig,
+} from './schema.js'
 import { getEnvConfig, hasEnvConfig } from './env.js'
 
 // ============================================================================
@@ -442,6 +450,42 @@ export function mergeMultipleConfigs(
 }
 
 // ============================================================================
+// Configuration Error Helpers
+// ============================================================================
+
+/**
+ * Check if there are any project-level config errors
+ */
+export function hasProjectConfigErrors(result: ConfigLoadResult): boolean {
+  return result.errors.some((e) => e.isProjectConfig)
+}
+
+/**
+ * Get only project-level config errors
+ */
+export function getProjectConfigErrors(result: ConfigLoadResult): ConfigParseError[] {
+  return result.errors.filter((e) => e.isProjectConfig)
+}
+
+/**
+ * Extract line and column from TOML parser error if available
+ */
+function extractLineColumn(error: Error): { line?: number; column?: number } {
+  // @iarna/toml errors include line and column in the message
+  // Example: "Unexpected character at row 3, col 10"
+  const match = error.message.match(/row\s+(\d+),?\s*col(?:umn)?\s+(\d+)/i)
+  if (match && match[1] && match[2]) {
+    return { line: parseInt(match[1], 10), column: parseInt(match[2], 10) }
+  }
+  // Also try "line X, column Y" format
+  const altMatch = error.message.match(/line\s+(\d+),?\s*column\s+(\d+)/i)
+  if (altMatch && altMatch[1] && altMatch[2]) {
+    return { line: parseInt(altMatch[1], 10), column: parseInt(altMatch[2], 10) }
+  }
+  return {}
+}
+
+// ============================================================================
 // Configuration Loading (Main API)
 // ============================================================================
 
@@ -454,8 +498,12 @@ export class ConfigLoader {
   /**
    * Load configuration from all sources
    *
+   * Throws ConfigParseFailureError if any project-level config files
+   * have parse errors. Use loadWithSources() to get errors without throwing.
+   *
    * @param options - Load options
    * @returns Complete merged configuration
+   * @throws {ConfigParseFailureError} If project-level config files have parse errors
    */
   async load(options: {
     cwd?: string
@@ -472,61 +520,37 @@ export class ConfigLoader {
       return this.cache.get(cacheKey)!
     }
 
-    // Discover all config files
-    const configFiles = await discoverConfigFiles(cwd, gitRoot)
+    // Delegate to loadWithSources to get config and errors
+    const result = await this.loadWithSources({ cwd, gitRoot, onWarning: options.onWarning })
 
-    // Parse each config file that exists
-    const parsedConfigs: Array<{ config: PartialPandoConfig; source: ConfigSource }> = []
-
-    for (const configFile of configFiles) {
-      if (!configFile.exists) {
-        continue
-      }
-
-      try {
-        const config = await parseConfigFile(configFile)
-        parsedConfigs.push({
-          config,
-          source: configFile.source,
-        })
-      } catch (error) {
-        // Report warning but continue with other configs
-        const errMsg = error instanceof Error ? error.message : String(error)
-        options.onWarning?.(`Failed to parse ${configFile.path}: ${errMsg}`)
-      }
+    // Throw on project config errors
+    if (hasProjectConfigErrors(result)) {
+      throw new ConfigParseFailureError(getProjectConfigErrors(result))
     }
 
-    // Add environment variables with priority 90
-    const envConfig = getEnvConfig()
-    if (hasEnvConfig()) {
-      parsedConfigs.push({
-        config: envConfig,
-        source: ConfigSource.ENV_VARS,
-      })
+    // Only cache if no errors at all (prevents cache poisoning)
+    if (result.errors.length === 0) {
+      this.cache.set(cacheKey, result.config)
     }
 
-    // Merge all configs with priority
-    const { config: mergedConfig } = mergeMultipleConfigs(parsedConfigs)
-
-    // Cache result
-    this.cache.set(cacheKey, mergedConfig)
-
-    return mergedConfig
+    return result.config
   }
 
   /**
    * Load configuration with source tracking
    *
    * Useful for debugging to see where each setting comes from.
+   * Returns errors encountered during parsing without throwing.
    *
    * @param options - Load options
-   * @returns Configuration with source metadata
+   * @returns Configuration with source metadata, errors, and parsed files
    */
   async loadWithSources(options: {
     cwd?: string
     gitRoot?: string
+    /** @deprecated Use errors array from result instead */
     onWarning?: (message: string) => void
-  }): Promise<ConfigWithSource> {
+  }): Promise<ConfigLoadResult> {
     const cwd = options.cwd || process.cwd()
     const gitRoot = options.gitRoot || cwd
 
@@ -535,6 +559,8 @@ export class ConfigLoader {
 
     // Parse each config file that exists
     const parsedConfigs: Array<{ config: PartialPandoConfig; source: ConfigSource }> = []
+    const errors: ConfigParseError[] = []
+    const parsedFiles: ConfigFile[] = []
 
     for (const configFile of configFiles) {
       if (!configFile.exists) {
@@ -547,9 +573,23 @@ export class ConfigLoader {
           config,
           source: configFile.source,
         })
+        parsedFiles.push(configFile)
       } catch (error) {
-        // Report warning but continue with other configs
+        // Collect error with structured details
         const errMsg = error instanceof Error ? error.message : String(error)
+        const isProjectConfig = configFile.source !== ConfigSource.GLOBAL_CONFIG
+        const { line, column } = error instanceof Error ? extractLineColumn(error) : {}
+
+        errors.push({
+          path: configFile.path,
+          source: configFile.source,
+          message: errMsg,
+          isProjectConfig,
+          line,
+          column,
+        })
+
+        // Maintain backward compatibility with onWarning callback
         options.onWarning?.(`Failed to parse ${configFile.path}: ${errMsg}`)
       }
     }
@@ -564,7 +604,14 @@ export class ConfigLoader {
     }
 
     // Merge all configs with source tracking
-    return mergeMultipleConfigs(parsedConfigs)
+    const { config, sources } = mergeMultipleConfigs(parsedConfigs)
+
+    return {
+      config,
+      sources,
+      errors,
+      parsedFiles,
+    }
   }
 
   /**
@@ -583,8 +630,13 @@ export const configLoader = new ConfigLoader()
 /**
  * Load configuration (convenience function)
  *
+ * Throws ConfigParseFailureError if any project-level config files
+ * have parse errors. Use configLoader.loadWithSources() to get errors
+ * without throwing.
+ *
  * @param options - Load options
  * @returns Complete merged configuration
+ * @throws {ConfigParseFailureError} If project-level config files have parse errors
  */
 export async function loadConfig(options?: {
   cwd?: string

@@ -285,6 +285,38 @@ describe('pando add (E2E)', () => {
 
       expectJsonError(result, '--force flag requires --branch')
     })
+
+    it('should fail with malformed .pando.toml and direct to config show', async () => {
+      // Create a fresh repo for this test to avoid affecting other tests
+      const malformedRepoPath = await setupGitRepo(container, {
+        name: 'malformed-config-repo',
+        files: [{ path: 'README.md', content: '# Test' }],
+      })
+
+      // Create malformed .pando.toml
+      await container.exec([
+        'sh',
+        '-c',
+        `echo 'this is not valid toml [[[' > ${malformedRepoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoAdd(container, malformedRepoPath, [
+        '--branch',
+        'feature-test',
+        '--path',
+        '../worktrees/feature-test',
+        '--skip-rsync',
+      ])
+
+      // Should fail with error
+      expect(result.exitCode).not.toBe(0)
+
+      // Error should mention configuration error
+      expect(result.stdout + result.stderr).toMatch(/configuration error/i)
+
+      // Error should direct user to run config show
+      expect(result.stdout + result.stderr).toMatch(/config show/i)
+    })
   })
 
   describe('human-readable output', () => {
@@ -412,6 +444,133 @@ describe('pando add (E2E)', () => {
       ])
 
       expectWorktreeAddError(result, 'exists')
+    })
+  })
+
+  // ============================================================================
+  // GitHub Issue #6 - Project-level config with worktree.defaultPath
+  // https://github.com/zpyoung/pando/issues/6
+  // ============================================================================
+
+  describe('project config integration (Issue #6)', () => {
+    it('should use worktree.defaultPath when --path not provided', async () => {
+      // Create .pando.toml in repo with defaultPath configured
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '[worktree]\ndefaultPath = "../worktrees"' > ${repoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'config-default-test',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+      // Verify worktree path includes the configured defaultPath
+      const worktreePath = (result.json?.worktree as { path: string })?.path
+      expect(worktreePath).toContain('worktrees')
+      expect(worktreePath).toContain('config-default-test')
+    })
+
+    it('should error when no --path and no config defaultPath', async () => {
+      // Remove any .pando.toml if exists
+      await container.exec(['rm', '-f', `${repoPath}/.pando.toml`])
+
+      const result = await pandoAdd(container, repoPath, ['--branch', 'no-config-test'])
+
+      expectJsonError(result, 'Path is required')
+    })
+
+    it('should use useProjectSubfolder when enabled in config', async () => {
+      // Create config with useProjectSubfolder enabled
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '[worktree]\ndefaultPath = "../worktrees"\nuseProjectSubfolder = true' > ${repoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'subfolder-test',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+      // Path should include project name subfolder
+      const worktreePath = (result.json?.worktree as { path: string })?.path
+      expect(worktreePath).toContain('worktrees')
+      expect(worktreePath).toContain('add-test-repo') // The repo name from setupGitRepo
+      expect(worktreePath).toContain('subfolder-test')
+    })
+
+    it('should sanitize branch name with slashes in path', async () => {
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '[worktree]\ndefaultPath = "../worktrees"' > ${repoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'feature/slash-test',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+      // Slashes should be converted to underscores
+      const worktreePath = (result.json?.worktree as { path: string })?.path
+      expect(worktreePath).toContain('feature_slash-test')
+    })
+
+    it('should prefer --path flag over config defaultPath', async () => {
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '[worktree]\ndefaultPath = "../config-worktrees"' > ${repoPath}/.pando.toml`,
+      ])
+
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'flag-priority-test',
+        '--path',
+        '../explicit-path',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+      // --path flag should take precedence
+      const worktreePath = (result.json?.worktree as { path: string })?.path
+      expect(worktreePath).toContain('explicit-path')
+      expect(worktreePath).not.toContain('config-worktrees')
+    })
+
+    it('should load worktree.rebaseOnAdd from config', async () => {
+      // Create config with rebaseOnAdd disabled
+      await container.exec([
+        'sh',
+        '-c',
+        `echo '[worktree]\ndefaultPath = "../worktrees"\nrebaseOnAdd = false' > ${repoPath}/.pando.toml`,
+      ])
+
+      // Create the branch first in the main repo
+      await container.exec([
+        'sh',
+        '-c',
+        `cd ${repoPath} && git checkout -b rebase-config-test && git checkout main`,
+      ])
+
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'rebase-config-test',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+      // With rebaseOnAdd=false, existing branch should NOT be rebased
+      const rebased = (result.json?.worktree as { rebased: boolean })?.rebased
+      expect(rebased).toBe(false)
     })
   })
 })
