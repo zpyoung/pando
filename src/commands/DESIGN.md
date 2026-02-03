@@ -11,6 +11,7 @@ This directory contains all CLI command implementations for Pando. Each command 
 | `add.ts` | Create new git worktrees with optional rsync/symlink setup |
 | `list.ts` | List all git worktrees in the repository |
 | `remove.ts` | Remove worktrees with optional branch deletion |
+| `health.ts` | Show health status of all worktrees |
 | `symlink.ts` | Move file to main worktree and create symlink |
 | `config/` | Configuration subcommands (init, show) |
 
@@ -82,6 +83,66 @@ export default class CommandName extends Command {
 **Flags**:
 - `--verbose, -v`: Show detailed information
 - `--json, -j`: JSON output
+
+### health.ts
+
+**Purpose**: Show health status of all worktrees
+
+**Key Features**:
+- Detects uncommitted changes with file count
+- Identifies branches behind upstream
+- Flags worktrees with gone remote branches
+- Handles missing worktree directories gracefully
+- Provides summary statistics
+
+**Flags**:
+- `--json, -j`: JSON output
+
+**Health Status Types**:
+- `clean`: No issues detected
+- `uncommitted`: Has modified files (shows count)
+- `behind`: Branch is N commits behind upstream
+- `gone`: Remote tracking branch was deleted
+- `error`: Cannot check status (directory missing, git error)
+
+**Example Output**:
+```
+Worktree Health Report
+==================================================
+
+🚨 Uncommitted changes:
+  /worktree/feature-auth
+    Branch: feature/auth
+    2 files modified
+
+✅ All good:
+  /worktree/main
+    Branch: main
+```
+
+**JSON Output**:
+```json
+{
+  "worktrees": [
+    {
+      "path": "/worktree/feature-auth",
+      "branch": "feature/auth",
+      "status": "uncommitted",
+      "message": "2 files modified",
+      "details": {
+        "uncommittedFiles": 2
+      }
+    }
+  ],
+  "summary": {
+    "clean": 1,
+    "uncommitted": 1,
+    "behind": 0,
+    "gone": 0,
+    "errors": 0
+  }
+}
+```
 
 ### remove.ts
 
@@ -186,6 +247,7 @@ See `test/commands/add.test.ts` and `test/commands/symlink.test.ts` for examples
 
 ## Future Considerations
 
-- Add `pando status` command for worktree status overview
+- Add `--fetch` flag to `health` command for git fetch --prune before checks
 - Add `pando template` command for worktree templates
 - Add `pando clone` for creating worktrees in new repositories
+- Add fuzzy matching for branch names in `add` command
