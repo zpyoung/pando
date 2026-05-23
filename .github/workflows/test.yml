@@ -167,9 +167,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check GitHub Actions workflows
-        uses: docker://rhysd/actionlint:latest
-        with:
-          args: -color
+        run: |
+          set -euo pipefail
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz -o /tmp/actionlint.tgz
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+          /tmp/actionlint -color
 
   ci-summary:
     name: CI summary
