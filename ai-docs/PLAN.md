@@ -33,5 +33,5 @@ Pando uses a modular, command-oriented architecture based on the **oclif** frame
 - [x] Basic worktree commands (add, list, remove)
 - [x] Basic branch commands (create, delete)
 - [x] Configuration support
-- [ ] AI Context generation scripts (In Progress)
-- [ ] Documentation coverage enforcement (In Progress)
+- [x] AI Context generation scripts ✅
+- [x] Documentation coverage enforcement ✅

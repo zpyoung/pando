@@ -121,6 +121,62 @@ pando list
 pando list --json
 ```
 
+### `pando health`
+
+Show health status of all worktrees
+
+**Flags:**
+
+- `-j, --json`: Output in JSON format
+
+**Health Status Types:**
+- `clean`: No issues detected
+- `uncommitted`: Has modified files (shows count)
+- `behind`: Branch is N commits behind upstream
+- `gone`: Remote tracking branch was deleted
+- `error`: Cannot check status (directory missing, git error)
+
+**Examples:**
+
+```bash
+# Show human-readable health report
+pando health
+
+# Output in JSON format
+pando health --json
+```
+
+**Human Output Example:**
+
+```
+Worktree Health Report
+==================================================
+
+🚨 Uncommitted changes:
+  /worktree/feature-auth
+    Branch: feature/auth
+    2 files modified
+
+⚠️  Behind upstream:
+  /worktree/feature-fix
+    Branch: feature/fix
+    3 commits behind
+    Remote: origin/feature/fix
+
+👻 Remote branch gone:
+  /worktree/old-feature
+    Branch: feature/old
+    remote branch deleted
+
+✅ All good:
+  /worktree/main
+    Branch: main
+  /worktree/develop
+    Branch: develop
+
+Total: 5 worktrees
+```
+
 ### `pando remove`
 
 Remove a git worktree
