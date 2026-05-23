@@ -276,6 +276,7 @@ export default class ConfigInit extends Command {
       symlink: { ...DEFAULT_CONFIG.symlink },
       worktree: { ...DEFAULT_CONFIG.worktree },
       clean: { ...DEFAULT_CONFIG.clean },
+      postCommands: { ...DEFAULT_CONFIG.postCommands },
     }
 
     // Merge rsync section
@@ -379,6 +380,12 @@ export default class ConfigInit extends Command {
       added.push({ path: 'clean', value: DEFAULT_CONFIG.clean })
     }
 
+    if (existing.postCommands) {
+      merged.postCommands = existing.postCommands
+    } else {
+      added.push({ path: 'postCommands', value: DEFAULT_CONFIG.postCommands })
+    }
+
     return { merged, added }
   }
 
@@ -441,11 +448,23 @@ export default class ConfigInit extends Command {
       '',
     ].join('\n')
 
+    const postCommandsComment = [
+      '',
+      '# Post-command scripts',
+      '# Runs after a command succeeds. Scripts run from the created worktree for pando add.',
+      '# Environment: PANDO_COMMAND, PANDO_WORKTREE_PATH, PANDO_BRANCH, PANDO_COMMIT',
+      '# Example:',
+      '# [postCommands]',
+      '# add = ["pnpm install"]',
+      '',
+    ].join('\n')
+
     // Insert comments into TOML
     let result = header + sections + toml
     result = result.replace('[symlink]', symlinkComment + '[symlink]')
     result = result.replace('[worktree]', worktreeComment + '[worktree]')
     result = result.replace('[clean]', cleanComment + '[clean]')
+    result = result.replace('[postCommands]', postCommandsComment + '[postCommands]')
     return result
   }
 }

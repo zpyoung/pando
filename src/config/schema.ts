@@ -91,6 +91,20 @@ export const CleanConfigSchemaPartial = z.object({
 })
 
 /**
+ * Post-command script configuration schema
+ */
+export const PostCommandScriptSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string().optional(),
+    command: z.string(),
+  }),
+])
+
+export const PostCommandsConfigSchema = z.record(z.array(PostCommandScriptSchema)).default({})
+export const PostCommandsConfigSchemaPartial = z.record(z.array(PostCommandScriptSchema)).optional()
+
+/**
  * Complete Pando configuration schema
  */
 export const PandoConfigSchema = z.object({
@@ -98,6 +112,7 @@ export const PandoConfigSchema = z.object({
   symlink: SymlinkConfigSchema,
   worktree: WorktreeConfigSchema,
   clean: CleanConfigSchema,
+  postCommands: PostCommandsConfigSchema,
 })
 
 /**
@@ -108,6 +123,7 @@ export const PartialPandoConfigSchema = z.object({
   symlink: SymlinkConfigSchemaPartial.optional(),
   worktree: WorktreeConfigSchemaPartial.optional(),
   clean: CleanConfigSchemaPartial.optional(),
+  postCommands: PostCommandsConfigSchemaPartial,
 })
 
 // ============================================================================
@@ -226,6 +242,16 @@ export interface CleanConfig {
   fetch: boolean
 }
 
+export type PostCommandScript = z.infer<typeof PostCommandScriptSchema>
+
+/**
+ * Post-command script configuration.
+ *
+ * Keys are command ids such as "add". Values are shell commands that run after
+ * the core command succeeds.
+ */
+export type PostCommandsConfig = Record<string, PostCommandScript[]>
+
 /**
  * Complete Pando configuration
  */
@@ -234,6 +260,7 @@ export interface PandoConfig {
   symlink: SymlinkConfig
   worktree: WorktreeConfig
   clean: CleanConfig
+  postCommands: PostCommandsConfig
 }
 
 /**
@@ -244,6 +271,7 @@ export type PartialPandoConfig = {
   symlink?: Partial<SymlinkConfig>
   worktree?: Partial<WorktreeConfig>
   clean?: Partial<CleanConfig>
+  postCommands?: PostCommandsConfig
 }
 
 // ============================================================================
@@ -364,6 +392,7 @@ export const DEFAULT_CONFIG: PandoConfig = {
   clean: {
     fetch: false,
   },
+  postCommands: {},
 }
 
 // ============================================================================
@@ -378,7 +407,7 @@ export const DEFAULT_CONFIG: PandoConfig = {
  * @throws {z.ZodError} If configuration is invalid
  */
 export function validateConfig(config: unknown): PandoConfig {
-  return PandoConfigSchema.parse(config)
+  return PandoConfigSchema.parse(config) as PandoConfig
 }
 
 /**
