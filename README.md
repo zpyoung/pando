@@ -80,6 +80,7 @@ Create a new git worktree (supports both creating new branches and checking out 
 - `-c, --commit`: Commit hash to base the new branch on
 - `-f, --force`: Force create branch even if it exists (uses git worktree add -B)
 - `--no-rebase`: Skip automatic rebase of existing branch onto source branch
+- `--details`: Show detailed setup information after the worktree is created
 - `-j, --json`: Output in JSON format
 
 **Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
@@ -103,7 +104,12 @@ pando add --path ../hotfix --branch hotfix --commit abc123
 
 # Force reset existing branch to commit
 pando add --path ../feature --branch feature-x --commit abc123 --force
+
+# Show detailed setup output, including rsync totals and sample symlink paths
+pando add --path ../feature-x --branch feature-x --details
 ```
+
+When `--details` is used with `--json`, the response includes a stable `details` object with `rsync` totals and `symlink` counts/sample paths. Without `--details`, default human and JSON output are unchanged.
 
 ### `pando list`
 
@@ -130,6 +136,7 @@ Show health status of all worktrees
 - `-j, --json`: Output in JSON format
 
 **Health Status Types:**
+
 - `clean`: No issues detected
 - `uncommitted`: Has modified files (shows count)
 - `behind`: Branch is N commits behind upstream
@@ -193,6 +200,7 @@ Remove a git worktree
 - `-j, --json`: Output in JSON format (requires --path)
 
 **Branch Deletion:**
+
 - By default, the local branch is deleted when removing a worktree
 - Use `--keep-branch` to preserve the branch
 - Before deleting, checks if branch is merged (use `--force` to skip this check)
@@ -437,12 +445,12 @@ pando config show --json
 
 Pando discovers configuration from multiple locations:
 
-| Location | File | Use Case |
-|----------|------|----------|
-| Current directory | `.pando.toml` | Project-specific settings |
-| Git root | `.pando.toml` | Repository-wide defaults |
-| Project files | `pyproject.toml`, `package.json`, etc. | Embedded in existing config |
-| User home | `~/.config/pando/config.toml` | User-level defaults |
+| Location          | File                                   | Use Case                    |
+| ----------------- | -------------------------------------- | --------------------------- |
+| Current directory | `.pando.toml`                          | Project-specific settings   |
+| Git root          | `.pando.toml`                          | Repository-wide defaults    |
+| Project files     | `pyproject.toml`, `package.json`, etc. | Embedded in existing config |
+| User home         | `~/.config/pando/config.toml`          | User-level defaults         |
 
 ### Configuration Priority
 
@@ -458,11 +466,13 @@ Settings are merged with the following priority (highest to lowest):
 ### Project vs User Config
 
 **Project config** (`.pando.toml` in repo):
+
 - Shared with team via version control
 - Project-specific worktree paths and patterns
 - Checked into git
 
 **User config** (`~/.config/pando/config.toml`):
+
 - Personal preferences across all projects
 - Default behaviors you always want
 - Not shared with team
@@ -506,6 +516,7 @@ fetch = false                 # Run git fetch --prune before detection
 Instead of a separate `.pando.toml`, you can embed configuration in existing project files:
 
 **pyproject.toml** (Python projects):
+
 ```toml
 [tool.pando]
 [tool.pando.worktree]
@@ -513,6 +524,7 @@ defaultPath = "../worktrees"
 ```
 
 **package.json** (Node.js projects):
+
 ```json
 {
   "pando": {
@@ -524,6 +536,7 @@ defaultPath = "../worktrees"
 ```
 
 **Cargo.toml** (Rust projects):
+
 ```toml
 [package.metadata.pando]
 [package.metadata.pando.worktree]
