@@ -5,6 +5,12 @@ import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSe
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
 import { buildAddCommandDetails, type AddCommandDetails } from '../utils/commandDetails.js'
+import {
+  normalizePostCommandScripts,
+  PostCommandError,
+  runPostCommandScripts,
+  type PostCommandResult,
+} from '../utils/postCommands.js'
 
 /**
  * Add a new git worktree
@@ -147,10 +153,17 @@ export default class AddWorktree extends Command {
         resolvedPath,
         spinner
       )
+      const postCommandResults = await this.runPostCommands(
+        config,
+        worktreeInfo,
+        resolvedPath,
+        spinner
+      )
       this.formatOutput(
         flags as Record<string, unknown>,
         worktreeInfo,
         setupResult,
+        postCommandResults,
         Date.now() - startTime,
         chalk
       )
@@ -511,6 +524,35 @@ export default class AddWorktree extends Command {
     }
   }
 
+  private async runPostCommands(
+    config: Awaited<ReturnType<typeof loadConfig>>,
+    worktreeInfo: {
+      path: string
+      branch: string | null
+      commit: string
+    },
+    resolvedPath: string,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): Promise<PostCommandResult[]> {
+    const scripts = normalizePostCommandScripts(config, 'add')
+
+    if (scripts.length === 0) {
+      return []
+    }
+
+    if (spinner) {
+      spinner.text = `Running ${scripts.length} post-command script${scripts.length === 1 ? '' : 's'}...`
+    }
+
+    return runPostCommandScripts(scripts, {
+      commandName: 'add',
+      cwd: resolvedPath,
+      worktreePath: worktreeInfo.path,
+      branch: worktreeInfo.branch,
+      commit: worktreeInfo.commit,
+    })
+  }
+
   /**
    * Phase 5: Output formatting
    */
@@ -526,6 +568,7 @@ export default class AddWorktree extends Command {
     setupResult: Awaited<
       ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>
     > & { details: AddCommandDetails },
+    postCommandResults: PostCommandResult[],
     duration: number,
     chalk: Awaited<typeof import('chalk').default> | null
   ): void {
@@ -564,6 +607,7 @@ export default class AddWorktree extends Command {
                   }
                 : null,
             },
+            postCommands: postCommandResults,
             duration,
             warnings: setupResult.warnings,
             ...(flags.details ? { details: setupResult.details } : {}),
@@ -617,6 +661,31 @@ export default class AddWorktree extends Command {
             output.push(chalk.gray(`      Reason: ${conflict.reason}`))
           })
         }
+      }
+
+      if (postCommandResults.length > 0) {
+        output.push('')
+        output.push(chalk.cyan('Post-command scripts:'))
+        postCommandResults.forEach((result) => {
+          const label = result.name ? `${result.name} (${result.command})` : result.command
+          output.push(chalk.green(`  ✓ ${label}`))
+          output.push(chalk.gray(`    cwd: ${result.cwd}`))
+          output.push(chalk.gray(`    exit: ${result.exitCode ?? 'signal ' + result.signal}`))
+          if (result.stdout.trim().length > 0) {
+            output.push(chalk.gray('    stdout:'))
+            result.stdout
+              .trimEnd()
+              .split('\n')
+              .forEach((line) => output.push(chalk.gray(`      ${line}`)))
+          }
+          if (result.stderr.trim().length > 0) {
+            output.push(chalk.gray('    stderr:'))
+            result.stderr
+              .trimEnd()
+              .split('\n')
+              .forEach((line) => output.push(chalk.gray(`      ${line}`)))
+          }
+        })
       }
 
       if (flags.details) {
@@ -687,6 +756,39 @@ export default class AddWorktree extends Command {
   ): Promise<void> {
     if (spinner) {
       spinner.fail('Failed')
+    }
+
+    if (error instanceof PostCommandError) {
+      if (flags.json) {
+        this.log(
+          JSON.stringify(
+            {
+              success: false,
+              error: error.message,
+              postCommands: error.results,
+              failedPostCommand: error.result,
+            },
+            null,
+            2
+          )
+        )
+        this.exit(1)
+      } else {
+        const result = error.result
+        const details = [
+          `Command: ${result.command}`,
+          `Working directory: ${result.cwd}`,
+          `Exit: ${result.exitCode ?? 'signal ' + result.signal}`,
+        ]
+        if (result.stdout.trim().length > 0) {
+          details.push(`Stdout:\n${result.stdout.trimEnd()}`)
+        }
+        if (result.stderr.trim().length > 0) {
+          details.push(`Stderr:\n${result.stderr.trimEnd()}`)
+        }
+        ErrorHelper.operation(this, error, details.join('\n\n'), false)
+      }
+      return
     }
 
     // Handle SetupError

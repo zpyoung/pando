@@ -509,7 +509,30 @@ targetBranch = "main"         # Target branch for merge checks (used by clean co
 # Clean Configuration
 [clean]
 fetch = false                 # Run git fetch --prune before detection
+
+# Post-command scripts
+# Runs after a command succeeds. For pando add, scripts run from the created worktree.
+[postCommands]
+add = ["pnpm install"]        # Optional setup commands after pando add succeeds
 ```
+
+### Post-command scripts
+
+`postCommands` lets you configure shell commands to run after Pando completes a command successfully. The first supported hook is `add`:
+
+```toml
+[postCommands]
+add = ["pnpm install", "pnpm run prepare"]
+```
+
+Scripts configured for `add` run **after** the worktree has been created and rsync/symlink setup has finished. They execute from the created worktree directory and receive useful context through environment variables:
+
+- `PANDO_COMMAND` — command id, such as `add`
+- `PANDO_WORKTREE_PATH` — absolute path to the created worktree
+- `PANDO_BRANCH` — branch name, or empty in detached HEAD mode
+- `PANDO_COMMIT` — created worktree commit
+
+Human-readable output shows each script, its working directory, exit status, stdout, and stderr. JSON output includes a stable `postCommands` array with `name`, `command`, `cwd`, `exitCode`, `signal`, `stdout`, `stderr`, `success`, and `duration` fields. A non-zero exit code stops later scripts and returns the existing JSON error shape with `success: false`, `error`, `postCommands`, and `failedPostCommand`.
 
 ### Embedding in Project Files
 

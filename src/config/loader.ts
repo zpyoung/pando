@@ -9,6 +9,7 @@ import type {
   ConfigWithSource,
   PandoConfig,
   PartialPandoConfig,
+  PostCommandsConfig,
   RsyncConfig,
   SymlinkConfig,
   WorktreeConfig,
@@ -33,6 +34,8 @@ interface ParsedTomlConfig {
   rsync?: Partial<RsyncConfig>
   symlink?: Partial<SymlinkConfig>
   worktree?: Partial<WorktreeConfig>
+  clean?: Partial<PandoConfig['clean']>
+  postCommands?: PostCommandsConfig
 }
 
 /**
