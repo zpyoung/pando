@@ -1,4 +1,4 @@
-import { Command, Flags } from '@oclif/core'
+import { Command } from '@oclif/core'
 import { createGitHelper } from '../utils/git.js'
 import { jsonFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
@@ -71,7 +71,12 @@ export default class Health extends Command {
 
       if (worktrees.length === 0) {
         if (flags.json) {
-          this.log(JSON.stringify({ worktrees: [], summary: { clean: 0, uncommitted: 0, behind: 0, gone: 0, errors: 0 } }))
+          this.log(
+            JSON.stringify({
+              worktrees: [],
+              summary: { clean: 0, uncommitted: 0, behind: 0, gone: 0, errors: 0 },
+            })
+          )
         } else {
           const chalk = (await import('chalk')).default
           this.log(chalk.yellow('No worktrees found'))
@@ -80,7 +85,6 @@ export default class Health extends Command {
       }
 
       const healthResults: WorktreeHealth[] = []
-      const mainBranch = await gitHelper.getMainBranch()
 
       for (const worktree of worktrees) {
         let health: WorktreeHealth = {
@@ -103,8 +107,10 @@ export default class Health extends Command {
           if (hasChanges) {
             const worktreeGit = (await import('simple-git')).simpleGit(worktree.path)
             const status = await worktreeGit.status()
-            const modifiedFiles = Object.values(status.files).filter(f =>
-              ['M', 'MM', 'AM', 'RM', 'CM'].includes(f.index) || ['M', 'MM', 'AM', 'RM', 'CM'].includes(f.working_dir)
+            const modifiedFiles = Object.values(status.files).filter(
+              (f) =>
+                ['M', 'MM', 'AM', 'RM', 'CM'].includes(f.index) ||
+                ['M', 'MM', 'AM', 'RM', 'CM'].includes(f.working_dir)
             ).length
 
             health.status = 'uncommitted'
@@ -115,7 +121,7 @@ export default class Health extends Command {
             healthResults.push(health)
             continue
           }
-        } catch (error) {
+        } catch {
           // Worktree directory might be missing
           health.status = 'error'
           health.message = 'cannot check status'
@@ -127,7 +133,12 @@ export default class Health extends Command {
         try {
           const remoteBranch = await gitHelper.getBranchRemote(worktree.branch)
           if (remoteBranch && remoteBranch.includes('/')) {
-            const [remote, branch] = remoteBranch.split('/')
+            const [remote, ...branchParts] = remoteBranch.split('/')
+            const branch = branchParts.join('/')
+            if (!remote || !branch) {
+              continue
+            }
+
             const remoteExists = await gitHelper.remoteBranchExists(branch, remote)
 
             if (!remoteExists) {
@@ -139,7 +150,10 @@ export default class Health extends Command {
               }
             } else {
               // Check how many commits behind
-              const commitsBehind = await gitHelper.countCommitsBetween(remoteBranch, worktree.branch)
+              const commitsBehind = await gitHelper.countCommitsBetween(
+                remoteBranch,
+                worktree.branch
+              )
               if (commitsBehind && commitsBehind > 0) {
                 health.status = 'behind'
                 health.message = `${commitsBehind} commit${commitsBehind !== 1 ? 's' : ''} behind`
@@ -151,7 +165,7 @@ export default class Health extends Command {
               }
             }
           }
-        } catch (error) {
+        } catch {
           // Skip remote checks on error
           // This can happen for branches without tracking
         }
@@ -161,11 +175,11 @@ export default class Health extends Command {
 
       // Calculate summary
       const summary = {
-        clean: healthResults.filter(h => h.status === 'clean').length,
-        uncommitted: healthResults.filter(h => h.status === 'uncommitted').length,
-        behind: healthResults.filter(h => h.status === 'behind').length,
-        gone: healthResults.filter(h => h.status === 'gone').length,
-        errors: healthResults.filter(h => h.status === 'error').length,
+        clean: healthResults.filter((h) => h.status === 'clean').length,
+        uncommitted: healthResults.filter((h) => h.status === 'uncommitted').length,
+        behind: healthResults.filter((h) => h.status === 'behind').length,
+        gone: healthResults.filter((h) => h.status === 'gone').length,
+        errors: healthResults.filter((h) => h.status === 'error').length,
       }
 
       const report: HealthReport = {
@@ -183,12 +197,36 @@ export default class Health extends Command {
         this.log(chalk.bold('='.repeat(50)))
         this.log('')
 
-        const sections: Array<{title: string, items: WorktreeHealth[], color: (msg: string) => string}> = [
-          { title: '🚨 Uncommitted changes:', items: healthResults.filter(h => h.status === 'uncommitted'), color: chalk.red },
-          { title: '⚠️  Behind upstream:', items: healthResults.filter(h => h.status === 'behind'), color: chalk.yellow },
-          { title: '👻 Remote branch gone:', items: healthResults.filter(h => h.status === 'gone'), color: chalk.magenta },
-          { title: '❌ Errors:', items: healthResults.filter(h => h.status === 'error'), color: chalk.redBright },
-          { title: '✅ All good:', items: healthResults.filter(h => h.status === 'clean'), color: chalk.green },
+        const sections: Array<{
+          title: string
+          items: WorktreeHealth[]
+          color: (msg: string) => string
+        }> = [
+          {
+            title: '🚨 Uncommitted changes:',
+            items: healthResults.filter((h) => h.status === 'uncommitted'),
+            color: chalk.red,
+          },
+          {
+            title: '⚠️  Behind upstream:',
+            items: healthResults.filter((h) => h.status === 'behind'),
+            color: chalk.yellow,
+          },
+          {
+            title: '👻 Remote branch gone:',
+            items: healthResults.filter((h) => h.status === 'gone'),
+            color: chalk.magenta,
+          },
+          {
+            title: '❌ Errors:',
+            items: healthResults.filter((h) => h.status === 'error'),
+            color: chalk.redBright,
+          },
+          {
+            title: '✅ All good:',
+            items: healthResults.filter((h) => h.status === 'clean'),
+            color: chalk.green,
+          },
         ]
 
         for (const section of sections) {
@@ -210,7 +248,11 @@ export default class Health extends Command {
           }
         }
 
-        this.log(chalk.gray(`Total: ${healthResults.length} worktree${healthResults.length !== 1 ? 's' : ''}`))
+        this.log(
+          chalk.gray(
+            `Total: ${healthResults.length} worktree${healthResults.length !== 1 ? 's' : ''}`
+          )
+        )
       }
     } catch (error) {
       ErrorHelper.operation(
