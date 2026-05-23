@@ -2,6 +2,7 @@
   "name": "@zyoung-ff/pando",
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "pnpm@10.17.1",
   "description": "A TypeScript-based CLI for managing Git worktrees with automation-first design",
   "author": "zpyoung <zach@fabledfreedom.com>",
   "license": "MIT",
