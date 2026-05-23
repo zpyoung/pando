@@ -4,6 +4,7 @@ import { loadConfig } from '../config/loader.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
+import { buildAddCommandDetails, type AddCommandDetails } from '../utils/commandDetails.js'
 
 /**
  * Add a new git worktree
@@ -83,7 +84,10 @@ export default class AddWorktree extends Command {
     }),
 
     // Output flags
-
+    details: Flags.boolean({
+      description: 'Show detailed setup information after the worktree is created',
+      default: false,
+    }),
     json: jsonFlag,
   }
 
@@ -427,7 +431,9 @@ export default class AddWorktree extends Command {
     resolvedPath: string,
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null
   ): Promise<
-    Awaited<ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>>
+    Awaited<ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>> & {
+      details: AddCommandDetails
+    }
   > {
     const orchestrator = createWorktreeSetupOrchestrator(gitHelper, config)
 
@@ -439,7 +445,15 @@ export default class AddWorktree extends Command {
     }
 
     try {
-      return await orchestrator.setupNewWorktree(resolvedPath, setupOptions)
+      const result = await orchestrator.setupNewWorktree(resolvedPath, setupOptions)
+      const details = buildAddCommandDetails({
+        rsyncResult: result.rsyncResult,
+        symlinkResult: result.symlinkResult,
+        transactionOperations: orchestrator.getTransaction().getOperations(),
+        worktreePath: resolvedPath,
+      })
+
+      return { ...result, details }
     } catch (error) {
       if (spinner) {
         spinner.fail('Setup failed')
@@ -511,7 +525,7 @@ export default class AddWorktree extends Command {
     },
     setupResult: Awaited<
       ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>
-    >,
+    > & { details: AddCommandDetails },
     duration: number,
     chalk: Awaited<typeof import('chalk').default> | null
   ): void {
@@ -552,6 +566,7 @@ export default class AddWorktree extends Command {
             },
             duration,
             warnings: setupResult.warnings,
+            ...(flags.details ? { details: setupResult.details } : {}),
           },
           null,
           2
@@ -601,6 +616,45 @@ export default class AddWorktree extends Command {
             output.push(chalk.gray(`      Source: ${conflict.source}`))
             output.push(chalk.gray(`      Reason: ${conflict.reason}`))
           })
+        }
+      }
+
+      if (flags.details) {
+        output.push('')
+        output.push(chalk.cyan('Details:'))
+
+        if (setupResult.details.rsync) {
+          const mbTotal = (setupResult.details.rsync.totalSize / (1024 * 1024)).toFixed(2)
+          output.push(
+            chalk.gray(
+              `  Rsync: ${setupResult.details.rsync.filesTransferred.toLocaleString()} files, ${mbTotal} MB, ${(
+                setupResult.details.rsync.duration / 1000
+              ).toFixed(2)}s`
+            )
+          )
+        } else {
+          output.push(chalk.gray('  Rsync: not run'))
+        }
+
+        if (setupResult.details.symlink) {
+          output.push(
+            chalk.gray(
+              `  Symlinks: ${setupResult.details.symlink.created.toLocaleString()} created, ${setupResult.details.symlink.skipped.toLocaleString()} skipped, ${setupResult.details.symlink.conflictCount.toLocaleString()} conflicts`
+            )
+          )
+
+          if (setupResult.details.symlink.samples.length > 0) {
+            output.push(chalk.gray('  Symlink paths:'))
+            setupResult.details.symlink.samples.forEach((sample) => {
+              output.push(
+                chalk.gray(
+                  `    • ${sample.path} -> ${sample.linkPath ?? sample.source ?? 'unknown'}`
+                )
+              )
+            })
+          }
+        } else {
+          output.push(chalk.gray('  Symlinks: not run'))
         }
       }
 
