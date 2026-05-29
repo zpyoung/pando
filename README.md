@@ -85,6 +85,8 @@ Create a new git worktree (supports both creating new branches and checking out 
 
 **Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
 
+**Rsync Behavior**: When creating a worktree, pando can optionally rsync files from the source worktree to the new worktree. Rsync is automatically skipped when the new worktree is based on a different commit than the source worktree (e.g., when using `--commit` with an older ref). This prevents tracked files from one branch being copied over a different branch's clean checkout. Rsync still runs when commits match, or can be explicitly controlled with `--skip-rsync`.
+
 **Examples:**
 
 ```bash
