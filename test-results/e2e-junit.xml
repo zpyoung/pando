@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="124" failures="1" errors="0" time="60.661">
+    <testsuite name="test/e2e/commands/add.e2e.test.ts" timestamp="2026-05-29T21:58:46.888Z" hostname="runnervm3jyl0" tests="31" failures="1" errors="0" skipped="30" time="60.004161132">
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; basic worktree creation &gt; should create worktree with new branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; basic worktree creation &gt; should create worktree from existing branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; basic worktree creation &gt; should create worktree from specific commit (detached HEAD)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; basic worktree creation &gt; should show worktree in list after creation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; rsync integration &gt; should sync files with rsync enabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; rsync integration &gt; should skip rsync when --skip-rsync is set" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; rsync integration &gt; should apply rsync exclude patterns" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; symlink integration &gt; should create symlinks for specified patterns" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; symlink integration &gt; should skip symlinks when --skip-symlink is set" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; symlink integration &gt; should not show symlinked files as uncommitted changes (skip-worktree)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; force flag &gt; should reset existing branch with --force" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; error handling &gt; should fail when path already exists" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; error handling &gt; should fail when not in a git repository" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; error handling &gt; should fail when neither --branch nor --path provided" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; error handling &gt; should fail when --force is used without --branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; error handling &gt; should fail with malformed .pando.toml and direct to config show" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; human-readable output &gt; should show complete success output with checkmark, path, branch, and commit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; human-readable output &gt; should show Branch and Commit details after worktree creation" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; human-readable output &gt; should show Ready to use footer with cd command" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; human-readable output &gt; should show rsync file count and size when rsync enabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; human-readable output &gt; should show valid MB value greater than 0 for rsync operations" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; human-readable output &gt; should show error message with path already exists" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; project config integration (Issue #6) &gt; should use worktree.defaultPath when --path not provided" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; project config integration (Issue #6) &gt; should error when no --path and no config defaultPath" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; project config integration (Issue #6) &gt; should use useProjectSubfolder when enabled in config" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; project config integration (Issue #6) &gt; should sanitize branch name with slashes in path" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; project config integration (Issue #6) &gt; should prefer --path flag over config defaultPath" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; project config integration (Issue #6) &gt; should load worktree.rebaseOnAdd from config" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; commit mismatch handling (issue fix) &gt; should skip rsync when --commit differs from current HEAD" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E) &gt; commit mismatch handling (issue fix) &gt; should allow rsync when commits match (same branch)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/add.e2e.test.ts" name="pando add (E2E)" time="60.003755517">
+            <failure message="Hook timed out in 60000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with &quot;hookTimeout&quot;." type="Error">
+Error: Hook timed out in 60000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with &quot;hookTimeout&quot;.
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="test/e2e/commands/branch-backup.e2e.test.ts" timestamp="2026-05-29T21:58:46.903Z" hostname="runnervm3jyl0" tests="19" failures="0" errors="0" skipped="19" time="0">
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; basic backup creation &gt; should create backup of current branch with JSON output" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; basic backup creation &gt; should create backup with a message" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; basic backup creation &gt; should create backup of a specific branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; basic backup creation &gt; should verify backup branch exists in git" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; basic backup creation &gt; should create backup that points to correct commit" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; human-readable output &gt; should show success message with checkmark" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; human-readable output &gt; should show message when provided" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; human-readable output &gt; should show restore hint" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; error handling &gt; should fail when not in a git repository" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; error handling &gt; should fail when specifying non-existent branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; error handling &gt; should fail on detached HEAD without --branch flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; error handling &gt; should succeed on detached HEAD with --branch flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; multiple backups &gt; should create multiple unique backups over time" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; backup clear (--clear) &gt; should fail when no backups exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; backup clear (--clear) &gt; should delete all backups with --all flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; backup clear (--clear) &gt; should delete specific backup with --target flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; backup clear (--clear) &gt; should fail in JSON mode without --target or --all" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; backup clear (--clear) &gt; should fail when target backup does not exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-backup.e2e.test.ts" name="pando branch backup (E2E) &gt; backup clear (--clear) &gt; should show success message in human-readable output" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="test/e2e/commands/branch-restore.e2e.test.ts" timestamp="2026-05-29T21:58:46.908Z" hostname="runnervm3jyl0" tests="14" failures="0" errors="0" skipped="14" time="0">
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; basic restore &gt; should restore current branch from backup with --force" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; basic restore &gt; should restore and delete backup with --delete-backup flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; basic restore &gt; should restore a different branch (not currently checked out)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail when --json is used without --backup flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail when backup does not exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail when backup is not for the target branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail when no backups exist for the branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail when target branch does not exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail on detached HEAD without --branch flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail when working tree has uncommitted changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; error handling &gt; should fail when target branch is checked out in another worktree" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; output format &gt; should return success status in JSON" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; output format &gt; should return warning status when backup deletion fails" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/branch-restore.e2e.test.ts" name="pando branch restore (E2E) &gt; output format &gt; should include all restore result fields" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="test/e2e/commands/list.e2e.test.ts" timestamp="2026-05-29T21:58:46.912Z" hostname="runnervm3jyl0" tests="10" failures="0" errors="0" skipped="10" time="0">
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; basic listing &gt; should list main worktree only" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; basic listing &gt; should show main worktree path" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; with multiple worktrees &gt; should list all worktrees after adding new ones" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; with multiple worktrees &gt; should include branch info for all worktrees" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; detached HEAD worktrees &gt; should identify detached HEAD worktrees" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; error handling &gt; should fail when not in a git repository" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; human-readable output &gt; should display formatted worktree list with header and count" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; human-readable output &gt; should show all worktree details with Branch labels and paths" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; human-readable output &gt; should show feature branch names in multi-worktree output" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/list.e2e.test.ts" name="pando list (E2E) &gt; human-readable output &gt; should indicate detached HEAD worktrees with special formatting" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="test/e2e/commands/remove.e2e.test.ts" timestamp="2026-05-29T21:58:46.916Z" hostname="runnervm3jyl0" tests="12" failures="0" errors="0" skipped="12" time="0">
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; basic worktree removal &gt; should remove a worktree successfully" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; basic worktree removal &gt; should fail when worktree path does not exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; branch deletion options &gt; should delete local branch with --delete-branch local" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; branch deletion options &gt; should keep branch with --keep-branch" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; uncommitted changes handling &gt; should fail without --force when worktree has uncommitted changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; uncommitted changes handling &gt; should succeed with --force when worktree has uncommitted changes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; error handling &gt; should fail when not in a git repository" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; error handling &gt; should require --path in JSON mode" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; human-readable output &gt; should show success message with checkmark and removed path" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; human-readable output &gt; should show removed worktree path and success message" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; human-readable output &gt; should show branch deletion message with branch name when deleted" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/remove.e2e.test.ts" name="pando remove (E2E) &gt; human-readable output &gt; should show error message with not found for nonexistent path" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="test/e2e/commands/symlink.e2e.test.ts" timestamp="2026-05-29T21:58:46.920Z" hostname="runnervm3jyl0" tests="9" failures="0" errors="0" skipped="9" time="0">
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; basic symlink creation &gt; should move file to main worktree and create symlink" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; basic symlink creation &gt; should create symlink for nested file" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; error handling &gt; should fail when file does not exist" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; error handling &gt; should fail when run from main worktree" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; dry-run mode &gt; should not create symlink with --dry-run" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; human-readable output &gt; should show complete symlink output with Moved, Source, Dest, and Created symlink" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; human-readable output &gt; should show Moved message with Source and Dest paths" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; human-readable output &gt; should show dry-run format with Move, To, and Link" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/symlink.e2e.test.ts" name="pando symlink (E2E) &gt; human-readable output &gt; should show error for nonexistent file" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="test/e2e/commands/config/init.e2e.test.ts" timestamp="2026-05-29T21:58:46.923Z" hostname="runnervm3jyl0" tests="14" failures="0" errors="0" skipped="14" time="0">
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; creating new config &gt; should create .pando.toml with defaults" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; creating new config &gt; should include default rsync settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; creating new config &gt; should include default symlink settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; merging with existing config &gt; should merge missing defaults into existing config" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; merging with existing config &gt; should preserve existing values during merge" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; overwriting config &gt; should overwrite existing config with --force" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; overwriting config &gt; should handle existing config appropriately" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; global config &gt; should create global config with --global" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; config location options &gt; should create config in git root when run from subdirectory" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; human-readable output &gt; should show complete config created output with checkmark, path, and next steps" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; human-readable output &gt; should show path to .pando.toml config file" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; human-readable output &gt; should show Next steps section with edit and verify instructions" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; human-readable output &gt; should show merge details with Added settings count" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/init.e2e.test.ts" name="pando config init (E2E) &gt; human-readable output &gt; should show config overwritten output with --force on existing file" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="test/e2e/commands/config/show.e2e.test.ts" timestamp="2026-05-29T21:58:46.928Z" hostname="runnervm3jyl0" tests="15" failures="0" errors="0" skipped="15" time="0">
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; displaying configuration &gt; should display default configuration when no config file exists" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; displaying configuration &gt; should display merged configuration from config file" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; displaying configuration &gt; should reflect custom config values" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; source tracking &gt; should show sources with --sources flag" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; config precedence &gt; should show config from project root when in subdirectory" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; error handling &gt; should work even when not in a git repository" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; error handling &gt; should display errors for malformed TOML config (JSON output)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; error handling &gt; should display errors for malformed TOML config (human-readable output)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; error handling &gt; should show errors alongside valid config from other sources" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; error handling &gt; should exit with code 0 when config is valid" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; human-readable output &gt; should show complete config output with header, sections, and all settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; human-readable output &gt; should show rsync section with enabled, flags, and exclude settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; human-readable output &gt; should show symlink section with patterns and relative settings" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; human-readable output &gt; should show custom values from config file" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="test/e2e/commands/config/show.e2e.test.ts" name="pando config show (E2E) &gt; human-readable output &gt; should show Configuration sources section with --sources flag" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+</testsuites>
