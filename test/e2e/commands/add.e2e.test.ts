@@ -573,4 +573,106 @@ describe('pando add (E2E)', () => {
       expect(rebased).toBe(false)
     })
   })
+
+  describe('commit mismatch handling (issue fix)', () => {
+    it('should skip rsync when --commit differs from current HEAD', async () => {
+      // Create a repo with multiple commits
+      const commitTestRepo = await setupGitRepo(container, {
+        name: 'commit-mismatch-repo',
+        files: [
+          { path: 'tracked-file-1.txt', content: 'version 1' },
+          { path: 'tracked-file-2.txt', content: 'version 1' },
+        ],
+      })
+
+      // Make some changes and commit them to create a different state
+      await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitTestRepo} && echo "version 2" > tracked-file-1.txt && echo "version 2" > tracked-file-2.txt && git add . && git commit -m "Update tracked files"`,
+      ])
+
+      // Get the first commit (before the changes)
+      const firstCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitTestRepo} && git rev-parse HEAD~1`,
+      ])
+      const firstCommit = firstCommitResult.stdout.trim()
+
+      // Now create a worktree based on the first commit
+      // The source worktree has "version 2" but the new worktree should have "version 1"
+      const result = await pandoAdd(container, commitTestRepo, [
+        '--path',
+        '../worktrees/commit-mismatch-test',
+        '--branch',
+        'old-commit-branch',
+        '--commit',
+        firstCommit,
+      ])
+
+      expectJsonSuccess(result)
+
+      // Verify rsync was skipped due to commit mismatch
+      expect(result.json?.setup?.rsync).toBeNull()
+
+      // Verify warning was issued
+      const warnings = (result.json as { warnings?: string[] })?.warnings
+      expect(warnings).toBeDefined()
+      expect(warnings?.some((w) => w.includes('Skipped rsync'))).toBe(true)
+      expect(warnings?.some((w) => w.includes('differs from target worktree'))).toBe(true)
+
+      // Most importantly: verify the new worktree has clean status (not dirty)
+      const worktreePath = `${commitTestRepo}/../worktrees/commit-mismatch-test`
+      const statusResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && git status --porcelain`,
+      ])
+
+      // Should be clean - no tracked files from the source worktree
+      expect(
+        statusResult.stdout.trim(),
+        `Expected clean git status but got: ${statusResult.stdout}`
+      ).toBe('')
+
+      // Verify file content matches the commit, not the source worktree
+      const fileContentResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && cat tracked-file-1.txt`,
+      ])
+
+      // Should have "version 1" from the old commit, not "version 2" from source
+      expect(fileContentResult.stdout.trim()).toBe('version 1')
+    })
+
+    it('should allow rsync when commits match (same branch)', async () => {
+      // Create a simple repo
+      const sameCommitRepo = await setupGitRepo(container, {
+        name: 'same-commit-repo',
+        files: [{ path: 'README.md', content: '# Test' }],
+      })
+
+      // Create worktree from current HEAD (commits match)
+      const result = await pandoAdd(container, sameCommitRepo, [
+        '--branch',
+        'same-commit-test',
+        '--path',
+        '../worktrees/same-commit-test',
+      ])
+
+      expectJsonSuccess(result)
+
+      // Rsync should run (commits match)
+      expect(result.json?.setup?.rsync).toBeDefined()
+      expect(result.json?.setup?.rsync).not.toBeNull()
+
+      // No warning about skipped rsync
+      const warnings = (result.json as { warnings?: string[] })?.warnings
+      if (warnings) {
+        expect(warnings.some((w) => w.includes('Skipped rsync'))).toBe(false)
+      }
+    })
+  })
 })

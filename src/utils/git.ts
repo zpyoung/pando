@@ -106,6 +106,16 @@ export class GitHelper {
   }
 
   /**
+   * Get the commit hash from a specific worktree path
+   * Uses git -C to run commands in the target worktree
+   */
+  async getWorktreeCommit(worktreePath: string): Promise<string> {
+    const gitInWorktree = simpleGit(worktreePath)
+    const commit = await gitInWorktree.revparse(['HEAD'])
+    return commit.trim()
+  }
+
+  /**
    * Add a new worktree
    * Supports creating new branches (-b), checking out existing branches,
    * and force-resetting branches (-B)

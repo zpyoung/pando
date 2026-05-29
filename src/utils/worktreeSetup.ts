@@ -215,62 +215,80 @@ export class WorktreeSetupOrchestrator {
       if (!options.skipRsync && this.config.rsync.enabled) {
         this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Syncing files with rsync...')
 
-        // Check rsync is installed
-        const { RsyncNotInstalledError } = await import('./fileOps.js')
-        if (!(await this.rsyncHelper.isInstalled())) {
-          throw new RsyncNotInstalledError()
-        }
+        // Check if source and target worktrees have different commits
+        // If they differ, skip rsync to prevent copying tracked files from a different commit
+        const sourceCommit = await this.gitHelper.getWorktreeCommit(sourceTreePath)
+        const targetCommit = await this.gitHelper.getWorktreeCommit(worktreePath)
 
-        // Build exclude patterns
-        const excludePatterns: string[] = [
-          '.git', // Always exclude .git
-          ...rsyncConfig.exclude,
-        ]
-
-        // ALWAYS exclude files/directories that will be symlinked (regardless of beforeRsync setting)
-        // This prevents rsync from copying items that should be symlinks
-        if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
-          // Match symlink patterns against source directory to find items that will be symlinked
-          const itemsToSymlink = await this.symlinkHelper.matchPatterns(
-            sourceTreePath,
-            symlinkConfig.patterns
+        if (sourceCommit !== targetCommit) {
+          warnings.push(
+            `Skipped rsync: source worktree (${sourceCommit.substring(0, 7)}) ` +
+              `differs from target worktree (${targetCommit.substring(0, 7)}). ` +
+              `This prevents tracked files from being copied from a different commit.`
           )
+          this.reportProgress(
+            options.onProgress,
+            SetupPhase.RSYNC,
+            'Skipped rsync due to commit mismatch'
+          )
+        } else {
+          // Check rsync is installed
+          const { RsyncNotInstalledError } = await import('./fileOps.js')
+          if (!(await this.rsyncHelper.isInstalled())) {
+            throw new RsyncNotInstalledError()
+          }
 
-          // Generate rsync exclude patterns with proper format for files vs directories
-          // Directories need trailing '/' to exclude the directory and all contents
-          const pathModule = await import('path')
-          for (const item of itemsToSymlink) {
-            const fullPath = pathModule.default.join(sourceTreePath, item)
-            try {
-              const stats = await fs.stat(fullPath)
-              if (stats.isDirectory()) {
-                // For directories: use trailing slash to exclude directory and contents
-                excludePatterns.push(`/${item}/`)
-              } else {
-                // For files: exclude the specific file
+          // Build exclude patterns
+          const excludePatterns: string[] = [
+            '.git', // Always exclude .git
+            ...rsyncConfig.exclude,
+          ]
+
+          // ALWAYS exclude files/directories that will be symlinked (regardless of beforeRsync setting)
+          // This prevents rsync from copying items that should be symlinks
+          if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
+            // Match symlink patterns against source directory to find items that will be symlinked
+            const itemsToSymlink = await this.symlinkHelper.matchPatterns(
+              sourceTreePath,
+              symlinkConfig.patterns
+            )
+
+            // Generate rsync exclude patterns with proper format for files vs directories
+            // Directories need trailing '/' to exclude the directory and all contents
+            const pathModule = await import('path')
+            for (const item of itemsToSymlink) {
+              const fullPath = pathModule.default.join(sourceTreePath, item)
+              try {
+                const stats = await fs.stat(fullPath)
+                if (stats.isDirectory()) {
+                  // For directories: use trailing slash to exclude directory and contents
+                  excludePatterns.push(`/${item}/`)
+                } else {
+                  // For files: exclude the specific file
+                  excludePatterns.push(`/${item}`)
+                }
+              } catch (statError) {
+                // Default to file pattern if stat fails, but warn about potential issues
+                const errMsg = statError instanceof Error ? statError.message : String(statError)
+                warnings.push(
+                  `Could not stat '${item}' for rsync exclusion (using file pattern): ${errMsg}`
+                )
                 excludePatterns.push(`/${item}`)
               }
-            } catch (statError) {
-              // Default to file pattern if stat fails, but warn about potential issues
-              const errMsg = statError instanceof Error ? statError.message : String(statError)
-              warnings.push(
-                `Could not stat '${item}' for rsync exclusion (using file pattern): ${errMsg}`
-              )
-              excludePatterns.push(`/${item}`)
             }
           }
-        }
 
-        // Execute rsync with progress callback
-        rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
-          excludePatterns,
-          onProgress: options.onProgress
-            ? (progress: RsyncProgressData): void => {
-                const message = `Synced: ${progress.filesTransferred} files`
-                options.onProgress!(SetupPhase.RSYNC, message)
-              }
-            : undefined,
-        })
+          // Execute rsync with progress callback
+          rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
+            excludePatterns,
+            onProgress: options.onProgress
+              ? (progress: RsyncProgressData): void => {
+                  const message = `Synced: ${progress.filesTransferred} files`
+                  options.onProgress!(SetupPhase.RSYNC, message)
+                }
+              : undefined,
+          })
+        }
       }
 
       // ============================================================

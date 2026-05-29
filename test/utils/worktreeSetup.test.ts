@@ -74,6 +74,7 @@ describe('WorktreeSetupOrchestrator', () => {
     // Create mock GitHelper
     mockGitHelper = {
       getMainWorktreePath: vi.fn().mockResolvedValue('/repo/main'),
+      getWorktreeCommit: vi.fn().mockResolvedValue('abc123'), // Same commit for both by default
       removeWorktree: vi.fn().mockResolvedValue(undefined),
       setSkipWorktree: vi.fn().mockResolvedValue({ success: true, filesMarked: 0 }),
     } as any
