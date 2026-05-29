@@ -106,6 +106,15 @@ export class GitHelper {
   }
 
   /**
+   * Resolve the HEAD commit for a specific worktree path.
+   */
+  async getWorktreeCommit(worktreePath: string): Promise<string> {
+    const gitInWorktree = simpleGit(worktreePath)
+    const commit = await gitInWorktree.revparse(['HEAD'])
+    return commit.trim()
+  }
+
+  /**
    * Add a new worktree
    * Supports creating new branches (-b), checking out existing branches,
    * and force-resetting branches (-B)
@@ -150,8 +159,8 @@ export class GitHelper {
     // Execute worktree add command
     await this.git.raw(args)
 
-    // Get the commit hash for the new worktree
-    const commitHash = await this.git.raw(['rev-parse', 'HEAD'])
+    // Get the commit hash for the new worktree, not the source checkout.
+    const commitHash = await this.getWorktreeCommit(path)
 
     // Determine if this was an existing branch checkout (not new creation or force reset)
     const isExistingBranch = branchExists && !options?.force
@@ -159,7 +168,7 @@ export class GitHelper {
     return {
       path,
       branch: options?.branch || null,
-      commit: commitHash.trim(),
+      commit: commitHash,
       isPrunable: false,
       isExistingBranch,
     }

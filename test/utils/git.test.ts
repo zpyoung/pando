@@ -4,6 +4,7 @@ import { GitHelper, WorktreeInfo } from '../../src/utils/git'
 // Mock simpleGit for worktree-specific operations
 const mockWorktreeGit = {
   raw: vi.fn(),
+  revparse: vi.fn(),
   status: vi.fn(),
   rebase: vi.fn(),
 }
@@ -35,6 +36,7 @@ describe('GitHelper', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockWorktreeGit.revparse.mockResolvedValue('abc123def456\n')
     gitHelper = new GitHelper()
     // Access private git instance through type assertion for testing
     mockGit = (gitHelper as any).git

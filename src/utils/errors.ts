@@ -57,7 +57,7 @@ export class ErrorHelper {
       command.log(
         JSON.stringify(
           {
-            status: 'error',
+            success: false,
             error: message,
           },
           null,
@@ -105,7 +105,7 @@ export class ErrorHelper {
       command.log(
         JSON.stringify(
           {
-            status: 'error',
+            success: false,
             error: message,
             context,
             details: error.message,

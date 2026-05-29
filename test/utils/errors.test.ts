@@ -46,7 +46,7 @@ describe('ErrorHelper', () => {
       expect(mockLog).toHaveBeenCalledWith(
         JSON.stringify(
           {
-            status: 'error',
+            success: false,
             error: 'Test validation error',
           },
           null,
@@ -111,7 +111,7 @@ describe('ErrorHelper', () => {
       expect(mockLog).toHaveBeenCalledWith(
         JSON.stringify(
           {
-            status: 'error',
+            success: false,
             error: 'Failed to sync: Network timeout',
             context: 'Failed to sync',
             details: 'Network timeout',
@@ -288,7 +288,7 @@ describe('ErrorHelper', () => {
         // Expected
       }
       const validation = JSON.parse(mockLog.mock.calls[0][0])
-      expect(validation).toHaveProperty('status')
+      expect(validation).toHaveProperty('success', false)
       expect(validation).toHaveProperty('error')
 
       mockLog.mockClear()
@@ -300,7 +300,7 @@ describe('ErrorHelper', () => {
         // Expected
       }
       const operation = JSON.parse(mockLog.mock.calls[0][0])
-      expect(operation).toHaveProperty('status')
+      expect(operation).toHaveProperty('success', false)
       expect(operation).toHaveProperty('error')
       expect(operation).toHaveProperty('context')
       expect(operation).toHaveProperty('details')
