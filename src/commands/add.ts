@@ -754,6 +754,10 @@ export default class AddWorktree extends Command {
     chalk: Awaited<typeof import('chalk').default> | null,
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null
   ): Promise<void> {
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIT') {
+      throw error
+    }
+
     if (spinner) {
       spinner.fail('Failed')
     }

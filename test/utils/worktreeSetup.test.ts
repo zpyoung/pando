@@ -74,6 +74,7 @@ describe('WorktreeSetupOrchestrator', () => {
     // Create mock GitHelper
     mockGitHelper = {
       getMainWorktreePath: vi.fn().mockResolvedValue('/repo/main'),
+      getWorktreeCommit: vi.fn().mockResolvedValue('abc123def456'),
       removeWorktree: vi.fn().mockResolvedValue(undefined),
       setSkipWorktree: vi.fn().mockResolvedValue({ success: true, filesMarked: 0 }),
     } as any
@@ -305,6 +306,21 @@ describe('WorktreeSetupOrchestrator', () => {
 
       expect(mockRsyncHelper.rsync).not.toHaveBeenCalled()
       expect(result.rsyncResult).toBeUndefined()
+    })
+
+    it('should skip rsync when source and target commits differ', async () => {
+      vi.mocked(mockGitHelper.getWorktreeCommit)
+        .mockResolvedValueOnce('source1234567890')
+        .mockResolvedValueOnce('target1234567890')
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockRsyncHelper.isInstalled).not.toHaveBeenCalled()
+      expect(mockRsyncHelper.rsync).not.toHaveBeenCalled()
+      expect(result.rsyncResult).toBeUndefined()
+      expect(result.warnings).toContain(
+        'Skipped rsync because source worktree (source1) differs from target worktree (target1). This prevents tracked files from being copied across different commits.'
+      )
     })
 
     it('should skip rsync when config.rsync.enabled=false', async () => {

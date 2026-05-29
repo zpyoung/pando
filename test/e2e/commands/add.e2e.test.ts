@@ -271,8 +271,18 @@ describe('pando add (E2E)', () => {
 
     it('should fail when neither --branch nor --path provided', async () => {
       const result = await pandoAdd(container, repoPath, [])
+      expectJsonError(result, 'Either --branch or --path is required')
+    })
+
+    it('should emit a single parseable JSON object when path is required', async () => {
+      const result = await pandoAdd(container, repoPath, ['--branch', 'missing-path-json'])
 
       expect(result.exitCode).not.toBe(0)
+      expect(result.json).toBeDefined()
+      expect(result.json?.success).toBe(false)
+      expect(String(result.json?.error)).toContain('Path is required')
+      expect(result.stdout).not.toContain('EEXIT')
+      expect(result.stdout).not.toContain('"status": "error"')
     })
 
     it('should fail when --force is used without --branch', async () => {
@@ -571,6 +581,99 @@ describe('pando add (E2E)', () => {
       // With rebaseOnAdd=false, existing branch should NOT be rebased
       const rebased = (result.json?.worktree as { rebased: boolean })?.rebased
       expect(rebased).toBe(false)
+    })
+  })
+
+  describe('commit-specific worktree creation', () => {
+    it('reports the checked-out commit rather than the source worktree HEAD', async () => {
+      const commitRepo = await setupGitRepo(container, {
+        name: 'commit-report-repo',
+        files: [{ path: 'tracked.txt', content: 'base' }],
+      })
+
+      const baseCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitRepo} && git rev-parse HEAD`,
+      ])
+      const baseCommit = baseCommitResult.stdout.trim()
+
+      await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitRepo} && git checkout -b source-feature && echo feature > tracked.txt && git add tracked.txt && git commit -m feature`,
+      ])
+
+      const result = await pandoAdd(container, commitRepo, [
+        '--path',
+        '../worktrees/commit-report-target',
+        '--branch',
+        'commit-report-target',
+        '--commit',
+        baseCommit,
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+      expect((result.json?.worktree as { commit: string }).commit).toBe(baseCommit)
+
+      const actualHeadResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${(result.json?.worktree as { path: string }).path} && git rev-parse HEAD`,
+      ])
+      expect(actualHeadResult.stdout.trim()).toBe(baseCommit)
+    })
+
+    it('skips rsync and leaves the target clean when source and target commits differ', async () => {
+      const commitRepo = await setupGitRepo(container, {
+        name: 'commit-clean-rsync-repo',
+        files: [{ path: 'tracked.txt', content: 'base' }],
+      })
+
+      const baseCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitRepo} && git rev-parse HEAD`,
+      ])
+      const baseCommit = baseCommitResult.stdout.trim()
+
+      await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitRepo} && git checkout -b source-dirtying-feature && echo feature > tracked.txt && git add tracked.txt && git commit -m feature`,
+      ])
+
+      const result = await pandoAdd(container, commitRepo, [
+        '--path',
+        '../worktrees/commit-clean-target',
+        '--branch',
+        'commit-clean-target',
+        '--commit',
+        baseCommit,
+      ])
+
+      expectJsonSuccess(result)
+      expect(result.json?.setup).toBeDefined()
+      expect((result.json?.setup as { rsync: unknown }).rsync).toBeNull()
+      expect(
+        (result.json?.warnings as string[]).some((warning) => warning.includes('Skipped rsync'))
+      ).toBe(true)
+
+      const worktreePath = (result.json?.worktree as { path: string }).path
+      const statusResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && git status --short`,
+      ])
+      expect(statusResult.stdout.trim()).toBe('')
+
+      const contentResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && cat tracked.txt`,
+      ])
+      expect(contentResult.stdout.trim()).toBe('base')
     })
   })
 })
