@@ -286,6 +286,49 @@ describe('pando add (E2E)', () => {
       expectJsonError(result, '--force flag requires --branch')
     })
 
+    it('should emit exactly one JSON object when path is required', async () => {
+      // Reproduce issue #102: pando add --json emits concatenated JSON objects on error
+      // When --path is not provided and no default is configured
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'test-branch',
+        // Intentionally omitting --path to trigger the error
+      ])
+
+      // Should fail with non-zero exit code
+      expect(result.exitCode).not.toBe(0)
+
+      // Verify stdout contains exactly one JSON object
+      const stdout = result.stdout.trim()
+      expect(stdout).toBeTruthy()
+
+      // Parse the output - should succeed if it's valid JSON
+      let parsed: unknown
+      expect(() => {
+        parsed = JSON.parse(stdout)
+      }, `stdout should be parseable JSON, got: ${stdout}`).not.toThrow()
+
+      // Verify the error structure
+      expect(parsed).toBeDefined()
+      const jsonError = parsed as Record<string, unknown>
+      expect(jsonError.status).toBe('error')
+      expect(jsonError.error).toBeDefined()
+      expect(typeof jsonError.error).toBe('string')
+      expect((jsonError.error as string).toLowerCase()).toContain('path is required')
+
+      // Ensure there's no second JSON object by checking that parsing fails
+      // if we try to parse starting after the first JSON
+      const lines = stdout.split('\n')
+      expect(
+        lines.length,
+        'Should have only one JSON object (possibly multi-line formatted)'
+      ).toBeLessThanOrEqual(10) // Allow for pretty-printed JSON
+
+      // Verify no "EEXIT" or duplicate error objects
+      expect(stdout).not.toContain('EEXIT')
+      expect(stdout).not.toContain('"success": false')
+    })
+
     it('should fail with malformed .pando.toml and direct to config show', async () => {
       // Create a fresh repo for this test to avoid affecting other tests
       const malformedRepoPath = await setupGitRepo(container, {

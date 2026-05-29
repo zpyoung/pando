@@ -754,6 +754,12 @@ export default class AddWorktree extends Command {
     chalk: Awaited<typeof import('chalk').default> | null,
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null
   ): Promise<void> {
+    // If this is an EEXIT error from ErrorHelper, don't handle it - just rethrow
+    // ErrorHelper already logged the error message and called exit
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIT') {
+      throw error
+    }
+
     if (spinner) {
       spinner.fail('Failed')
     }

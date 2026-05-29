@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ErrorHelper } from '../../src/utils/errors.js'
 import type { Command } from '@oclif/core'
 
@@ -8,6 +8,7 @@ describe('ErrorHelper', () => {
   let mockError: ReturnType<typeof vi.fn>
   let mockWarn: ReturnType<typeof vi.fn>
   let mockExit: ReturnType<typeof vi.fn>
+  let processExitSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     mockLog = vi.fn()
@@ -15,12 +16,21 @@ describe('ErrorHelper', () => {
     mockWarn = vi.fn()
     mockExit = vi.fn()
 
+    // Spy on process.exit to prevent actual exit and verify calls
+    processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      // Do nothing, just prevent actual exit
+    }) as any)
+
     mockCommand = {
       log: mockLog,
       error: mockError,
       warn: mockWarn,
       exit: mockExit,
     } as unknown as Command
+  })
+
+  afterEach(() => {
+    processExitSpy.mockRestore()
   })
 
   describe('validation()', () => {
@@ -53,7 +63,9 @@ describe('ErrorHelper', () => {
           2
         )
       )
-      expect(mockExit).toHaveBeenCalledWith(1)
+      // In JSON mode, should use process.exit() instead of command.exit()
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+      expect(mockExit).not.toHaveBeenCalled()
       expect(mockError).not.toHaveBeenCalled()
     })
 
@@ -120,7 +132,9 @@ describe('ErrorHelper', () => {
           2
         )
       )
-      expect(mockExit).toHaveBeenCalledWith(1)
+      // In JSON mode, should use process.exit() instead of command.exit()
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+      expect(mockExit).not.toHaveBeenCalled()
     })
 
     it('should handle errors with complex messages', () => {

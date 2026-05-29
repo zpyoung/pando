@@ -64,7 +64,8 @@ export class ErrorHelper {
           2
         )
       )
-      command.exit(1)
+      // Use process.exit() to avoid oclif's additional error output
+      process.exit(1)
     } else {
       // Use { exit: false } to prevent stack trace display
       command.error(message, { exit: false })
@@ -114,7 +115,8 @@ export class ErrorHelper {
           2
         )
       )
-      command.exit(1)
+      // Use process.exit() to avoid oclif's additional error output
+      process.exit(1)
     } else {
       // Use { exit: false } to prevent stack trace display
       command.error(message, { exit: false })
