@@ -109,7 +109,9 @@ branch refs/heads/feature
         .fn()
         .mockRejectedValueOnce(new Error('not a valid ref')) // branchExists returns false
         .mockResolvedValueOnce('') // worktree add
-        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      // Mock the worktree git instance to return commit hash
+      mockWorktreeGit.raw = vi.fn().mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD in worktree
 
       const result = await gitHelper.addWorktree('/path/to/new', {
         branch: 'feature-branch',
@@ -129,6 +131,8 @@ branch refs/heads/feature
         'feature-branch',
         '/path/to/new',
       ])
+      // Verify we called rev-parse on the worktree, not the source
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith(['rev-parse', 'HEAD'])
     })
 
     it('should add a worktree with commit reference', async () => {
@@ -136,7 +140,9 @@ branch refs/heads/feature
         .fn()
         .mockRejectedValueOnce(new Error('not a valid ref')) // branchExists returns false
         .mockResolvedValueOnce('') // worktree add
-        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      // Mock the worktree git instance to return commit hash
+      mockWorktreeGit.raw = vi.fn().mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD in worktree
 
       await gitHelper.addWorktree('/path/to/new', {
         branch: 'feature',
@@ -151,6 +157,8 @@ branch refs/heads/feature
         '/path/to/new',
         'abc123',
       ])
+      // Verify we called rev-parse on the worktree, not the source
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith(['rev-parse', 'HEAD'])
     })
 
     it('should checkout existing branch without -b flag', async () => {
@@ -159,7 +167,9 @@ branch refs/heads/feature
         .fn()
         .mockResolvedValueOnce('abc123def456\n') // branchExists (rev-parse --verify)
         .mockResolvedValueOnce('') // worktree add
-        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      // Mock the worktree git instance to return commit hash
+      mockWorktreeGit.raw = vi.fn().mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD in worktree
 
       const result = await gitHelper.addWorktree('/path/to/new', {
         branch: 'existing-branch',
@@ -179,6 +189,8 @@ branch refs/heads/feature
         '/path/to/new',
         'existing-branch',
       ])
+      // Verify we called rev-parse on the worktree, not the source
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith(['rev-parse', 'HEAD'])
     })
 
     it('should use -B flag when force is true', async () => {
@@ -187,7 +199,9 @@ branch refs/heads/feature
         .fn()
         .mockResolvedValueOnce('abc123def456\n') // branchExists (rev-parse --verify)
         .mockResolvedValueOnce('') // worktree add
-        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      // Mock the worktree git instance to return commit hash
+      mockWorktreeGit.raw = vi.fn().mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD in worktree
 
       await gitHelper.addWorktree('/path/to/new', {
         branch: 'feature',
@@ -196,6 +210,8 @@ branch refs/heads/feature
 
       // Should use -B flag when force is true
       expect(mockGit.raw).toHaveBeenCalledWith(['worktree', 'add', '-B', 'feature', '/path/to/new'])
+      // Verify we called rev-parse on the worktree, not the source
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith(['rev-parse', 'HEAD'])
     })
 
     it('should use -B flag with commit when force is true', async () => {
@@ -204,7 +220,9 @@ branch refs/heads/feature
         .fn()
         .mockResolvedValueOnce('abc123def456\n') // branchExists (rev-parse --verify)
         .mockResolvedValueOnce('') // worktree add
-        .mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD
+
+      // Mock the worktree git instance to return commit hash
+      mockWorktreeGit.raw = vi.fn().mockResolvedValueOnce('abc123def456\n') // rev-parse HEAD in worktree
 
       await gitHelper.addWorktree('/path/to/new', {
         branch: 'feature',
@@ -221,6 +239,8 @@ branch refs/heads/feature
         '/path/to/new',
         'abc123',
       ])
+      // Verify we called rev-parse on the worktree, not the source
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith(['rev-parse', 'HEAD'])
     })
 
     it('should list all worktrees', async () => {

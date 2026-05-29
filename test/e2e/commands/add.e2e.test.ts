@@ -573,4 +573,120 @@ describe('pando add (E2E)', () => {
       expect(rebased).toBe(false)
     })
   })
+
+  describe('--commit flag', () => {
+    it('should report correct commit hash when creating worktree from different ref than source', async () => {
+      // Create a feature branch with a commit different from main
+      await container.exec([
+        'sh',
+        '-c',
+        `cd ${repoPath} && git checkout -b feature-branch && echo "feature" >> feature.txt && git add . && git commit -m "Feature commit" && git checkout main`,
+      ])
+
+      // Get the commit hash of main
+      const mainCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${repoPath} && git rev-parse main`,
+      ])
+      const mainCommit = mainCommitResult.stdout.trim()
+
+      // Create a new worktree on a new branch based on main (not the current branch)
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'test-from-main',
+        '--commit',
+        'main',
+        '--path',
+        '../worktrees/test-from-main',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+
+      // Get the actual commit in the new worktree
+      const worktreePath = (result.json?.worktree as { path: string })?.path
+      const actualCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && git rev-parse HEAD`,
+      ])
+      const actualCommit = actualCommitResult.stdout.trim()
+
+      // The reported commit should match the actual commit in the worktree
+      const reportedCommit = (result.json?.worktree as { commit: string })?.commit
+      expect(reportedCommit).toBe(actualCommit)
+
+      // And both should be the main commit, not the feature branch commit
+      expect(reportedCommit).toBe(mainCommit)
+    })
+
+    it('should report correct commit hash when using --commit with a specific SHA', async () => {
+      // Get the current HEAD commit
+      const headCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${repoPath} && git rev-parse HEAD`,
+      ])
+      const headCommit = headCommitResult.stdout.trim()
+
+      // Create a worktree at that specific commit
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'test-from-sha',
+        '--commit',
+        headCommit,
+        '--path',
+        '../worktrees/test-from-sha',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+
+      // The reported commit should match what we specified
+      const reportedCommit = (result.json?.worktree as { commit: string })?.commit
+      expect(reportedCommit).toBe(headCommit)
+
+      // Verify the worktree is actually at that commit
+      const worktreePath = (result.json?.worktree as { path: string })?.path
+      const actualCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && git rev-parse HEAD`,
+      ])
+      const actualCommit = actualCommitResult.stdout.trim()
+      expect(reportedCommit).toBe(actualCommit)
+    })
+
+    it('should report correct commit hash when using short SHA', async () => {
+      // Get the current HEAD commit (full)
+      const fullCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${repoPath} && git rev-parse HEAD`,
+      ])
+      const fullCommit = fullCommitResult.stdout.trim()
+
+      // Get short SHA (first 7 chars)
+      const shortSHA = fullCommit.substring(0, 7)
+
+      // Create a worktree using short SHA
+      const result = await pandoAdd(container, repoPath, [
+        '--branch',
+        'test-from-short',
+        '--commit',
+        shortSHA,
+        '--path',
+        '../worktrees/test-from-short',
+        '--skip-rsync',
+      ])
+
+      expectJsonSuccess(result)
+
+      // The reported commit should be the FULL commit hash, not the short one
+      const reportedCommit = (result.json?.worktree as { commit: string })?.commit
+      expect(reportedCommit).toBe(fullCommit)
+      expect(reportedCommit).toHaveLength(40) // Full SHA is 40 chars
+    })
+  })
 })

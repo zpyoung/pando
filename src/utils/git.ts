@@ -151,7 +151,10 @@ export class GitHelper {
     await this.git.raw(args)
 
     // Get the commit hash for the new worktree
-    const commitHash = await this.git.raw(['rev-parse', 'HEAD'])
+    // IMPORTANT: Use simpleGit with the new worktree path to get its HEAD, not the source worktree's HEAD
+    const { simpleGit } = await import('simple-git')
+    const worktreeGit = simpleGit(path)
+    const commitHash = await worktreeGit.raw(['rev-parse', 'HEAD'])
 
     // Determine if this was an existing branch checkout (not new creation or force reset)
     const isExistingBranch = branchExists && !options?.force
