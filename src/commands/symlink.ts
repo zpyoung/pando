@@ -114,10 +114,28 @@ export default class SymlinkWorktreeFile extends Command {
 
       if (flags['dry-run']) {
         if (spinner) spinner.succeed('Dry run complete')
-        this.log(chalk?.cyan('Dry run:'))
-        this.log(`  Move: ${sourceFilePath}`)
-        this.log(`    To: ${destFilePath}`)
-        this.log(`  Link: ${sourceFilePath} -> ${destFilePath}`)
+
+        if (flags.json) {
+          this.log(
+            JSON.stringify(
+              {
+                success: true,
+                dryRun: true,
+                source: sourceFilePath,
+                destination: destFilePath,
+                link: sourceFilePath,
+              },
+              null,
+              2
+            )
+          )
+        } else {
+          this.log(chalk?.cyan('Dry run:'))
+          this.log(`  Move: ${sourceFilePath}`)
+          this.log(`    To: ${destFilePath}`)
+          this.log(`  Link: ${sourceFilePath} -> ${destFilePath}`)
+        }
+
         return
       }
 
@@ -187,6 +205,10 @@ export default class SymlinkWorktreeFile extends Command {
         throw error
       }
     } catch (error) {
+      if (this.isOclifExitError(error)) {
+        throw error
+      }
+
       if (spinner?.isSpinning) spinner.fail('Failed')
       ErrorHelper.operation(
         this,
@@ -195,6 +217,17 @@ export default class SymlinkWorktreeFile extends Command {
         flags.json
       )
     }
+  }
+
+  private isOclifExitError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'oclif' in error &&
+      typeof error.oclif === 'object' &&
+      error.oclif !== null &&
+      'exit' in error.oclif
+    )
   }
 
   private async initializeUI(isJson: boolean): Promise<{
