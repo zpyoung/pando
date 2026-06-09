@@ -7,7 +7,7 @@
 # Controls how files are copied from source tree to new worktrees
 [rsync]
 enabled = true
-flags = [ "--archive", "--exclude", ".git" ]
+flags = [ "--archive" ]
 exclude = [ "dist/", "tsconfig.tsbuildinfo" ]
 
 
