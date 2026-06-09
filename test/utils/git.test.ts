@@ -741,6 +741,17 @@ branch refs/heads/main
 
       expect(result).toBeNull()
     })
+
+    it('should return null when remote is whitespace-only', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('   \n')
+        .mockResolvedValueOnce('refs/heads/main\n')
+
+      const result = await gitHelper.getTrackingBranch('feature/fix')
+
+      expect(result).toBeNull()
+    })
   })
 
   describe('getUncommittedFileCount', () => {

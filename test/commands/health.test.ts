@@ -27,7 +27,6 @@ type MockGitHelper = {
   listWorktrees: MockFn
   hasUncommittedChanges: MockFn
   getUncommittedFileCount: MockFn
-  getBranchRemote: MockFn
   getTrackingBranch: MockFn
   remoteBranchExists: MockFn
   countCommitsBetween: MockFn
@@ -60,7 +59,6 @@ describe('Health Command', () => {
       listWorktrees: vi.fn(),
       hasUncommittedChanges: vi.fn(),
       getUncommittedFileCount: vi.fn(),
-      getBranchRemote: vi.fn(),
       getTrackingBranch: vi.fn().mockResolvedValue(null),
       remoteBranchExists: vi.fn(),
       countCommitsBetween: vi.fn(),
@@ -146,9 +144,11 @@ describe('Health Command', () => {
 
     expect(mockGitHelper.getTrackingBranch).toHaveBeenCalledWith('feature/fix')
     expect(mockGitHelper.remoteBranchExists).toHaveBeenCalledWith('feature/fix', 'origin')
+    // Local branch must be first, tracking ref second, so this counts commits
+    // the upstream has that the local branch lacks (i.e. how far behind).
     expect(mockGitHelper.countCommitsBetween).toHaveBeenCalledWith(
-      'origin/feature/fix',
-      'feature/fix'
+      'feature/fix',
+      'origin/feature/fix'
     )
 
     const report = JSON.parse((command.log as any).mock.calls[0][0])

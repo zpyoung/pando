@@ -143,10 +143,13 @@ export default class Health extends Command {
                 remoteBranch: trackingBranch,
               }
             } else {
-              // Check how many commits behind
+              // Check how many commits behind. countCommitsBetween(from, to)
+              // counts commits in `to` not in `from` (git rev-list --count
+              // from..to), so to count commits the upstream has that the local
+              // branch lacks we pass the local branch first, tracking ref second.
               const commitsBehind = await gitHelper.countCommitsBetween(
-                trackingBranch,
-                worktree.branch
+                worktree.branch,
+                trackingBranch
               )
               if (commitsBehind && commitsBehind > 0) {
                 health.status = 'behind'

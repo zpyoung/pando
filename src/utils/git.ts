@@ -489,8 +489,12 @@ export class GitHelper {
    */
   async getTrackingBranch(branchName: string): Promise<string | null> {
     try {
-      const remote = await this.git.raw(['config', `branch.${branchName}.remote`])
-      const merge = await this.git.raw(['config', `branch.${branchName}.merge`])
+      // The two config reads are independent; run them concurrently. If either
+      // rejects, Promise.all rejects and the catch below returns null.
+      const [remote, merge] = await Promise.all([
+        this.git.raw(['config', `branch.${branchName}.remote`]),
+        this.git.raw(['config', `branch.${branchName}.merge`]),
+      ])
 
       const remoteName = remote.trim()
       const mergeRef = merge.trim().replace(/^refs\/heads\//, '')
