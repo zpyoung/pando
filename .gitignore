@@ -50,3 +50,10 @@ oclif.manifest.json
 .cursor/
 *.log
 .claude/settings.local.json
+.claude/worktrees/
+.pegasus-worktrees/
+.pegasus/
+.memsearch/
+
+# Local worktrees
+.worktrees/
