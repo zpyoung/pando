@@ -3,16 +3,9 @@ import Health from '../../src/commands/health'
 import { createGitHelper } from '../../src/utils/git'
 import { ErrorHelper } from '../../src/utils/errors'
 
-const mockSimpleGitStatus = vi.fn()
-
 // Mock the dependencies
 vi.mock('../../src/utils/git')
 vi.mock('../../src/utils/errors')
-vi.mock('simple-git', () => ({
-  simpleGit: vi.fn(() => ({
-    status: mockSimpleGitStatus,
-  })),
-}))
 vi.mock('chalk', () => ({
   default: {
     bold: (str: string) => `**${str}**`,
@@ -23,6 +16,7 @@ vi.mock('chalk', () => ({
     gray: (str: string) => `<gray>${str}</gray>`,
     magenta: (str: string) => `<magenta>${str}</magenta>`,
     redBright: (str: string) => `<redBright>${str}</redBright>`,
+    blue: (str: string) => `<blue>${str}</blue>`,
   },
 }))
 
@@ -32,7 +26,9 @@ type MockGitHelper = {
   isRepository: MockFn
   listWorktrees: MockFn
   hasUncommittedChanges: MockFn
+  getUncommittedFileCount: MockFn
   getBranchRemote: MockFn
+  getTrackingBranch: MockFn
   remoteBranchExists: MockFn
   countCommitsBetween: MockFn
 }
@@ -57,14 +53,15 @@ describe('Health Command', () => {
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks()
-    mockSimpleGitStatus.mockResolvedValue({ files: {} })
 
     // Setup mock GitHelper
     mockGitHelper = {
       isRepository: vi.fn().mockResolvedValue(true),
       listWorktrees: vi.fn(),
       hasUncommittedChanges: vi.fn(),
+      getUncommittedFileCount: vi.fn(),
       getBranchRemote: vi.fn(),
+      getTrackingBranch: vi.fn().mockResolvedValue(null),
       remoteBranchExists: vi.fn(),
       countCommitsBetween: vi.fn(),
     }
@@ -118,18 +115,14 @@ describe('Health Command', () => {
       },
     ])
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(true)
-    mockSimpleGitStatus.mockResolvedValue({
-      files: {
-        'file1.ts': { index: 'M', working_dir: ' ' },
-        'file2.ts': { index: ' ', working_dir: 'M' },
-      },
-    })
+    mockGitHelper.getUncommittedFileCount.mockResolvedValue(2)
 
     const command = createCommand()
 
     await command.run()
 
     expect(mockGitHelper.hasUncommittedChanges).toHaveBeenCalledWith('/worktree1')
+    expect(mockGitHelper.getUncommittedFileCount).toHaveBeenCalledWith('/worktree1')
     expect(command.log).toHaveBeenCalledWith(expect.stringContaining('2 files modified'))
   })
 
@@ -143,20 +136,80 @@ describe('Health Command', () => {
       },
     ])
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
-    mockGitHelper.getBranchRemote.mockResolvedValue('origin/feature/fix')
+    mockGitHelper.getTrackingBranch.mockResolvedValue('origin/feature/fix')
     mockGitHelper.remoteBranchExists.mockResolvedValue(true)
     mockGitHelper.countCommitsBetween.mockResolvedValue(3)
 
-    const command = createCommand()
+    const command = createCommand(true)
 
     await command.run()
 
-    expect(mockGitHelper.getBranchRemote).toHaveBeenCalledWith('feature/fix')
+    expect(mockGitHelper.getTrackingBranch).toHaveBeenCalledWith('feature/fix')
     expect(mockGitHelper.remoteBranchExists).toHaveBeenCalledWith('feature/fix', 'origin')
     expect(mockGitHelper.countCommitsBetween).toHaveBeenCalledWith(
       'origin/feature/fix',
       'feature/fix'
     )
+
+    const report = JSON.parse((command.log as any).mock.calls[0][0])
+    expect(report.summary.behind).toBe(1)
+    expect(report.worktrees[0]).toMatchObject({
+      path: '/worktree1',
+      branch: 'feature/fix',
+      status: 'behind',
+      message: '3 commits behind',
+      details: {
+        commitsBehind: 3,
+        targetBranch: 'origin/feature/fix',
+        remoteBranch: 'origin/feature/fix',
+      },
+    })
+  })
+
+  it('should detect behind upstream for non-origin remotes', async () => {
+    mockGitHelper.listWorktrees.mockResolvedValue([
+      {
+        path: '/worktree1',
+        branch: 'feature/fix',
+        commit: 'abc123',
+        isPrunable: false,
+      },
+    ])
+    mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+    mockGitHelper.getTrackingBranch.mockResolvedValue('upstream/main')
+    mockGitHelper.remoteBranchExists.mockResolvedValue(true)
+    mockGitHelper.countCommitsBetween.mockResolvedValue(1)
+
+    const command = createCommand(true)
+
+    await command.run()
+
+    expect(mockGitHelper.remoteBranchExists).toHaveBeenCalledWith('main', 'upstream')
+    const report = JSON.parse((command.log as any).mock.calls[0][0])
+    expect(report.worktrees[0].status).toBe('behind')
+    expect(report.worktrees[0].message).toBe('1 commit behind')
+  })
+
+  it('should report clean when no upstream is configured', async () => {
+    mockGitHelper.listWorktrees.mockResolvedValue([
+      {
+        path: '/worktree1',
+        branch: 'feature/local-only',
+        commit: 'abc123',
+        isPrunable: false,
+      },
+    ])
+    mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+    mockGitHelper.getTrackingBranch.mockResolvedValue(null)
+
+    const command = createCommand(true)
+
+    await command.run()
+
+    expect(mockGitHelper.remoteBranchExists).not.toHaveBeenCalled()
+    const report = JSON.parse((command.log as any).mock.calls[0][0])
+    expect(report.summary.clean).toBe(1)
+    expect(report.worktrees[0].status).toBe('clean')
   })
 
   it('should detect gone remote branches', async () => {
@@ -169,14 +222,72 @@ describe('Health Command', () => {
       },
     ])
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
-    mockGitHelper.getBranchRemote.mockResolvedValue('origin/feature/old')
+    mockGitHelper.getTrackingBranch.mockResolvedValue('origin/feature/old')
     mockGitHelper.remoteBranchExists.mockResolvedValue(false)
 
-    const command = createCommand()
+    const command = createCommand(true)
 
     await command.run()
 
     expect(mockGitHelper.remoteBranchExists).toHaveBeenCalledWith('feature/old', 'origin')
+    const report = JSON.parse((command.log as any).mock.calls[0][0])
+    expect(report.summary.gone).toBe(1)
+    expect(report.worktrees[0]).toMatchObject({
+      status: 'gone',
+      message: 'remote branch deleted',
+      details: { remoteBranch: 'origin/feature/old' },
+    })
+  })
+
+  it('should mark worktree as error when remote check fails', async () => {
+    mockGitHelper.listWorktrees.mockResolvedValue([
+      {
+        path: '/worktree1',
+        branch: 'feature/fix',
+        commit: 'abc123',
+        isPrunable: false,
+      },
+    ])
+    mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+    mockGitHelper.getTrackingBranch.mockResolvedValue('origin/feature/fix')
+    mockGitHelper.remoteBranchExists.mockRejectedValue(new Error('network unreachable'))
+
+    const command = createCommand(true)
+
+    await command.run()
+
+    const report = JSON.parse((command.log as any).mock.calls[0][0])
+    expect(report.summary.errors).toBe(1)
+    expect(report.summary.clean).toBe(0)
+    expect(report.worktrees[0].status).toBe('error')
+    expect(report.worktrees[0].message).toContain('remote check failed')
+    expect(report.worktrees[0].message).toContain('network unreachable')
+  })
+
+  it('should report detached HEAD worktrees as detached, not clean', async () => {
+    mockGitHelper.listWorktrees.mockResolvedValue([
+      {
+        path: '/worktree1',
+        branch: null,
+        commit: 'abc123',
+        isPrunable: false,
+      },
+    ])
+
+    const command = createCommand(true)
+
+    await command.run()
+
+    expect(mockGitHelper.hasUncommittedChanges).not.toHaveBeenCalled()
+    const report = JSON.parse((command.log as any).mock.calls[0][0])
+    expect(report.summary.detached).toBe(1)
+    expect(report.summary.clean).toBe(0)
+    expect(report.worktrees[0]).toMatchObject({
+      path: '/worktree1',
+      branch: null,
+      status: 'detached',
+      message: 'detached HEAD',
+    })
   })
 
   it('should output JSON format when --json flag is used', async () => {
@@ -189,6 +300,7 @@ describe('Health Command', () => {
       },
     ])
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+    mockGitHelper.getTrackingBranch.mockResolvedValue(null)
 
     const command = createCommand(true)
 
@@ -196,7 +308,18 @@ describe('Health Command', () => {
 
     expect(command.log).toHaveBeenCalled()
     const logged = (command.log as any).mock.calls[0][0]
-    expect(() => JSON.parse(logged)).not.toThrow()
+    const report = JSON.parse(logged)
+    expect(report).toHaveProperty('worktrees')
+    expect(report).toHaveProperty('summary')
+    expect(report.summary).toEqual({
+      clean: 1,
+      detached: 0,
+      uncommitted: 0,
+      behind: 0,
+      gone: 0,
+      errors: 0,
+    })
+    expect(report.worktrees[0].status).toBe('clean')
   })
 
   it('should handle errors gracefully', async () => {
