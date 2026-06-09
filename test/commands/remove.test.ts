@@ -98,6 +98,7 @@ describe('remove', () => {
 
   it('should handle json output flag', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -138,8 +139,52 @@ describe('remove', () => {
     expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
   })
 
+  // SECURITY: direct --path mode must not be able to target the main worktree.
+  it('should refuse to remove the main worktree via --path', async () => {
+    const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
+      { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+    ]
+
+    mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+    mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+
+    command.argv = ['--path', '/path/to/main']
+
+    await expect(command.run()).rejects.toThrow('Cannot remove the main worktree')
+    expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
+  })
+
+  it('should refuse to remove the main worktree via --path in JSON mode', async () => {
+    const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
+      { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+    ]
+
+    mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+    mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+
+    const exitSpy = vi.spyOn(command, 'exit').mockImplementation(() => {
+      throw new Error('exit called')
+    })
+
+    command.argv = ['--path', '/path/to/main', '--json']
+
+    await expect(command.run()).rejects.toThrow('exit called')
+    expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    // JSON error payload should mention the main worktree
+    const jsonCall = logSpy.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('main worktree')
+    )
+    expect(jsonCall).toBeDefined()
+  })
+
   it('should warn about uncommitted changes without force', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -166,6 +211,7 @@ describe('remove', () => {
 
   it('should force remove worktree with uncommitted changes', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -185,6 +231,7 @@ describe('remove', () => {
 
   it('should show warning message when forcing removal', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -201,6 +248,7 @@ describe('remove', () => {
 
   it('should output json error for uncommitted changes', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -224,6 +272,7 @@ describe('remove', () => {
 
   it('should handle git errors gracefully', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -241,6 +290,7 @@ describe('remove', () => {
 
   it('should output json error format on failure', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -265,6 +315,7 @@ describe('remove', () => {
   it('should match worktree by path', async () => {
     const testPath = '/path/to/feature'
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: testPath, branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -596,6 +647,7 @@ describe('remove', () => {
 
     it('should show branch deletion info in JSON output', async () => {
       const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
         { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
       ]
 

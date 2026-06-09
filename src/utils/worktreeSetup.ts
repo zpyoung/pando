@@ -416,51 +416,9 @@ export class WorktreeSetupOrchestrator {
       // ============================================================
       this.reportProgress(options.onProgress, SetupPhase.ROLLBACK, 'Error occurred, rolling back')
 
-      try {
-        this.reportProgress(options.onProgress, SetupPhase.ROLLBACK, 'Rolling back file operations')
-
-        // 1. Rollback file operations (symlinks, copied files)
-        // rollback() returns preserved checkpoints since it clears internal state
-        const rollbackResult = await this.transaction.rollback()
-
-        // 2. Remove the worktree via git using preserved checkpoint
-        const worktreeCheckpoint = rollbackResult.checkpoints.get('worktree')
-        if (
-          worktreeCheckpoint &&
-          typeof worktreeCheckpoint === 'object' &&
-          worktreeCheckpoint !== null &&
-          'path' in worktreeCheckpoint
-        ) {
-          const worktreePath = (worktreeCheckpoint as { path: string }).path
-
-          this.reportProgress(options.onProgress, SetupPhase.ROLLBACK, 'Removing git worktree')
-
-          try {
-            await this.gitHelper.removeWorktree(worktreePath, true) // force=true
-          } catch (gitError) {
-            // Fallback: remove directory if git metadata cleanup fails
-            const fs = (await import('fs-extra')).default
-            let directoryRemoved = false
-            if (await fs.pathExists(worktreePath)) {
-              await fs.remove(worktreePath)
-              directoryRemoved = true
-            }
-            const gitErrMsg = gitError instanceof Error ? gitError.message : String(gitError)
-            // Provide actionable warning about potential git metadata cleanup
-            const cleanupHint = directoryRemoved
-              ? `Directory was removed but git metadata in .git/worktrees/ may need manual cleanup. Run 'git worktree prune' to clean orphaned entries.`
-              : `Failed to remove worktree via git: ${gitErrMsg}`
-            warnings.push(cleanupHint)
-          }
-        }
-
-        rolledBack = true
-      } catch (rollbackError) {
-        const errorMsg =
-          rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
-        warnings.push(`Rollback failed: ${errorMsg}. Manual cleanup may be required.`)
-        rolledBack = false
-      }
+      const rollbackOutcome = await this.rollback(options.onProgress)
+      rolledBack = rollbackOutcome.rolledBack
+      warnings.push(...rollbackOutcome.warnings)
 
       const duration = Date.now() - startTime
 
@@ -478,6 +436,69 @@ export class WorktreeSetupOrchestrator {
         },
         error as Error
       )
+    }
+  }
+
+  /**
+   * Roll back all file operations recorded so far and remove the partially-set-up
+   * git worktree.
+   *
+   * This is invoked both from the normal error path (when setup throws) and from
+   * the SIGINT handler in `pando add` (when the user presses Ctrl+C mid-setup),
+   * so the cleanup is identical in both cases.
+   *
+   * @param onProgress - Optional progress callback for rollback phases
+   * @returns Whether rollback succeeded, plus any warnings produced
+   */
+  async rollback(
+    onProgress?: (phase: SetupPhase, message: string) => void
+  ): Promise<{ rolledBack: boolean; warnings: string[] }> {
+    const warnings: string[] = []
+
+    try {
+      this.reportProgress(onProgress, SetupPhase.ROLLBACK, 'Rolling back file operations')
+
+      // 1. Rollback file operations (symlinks, copied files)
+      // rollback() returns preserved checkpoints since it clears internal state
+      const rollbackResult = await this.transaction.rollback()
+
+      // 2. Remove the worktree via git using preserved checkpoint
+      const worktreeCheckpoint = rollbackResult.checkpoints.get('worktree')
+      if (
+        worktreeCheckpoint &&
+        typeof worktreeCheckpoint === 'object' &&
+        worktreeCheckpoint !== null &&
+        'path' in worktreeCheckpoint
+      ) {
+        const worktreePath = (worktreeCheckpoint as { path: string }).path
+
+        this.reportProgress(onProgress, SetupPhase.ROLLBACK, 'Removing git worktree')
+
+        try {
+          await this.gitHelper.removeWorktree(worktreePath, true) // force=true
+        } catch (gitError) {
+          // Fallback: remove directory if git metadata cleanup fails
+          const fs = (await import('fs-extra')).default
+          let directoryRemoved = false
+          if (await fs.pathExists(worktreePath)) {
+            await fs.remove(worktreePath)
+            directoryRemoved = true
+          }
+          const gitErrMsg = gitError instanceof Error ? gitError.message : String(gitError)
+          // Provide actionable warning about potential git metadata cleanup
+          const cleanupHint = directoryRemoved
+            ? `Directory was removed but git metadata in .git/worktrees/ may need manual cleanup. Run 'git worktree prune' to clean orphaned entries.`
+            : `Failed to remove worktree via git: ${gitErrMsg}`
+          warnings.push(cleanupHint)
+        }
+      }
+
+      return { rolledBack: true, warnings }
+    } catch (rollbackError) {
+      const errorMsg =
+        rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+      warnings.push(`Rollback failed: ${errorMsg}. Manual cleanup may be required.`)
+      return { rolledBack: false, warnings }
     }
   }
 

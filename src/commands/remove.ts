@@ -283,6 +283,21 @@ export default class RemoveWorktree extends Command {
           }
         }
 
+        // SAFETY: Refuse to remove the main worktree. The main worktree is the
+        // first entry in `git worktree list` (the repository root). Interactive
+        // mode already excludes it via worktrees.slice(1); direct --path mode
+        // needs this explicit guard.
+        const mainWorktree = worktrees[0]
+        if (mainWorktree && path.resolve(mainWorktree.path) === path.resolve(worktree.path)) {
+          ErrorHelper.validation(
+            this,
+            'Cannot remove the main worktree (the repository root). ' +
+              'Only linked worktrees can be removed.',
+            flags.json
+          )
+          return
+        }
+
         pathsToRemove = [worktree.path]
       } else {
         // Interactive mode: select worktrees

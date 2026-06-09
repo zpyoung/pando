@@ -4,6 +4,14 @@ import { loadConfig } from '../config/loader.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
+import { validateBranchName } from '../utils/validation.js'
+import {
+  computeConfigHash,
+  decidePostCommandTrust,
+  isConfigTrusted,
+  isEnvTrustEnabled,
+  recordTrust,
+} from '../utils/configTrust.js'
 import { buildAddCommandDetails, type AddCommandDetails } from '../utils/commandDetails.js'
 import {
   normalizePostCommandScripts,
@@ -105,6 +113,20 @@ export default class AddWorktree extends Command {
       flags.branch = args.branch
     }
 
+    // Validate the branch name (positional arg or --branch flag) early, before
+    // any worktree/setup work, so an invalid name fails fast with a clear reason.
+    if (flags.branch) {
+      const branchValidation = validateBranchName(flags.branch)
+      if (!branchValidation.valid) {
+        ErrorHelper.validation(
+          this,
+          `Invalid branch name '${flags.branch}': ${branchValidation.reason}`,
+          flags.json
+        )
+        return
+      }
+    }
+
     const startTime = Date.now()
 
     const { spinner, chalk } = await this.initializeUI(flags.json)
@@ -154,6 +176,7 @@ export default class AddWorktree extends Command {
         spinner
       )
       const postCommandResults = await this.runPostCommands(
+        flags as Record<string, unknown>,
         config,
         worktreeInfo,
         resolvedPath,
@@ -457,6 +480,17 @@ export default class AddWorktree extends Command {
       onProgress: this.buildProgressCallback(spinner, flags.json as boolean),
     }
 
+    // Register a SIGINT (Ctrl+C) handler so an interruption mid-setup triggers
+    // the same transactional rollback as a thrown error (otherwise the signal
+    // would bypass the catch block and leave a partial worktree behind).
+    const interruptHandler = this.createSetupInterruptHandler(orchestrator, spinner)
+    // Node's signal listeners are `() => void`; wrap the async handler in a
+    // void-returning fire-and-forget listener (it ends in process.exit anyway).
+    const sigintListener = (): void => {
+      void interruptHandler()
+    }
+    process.once('SIGINT', sigintListener)
+
     try {
       const result = await orchestrator.setupNewWorktree(resolvedPath, setupOptions)
       const details = buildAddCommandDetails({
@@ -472,6 +506,44 @@ export default class AddWorktree extends Command {
         spinner.fail('Setup failed')
       }
       throw error
+    } finally {
+      // Remove the listener once setup completes (success or failure) so it
+      // can't fire later for an unrelated reason.
+      process.removeListener('SIGINT', sigintListener)
+    }
+  }
+
+  /**
+   * Build a SIGINT handler that rolls back an in-progress worktree setup.
+   *
+   * Extracted as a factory (rather than an inline closure) so unit tests can
+   * invoke the handler directly without sending a real signal. The handler:
+   *   1. stops the spinner,
+   *   2. runs the orchestrator's transactional rollback,
+   *   3. prints a brief 'Interrupted — rolled back' message,
+   *   4. exits with code 130 (128 + SIGINT).
+   *
+   * @param orchestrator - The active setup orchestrator
+   * @param spinner - Active spinner to stop (may be null in JSON mode)
+   * @returns An async SIGINT handler
+   */
+  createSetupInterruptHandler(
+    orchestrator: ReturnType<typeof createWorktreeSetupOrchestrator>,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): () => Promise<void> {
+    return async (): Promise<void> => {
+      if (spinner) {
+        spinner.stop()
+      }
+      try {
+        await orchestrator.rollback()
+      } catch {
+        // Rollback already swallows its own errors and returns warnings; this
+        // guard only protects against unexpected throws so we still exit 130.
+      }
+      this.log('\nInterrupted — rolled back')
+      // 130 = 128 + SIGINT(2), the conventional exit code for Ctrl+C.
+      process.exit(130)
     }
   }
 
@@ -525,6 +597,7 @@ export default class AddWorktree extends Command {
   }
 
   private async runPostCommands(
+    flags: Record<string, unknown>,
     config: Awaited<ReturnType<typeof loadConfig>>,
     worktreeInfo: {
       path: string
@@ -540,6 +613,23 @@ export default class AddWorktree extends Command {
       return []
     }
 
+    const isJson = Boolean(flags.json)
+
+    // ============================================================
+    // Trust gate (direnv-style): post-commands run with shell: true,
+    // so a config file from a freshly-cloned repo must be explicitly
+    // trusted before its scripts execute. See src/utils/configTrust.ts.
+    // ============================================================
+    const allowed = await this.evaluatePostCommandTrust(
+      config.postCommandsSourcePath,
+      scripts,
+      isJson,
+      spinner
+    )
+    if (!allowed) {
+      return []
+    }
+
     if (spinner) {
       spinner.text = `Running ${scripts.length} post-command script${scripts.length === 1 ? '' : 's'}...`
     }
@@ -551,6 +641,117 @@ export default class AddWorktree extends Command {
       branch: worktreeInfo.branch,
       commit: worktreeInfo.commit,
     })
+  }
+
+  /**
+   * Decide whether post-commands from a config file are allowed to run, and
+   * persist trust when the user approves interactively.
+   *
+   * @returns True if the post-commands should run; false to skip them
+   */
+  private async evaluatePostCommandTrust(
+    sourcePath: string | undefined,
+    scripts: Array<{ name?: string; command: string }>,
+    isJson: boolean,
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+  ): Promise<boolean> {
+    const envTrust = isEnvTrustEnabled(process.env.PANDO_TRUST_CONFIG)
+
+    // Only hash/check trust when there is an actual file on disk to vet.
+    let currentHash: string | undefined
+    let trustedWithMatchingHash = false
+    if (sourcePath && !envTrust) {
+      try {
+        currentHash = await computeConfigHash(sourcePath)
+        trustedWithMatchingHash = await isConfigTrusted(sourcePath, currentHash)
+      } catch {
+        // If we cannot read/hash the file, treat it as untrusted.
+        trustedWithMatchingHash = false
+      }
+    }
+
+    const isTty = Boolean(process.stdin.isTTY)
+
+    const decision = decidePostCommandTrust({
+      hasScripts: scripts.length > 0,
+      sourcePath,
+      envTrust,
+      trustedWithMatchingHash,
+      isTty,
+      isJson,
+    })
+
+    if (decision === 'run') {
+      return true
+    }
+
+    if (decision === 'skip') {
+      ErrorHelper.warn(
+        this,
+        `Skipping ${scripts.length} post-command script(s) from untrusted config file` +
+          (sourcePath ? ` '${sourcePath}'` : '') +
+          '.\n' +
+          'To allow them: run `pando add` interactively once to trust this file, ' +
+          'or set PANDO_TRUST_CONFIG=1.',
+        isJson
+      )
+      return false
+    }
+
+    // decision === 'prompt' (interactive TTY, not JSON)
+    // Pause the spinner so the prompt renders cleanly.
+    const wasSpinning = Boolean(spinner?.isSpinning)
+    if (spinner && wasSpinning) {
+      spinner.stop()
+    }
+
+    this.log('')
+    this.log(`A config file requests running post-command scripts on 'pando add':`)
+    if (sourcePath) {
+      this.log(`  File: ${sourcePath}`)
+    }
+    for (const script of scripts) {
+      const label = script.name ? `${script.name}: ${script.command}` : script.command
+      this.log(`  • ${label}`)
+    }
+    this.log('')
+
+    const { confirm } = await import('@inquirer/prompts')
+    const approved = await confirm({
+      message: 'Trust this config file and run its post-commands?',
+      default: false,
+    })
+
+    if (!approved) {
+      ErrorHelper.warn(
+        this,
+        `Skipped ${scripts.length} post-command script(s); config file not trusted.`,
+        isJson
+      )
+      return false
+    }
+
+    // Persist trust at the current content hash, then run.
+    if (sourcePath) {
+      try {
+        const hash = currentHash ?? (await computeConfigHash(sourcePath))
+        await recordTrust(sourcePath, hash)
+      } catch {
+        // Non-fatal: failing to persist trust just means we'll prompt again
+        // next time. Still allow this run since the user approved it.
+        ErrorHelper.warn(
+          this,
+          'Could not persist trust decision; will prompt again next time.',
+          isJson
+        )
+      }
+    }
+
+    if (spinner && wasSpinning) {
+      spinner.start()
+    }
+
+    return true
   }
 
   /**
