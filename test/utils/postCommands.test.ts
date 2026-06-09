@@ -72,7 +72,10 @@ describe('postCommands', () => {
       signal: null,
       success: true,
     })
-    expect(results[0]?.stdout.trim()).toBe(tempDir)
+    // On macOS os.tmpdir() returns a /var path that is a symlink to /private/var,
+    // so `pwd` reports the realpath. Compare against the resolved realpath.
+    const resolvedTempDir = await fs.realpath(tempDir)
+    expect(results[0]?.stdout.trim()).toBe(resolvedTempDir)
     await expect(fs.readFile(path.join(tempDir, 'branch.txt'), 'utf8')).resolves.toBe(
       'feature/post-command'
     )

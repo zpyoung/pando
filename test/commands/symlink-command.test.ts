@@ -20,7 +20,10 @@ async function git(cwd: string, args: string[]): Promise<void> {
 }
 
 async function createWorktreeFixture(): Promise<GitWorktreeFixture> {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'pando-symlink-command-'))
+  // On macOS os.tmpdir() returns a /var path that is a symlink to /private/var.
+  // git resolves worktree paths to their realpath, so resolve the root up front to
+  // keep expected paths in sync with what the command reports.
+  const root = await fs.realpath(await mkdtemp(path.join(os.tmpdir(), 'pando-symlink-command-')))
   const main = path.join(root, 'repo')
   const feature = path.join(root, 'repo-feature')
 
