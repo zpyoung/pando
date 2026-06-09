@@ -15,6 +15,8 @@ describe('validateBranchName', () => {
       'v1.0',
       'feat_underscore',
       'feature.branch', // dots allowed when not leading/trailing and not '..'
+      'feature/foo.bar', // dot inside a component is fine
+      'release-1.0', // dotted version-like name is fine
     ]
 
     for (const name of validNames) {
@@ -108,6 +110,26 @@ describe('validateBranchName', () => {
 
     it('rejects a shell-injection-style name', () => {
       expect(validateBranchName('foo; rm -rf /').valid).toBe(false)
+    })
+
+    // Component-level git check-ref-format rules: names that pass the
+    // whole-name checks but git itself still rejects.
+    it("rejects names containing '//' (consecutive slashes)", () => {
+      const result = validateBranchName('feature//bar')
+      expect(result.valid).toBe(false)
+      expect(result.reason).toMatch(/\/\//)
+    })
+
+    it("rejects a component beginning with '.'", () => {
+      const result = validateBranchName('foo/.bar')
+      expect(result.valid).toBe(false)
+      expect(result.reason).toMatch(/component.*'\.'/i)
+    })
+
+    it("rejects a component ending with '.lock'", () => {
+      const result = validateBranchName('release.lock/main')
+      expect(result.valid).toBe(false)
+      expect(result.reason).toMatch(/component.*\.lock/i)
     })
   })
 })

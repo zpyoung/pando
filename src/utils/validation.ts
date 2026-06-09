@@ -19,7 +19,10 @@ export interface BranchNameValidationResult {
 
 /**
  * Characters that git disallows anywhere in a ref name.
- * (space, ~, ^, :, ?, *, [, backslash)
+ * (~, ^, :, ?, *, [, backslash)
+ *
+ * Note: spaces (and other whitespace/control characters) are rejected by a
+ * separate scan below, not via this array.
  */
 const FORBIDDEN_CHARACTERS = ['~', '^', ':', '?', '*', '[', '\\']
 
@@ -30,11 +33,14 @@ const FORBIDDEN_CHARACTERS = ['~', '^', ':', '?', '*', '[', '\\']
  * - empty
  * - contain whitespace or ASCII control characters
  * - contain a `..` sequence
+ * - contain a `//` sequence (consecutive slashes / empty path component)
  * - contain any of: ~ ^ : ? * [ \
  * - contain the `@{` sequence
  * - are exactly `@`
  * - begin with `-`, `.`, or `/`
  * - end with `/`, `.`, or `.lock`
+ * - have any `/`-separated component that begins with `.`
+ * - have any `/`-separated component that ends with `.lock`
  *
  * @param name - The branch name to validate
  * @returns A result indicating validity and, when invalid, the reason
@@ -64,6 +70,11 @@ export function validateBranchName(name: string): BranchNameValidationResult {
 
   if (name.includes('..')) {
     return { valid: false, reason: "Branch name cannot contain '..'." }
+  }
+
+  // No consecutive slashes (an empty `/`-separated path component).
+  if (name.includes('//')) {
+    return { valid: false, reason: "Branch name cannot contain '//'." }
   }
 
   for (const forbidden of FORBIDDEN_CHARACTERS) {
@@ -101,6 +112,25 @@ export function validateBranchName(name: string): BranchNameValidationResult {
   }
   if (name.endsWith('.lock')) {
     return { valid: false, reason: "Branch name cannot end with '.lock'." }
+  }
+
+  // Component-level rules: git applies the leading-'.' and trailing-'.lock'
+  // constraints to EACH slash-separated path component, not just the full name.
+  // For example, 'foo/.bar' and 'release.lock/main' both pass the whole-name
+  // checks above but are still rejected by `git check-ref-format`.
+  for (const component of name.split('/')) {
+    if (component.startsWith('.')) {
+      return {
+        valid: false,
+        reason: "Branch name component cannot begin with '.'.",
+      }
+    }
+    if (component.endsWith('.lock')) {
+      return {
+        valid: false,
+        reason: "Branch name component cannot end with '.lock'.",
+      }
+    }
   }
 
   return { valid: true }

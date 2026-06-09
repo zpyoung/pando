@@ -405,6 +405,11 @@ export function mergeConfigs(
  *
  * Configs are merged in priority order (lower priority first).
  *
+ * NOTE: Keep the priority/sort logic here in sync with
+ * {@link ConfigLoader.resolvePostCommandsSourcePath}, which independently
+ * replays this same ascending-priority order to determine WHICH file supplied
+ * the winning postCommands. If you change the sort here, change it there too.
+ *
  * @param configs - Array of (config, source) tuples
  * @returns Merged configuration with source tracking
  */
@@ -654,6 +659,12 @@ export class ConfigLoader {
    *
    * Mirrors the merge order in mergeMultipleConfigs (ascending source priority,
    * stable). Returns undefined when no file supplies non-empty post-commands.
+   *
+   * NOTE: Keep the sort/precedence here in sync with
+   * {@link mergeMultipleConfigs} — this function deliberately replays that
+   * function's merge order so the reported source matches the value that
+   * actually won the merge. The `loader postCommandsSourcePath` regression test
+   * guards against the two drifting apart.
    *
    * @param parsedConfigPaths - Parsed configs paired with their file paths
    * @returns The winning file path, or undefined
