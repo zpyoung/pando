@@ -12,9 +12,45 @@ env:
   PNPM_VERSION: 10.17.1
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm run format:check
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Unit tests
+        run: pnpm run test:run
+
   build-tarballs:
     name: Build Tarballs
     runs-on: ubuntu-latest
+    needs: test
     outputs:
       sha256_darwin_x64: ${{ steps.checksums.outputs.darwin_x64 }}
       sha256_darwin_arm64: ${{ steps.checksums.outputs.darwin_arm64 }}
@@ -26,7 +62,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -74,57 +110,19 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update formula
+        env:
+          VERSION_REF: ${{ github.ref_name }}
+          SHA_DARWIN_X64: ${{ needs.build-tarballs.outputs.sha256_darwin_x64 }}
+          SHA_DARWIN_ARM64: ${{ needs.build-tarballs.outputs.sha256_darwin_arm64 }}
+          SHA_LINUX_X64: ${{ needs.build-tarballs.outputs.sha256_linux_x64 }}
+          SHA_LINUX_ARM64: ${{ needs.build-tarballs.outputs.sha256_linux_arm64 }}
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          SHA_DARWIN_X64="${{ needs.build-tarballs.outputs.sha256_darwin_x64 }}"
-          SHA_DARWIN_ARM64="${{ needs.build-tarballs.outputs.sha256_darwin_arm64 }}"
-          SHA_LINUX_X64="${{ needs.build-tarballs.outputs.sha256_linux_x64 }}"
-          SHA_LINUX_ARM64="${{ needs.build-tarballs.outputs.sha256_linux_arm64 }}"
-
-          cat > Formula/pando.rb << 'FORMULA'
-          class Pando < Formula
-            desc "TypeScript CLI for managing Git worktrees"
-            homepage "https://github.com/zpyoung/pando"
-            version "VERSION_PLACEHOLDER"
-            license "MIT"
-
-            on_macos do
-              on_intel do
-                url "https://github.com/zpyoung/pando/releases/download/vVERSION_PLACEHOLDER/pando-vVERSION_PLACEHOLDER-darwin-x64.tar.gz"
-                sha256 "SHA_DARWIN_X64_PLACEHOLDER"
-              end
-              on_arm do
-                url "https://github.com/zpyoung/pando/releases/download/vVERSION_PLACEHOLDER/pando-vVERSION_PLACEHOLDER-darwin-arm64.tar.gz"
-                sha256 "SHA_DARWIN_ARM64_PLACEHOLDER"
-              end
-            end
-
-            on_linux do
-              on_intel do
-                url "https://github.com/zpyoung/pando/releases/download/vVERSION_PLACEHOLDER/pando-vVERSION_PLACEHOLDER-linux-x64.tar.gz"
-                sha256 "SHA_LINUX_X64_PLACEHOLDER"
-              end
-              on_arm do
-                url "https://github.com/zpyoung/pando/releases/download/vVERSION_PLACEHOLDER/pando-vVERSION_PLACEHOLDER-linux-arm64.tar.gz"
-                sha256 "SHA_LINUX_ARM64_PLACEHOLDER"
-              end
-            end
-
-            def install
-              bin.install "pando"
-            end
-
-            test do
-              assert_match version.to_s, shell_output("#{bin}/pando --version")
-            end
-          end
-          FORMULA
-
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION/g" Formula/pando.rb
-          sed -i "s/SHA_DARWIN_X64_PLACEHOLDER/$SHA_DARWIN_X64/g" Formula/pando.rb
-          sed -i "s/SHA_DARWIN_ARM64_PLACEHOLDER/$SHA_DARWIN_ARM64/g" Formula/pando.rb
-          sed -i "s/SHA_LINUX_X64_PLACEHOLDER/$SHA_LINUX_X64/g" Formula/pando.rb
-          sed -i "s/SHA_LINUX_ARM64_PLACEHOLDER/$SHA_LINUX_ARM64/g" Formula/pando.rb
+          set -euo pipefail
+          export VERSION="${VERSION_REF#v}"
+          envsubst \
+            '${VERSION} ${SHA_DARWIN_X64} ${SHA_DARWIN_ARM64} ${SHA_LINUX_X64} ${SHA_LINUX_ARM64}' \
+            < Formula/pando.rb.template \
+            > Formula/pando.rb
 
       - name: Commit updated formula
         run: |
@@ -137,14 +135,17 @@ jobs:
   publish-npm:
     name: Publish to npm
     runs-on: ubuntu-latest
-    needs: build-tarballs
+    needs: [test, build-tarballs]
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -161,7 +162,59 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Generate oclif manifest
+        run: pnpm exec oclif manifest
+
       - name: Publish to npm
-        run: pnpm publish --no-git-checks
+        run: pnpm publish --no-git-checks --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  smoke-published:
+    name: Smoke test published package
+    runs-on: ubuntu-latest
+    needs: publish-npm
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Wait for npm propagation
+        env:
+          VERSION_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${VERSION_REF#v}"
+          PKG="$(node -p "require('./package.json').name")"
+          echo "Waiting for ${PKG}@${VERSION} to appear on npm..."
+          for i in $(seq 1 30); do
+            if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
+              echo "Found ${PKG}@${VERSION} on npm."
+              exit 0
+            fi
+            echo "Attempt ${i}: not available yet, retrying in 10s..."
+            sleep 10
+          done
+          echo "Timed out waiting for ${PKG}@${VERSION} on npm."
+          exit 1
+
+      - name: Run published E2E tests
+        run: pnpm run test:e2e:published
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: 'false'
+          DOCKER_HOST: unix:///var/run/docker.sock
