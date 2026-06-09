@@ -213,7 +213,14 @@ export async function loadTrustStore(): Promise<TrustStore> {
 export async function saveTrustStore(store: TrustStore): Promise<void> {
   const dir = getTrustStoreDir()
   await fs.ensureDir(dir)
-  await fs.writeFile(getTrustStorePath(), JSON.stringify(store, null, 2), { mode: 0o600 })
+
+  // Write atomically: write to a sibling temp file (0o600) and rename over the
+  // target. rename() is atomic on the same filesystem, so a crash or concurrent
+  // reader never sees a half-written trust store.
+  const storePath = getTrustStorePath()
+  const tmpPath = `${storePath}.tmp`
+  await fs.writeFile(tmpPath, JSON.stringify(store, null, 2), { mode: 0o600 })
+  await fs.rename(tmpPath, storePath)
 }
 
 /**

@@ -716,9 +716,23 @@ export class RsyncHelper {
     const uniqueId = `${process.pid}-${Date.now()}`
     const tempDest = path.join(os.tmpdir(), `pando-rsync-estimate-${uniqueId}`)
 
+    // Strip verbose flags for the ESTIMATE invocation only. With --dry-run,
+    // -v/--verbose makes rsync enumerate every candidate file, which we buffer
+    // into a string here — unbounded growth on large trees. We only need the
+    // "Number of files" line from --stats, so verbose output is pure overhead.
+    // This is local to estimation; the real rsync path (buildArgs/sanitizeFlags)
+    // still honors user-supplied verbose flags.
+    const estimateConfig: RsyncConfig = {
+      ...config,
+      flags: (config.flags ?? []).filter((flag) => {
+        const normalized = flag.trim().toLowerCase()
+        return normalized !== '-v' && normalized !== '--verbose'
+      }),
+    }
+
     // Build args array for spawn. --dry-run and --stats are internal flags so
     // they survive sanitizeFlags() (which strips them from user config).
-    const args = this.buildArgs(source, tempDest, config, [], ['--dry-run', '--stats'])
+    const args = this.buildArgs(source, tempDest, estimateConfig, [], ['--dry-run', '--stats'])
 
     return new Promise((resolve) => {
       const rsyncProcess = spawn('rsync', args)

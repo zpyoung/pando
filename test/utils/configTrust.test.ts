@@ -173,5 +173,21 @@ describe('configTrust', () => {
       const storePath = getTrustStorePath()
       expect(storePath).toBe(path.join(tmpDir, '.config', 'pando', 'trusted-configs.json'))
     })
+
+    it('writes the trust store atomically (no leftover .tmp file)', async () => {
+      // saveTrustStore writes to <storePath>.tmp then renames over the target.
+      // After a successful save, the final file exists and the temp file does
+      // not (the rename consumed it).
+      await recordTrust('/some/config.toml', 'deadbeef')
+
+      const storePath = getTrustStorePath()
+      expect(await fs.pathExists(storePath)).toBe(true)
+      expect(await fs.pathExists(`${storePath}.tmp`)).toBe(false)
+
+      // And the persisted content is valid, complete JSON (never a partial write).
+      const raw = await fs.readFile(storePath, 'utf8')
+      const parsed = JSON.parse(raw)
+      expect(parsed.trusted['/some/config.toml'].hash).toBe('deadbeef')
+    })
   })
 })

@@ -699,7 +699,12 @@ export default class AddWorktree extends Command {
     }
 
     // decision === 'prompt' (interactive TTY, not JSON)
-    // Pause the spinner so the prompt renders cleanly.
+    // Pause the spinner so the inquirer prompt renders cleanly. By this point
+    // the spinner has typically already succeeded (setup completed), so it is
+    // usually NOT spinning — but it may still be active if a caller invokes the
+    // trust gate mid-setup. The wasSpinning guard handles both cases: we only
+    // stop a spinner that is actually running, and only restart it afterward if
+    // we stopped it (see the matching `if (spinner && wasSpinning)` below).
     const wasSpinning = Boolean(spinner?.isSpinning)
     if (spinner && wasSpinning) {
       spinner.stop()

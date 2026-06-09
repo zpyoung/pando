@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs-extra'
 import * as path from 'path'
 import * as os from 'os'
@@ -592,6 +592,46 @@ describe('RsyncHelper', () => {
       })
       expect(typeof count).toBe('number')
       expect(count).toBeGreaterThanOrEqual(0)
+    })
+
+    // Verbose output is unbounded under --dry-run (rsync enumerates every
+    // candidate file) and we buffer it into a string here. Estimation strips
+    // -v/--verbose so we only buffer the small --stats summary. This is local
+    // to estimation — the real rsync path still honors verbose flags.
+    it('strips -v/--verbose from config flags for the estimate invocation only', async () => {
+      const buildArgsSpy = vi.spyOn(rsyncHelper, 'buildArgs')
+
+      await rsyncHelper.estimateFileCount(path.join(estimateDir, 'missing-source'), {
+        enabled: true,
+        flags: ['--archive', '-v', '--verbose'],
+        exclude: [],
+      })
+
+      expect(buildArgsSpy).toHaveBeenCalledTimes(1)
+      const configArg = buildArgsSpy.mock.calls[0][2]
+      // Verbose flags removed...
+      expect(configArg.flags).not.toContain('-v')
+      expect(configArg.flags).not.toContain('--verbose')
+      // ...but other flags are preserved.
+      expect(configArg.flags).toContain('--archive')
+
+      buildArgsSpy.mockRestore()
+    })
+
+    it('does not mutate the caller config when stripping verbose flags', async () => {
+      const buildArgsSpy = vi.spyOn(rsyncHelper, 'buildArgs')
+      const callerConfig = {
+        enabled: true,
+        flags: ['--archive', '--verbose'],
+        exclude: [],
+      }
+
+      await rsyncHelper.estimateFileCount(path.join(estimateDir, 'missing-source'), callerConfig)
+
+      // Original config object is untouched (a copy is filtered internally).
+      expect(callerConfig.flags).toEqual(['--archive', '--verbose'])
+
+      buildArgsSpy.mockRestore()
     })
   })
 
