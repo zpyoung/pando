@@ -94,8 +94,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: CI checks (format, lint, unit tests)
-        run: pnpm run ci
+      - name: Validate (format, lint, typecheck, unit tests)
+        run: pnpm run validate
 
   build:
     name: Build and package smoke
