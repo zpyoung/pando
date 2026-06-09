@@ -810,6 +810,75 @@ enabled = false
         expect(result.sources['rsync.enabled']).toBe(ConfigSource.PANDO_TOML)
         expect(result.sources['symlink.patterns']).toBe(ConfigSource.PACKAGE_JSON)
       })
+
+      // Regression guard: resolvePostCommandsSourcePath replays
+      // mergeMultipleConfigs' priority order independently. If those two ever
+      // drift, the reported postCommandsSourcePath would point at the wrong
+      // (losing) file. Set up TWO sources that both define postCommands and
+      // assert the path tracks the higher-priority winner.
+      it('reports postCommandsSourcePath from the higher-priority source', async () => {
+        const pandoTomlPath = path.join(tempDir, '.pando.toml')
+        const packageJsonPath = path.join(tempDir, 'package.json')
+
+        // Lower priority (package.json = 68) defines postCommands.
+        await fs.writeFile(
+          packageJsonPath,
+          JSON.stringify({
+            pando: {
+              postCommands: {
+                add: ['echo from-package-json'],
+              },
+            },
+          })
+        )
+
+        // Higher priority (.pando.toml = 80) ALSO defines postCommands and
+        // should win the merge.
+        await fs.writeFile(
+          pandoTomlPath,
+          `
+[postCommands]
+add = ["echo from-pando-toml"]
+`
+        )
+
+        const result = await loader.loadWithSources({ cwd: tempDir, gitRoot: tempDir })
+
+        // The winning postCommands come from .pando.toml...
+        expect(result.config.postCommands.add).toEqual(['echo from-pando-toml'])
+        // ...and the reported source path must point at that same file.
+        expect(result.postCommandsSourcePath).toBe(pandoTomlPath)
+      })
+
+      it('reports the lower-priority source when only it defines postCommands', async () => {
+        const packageJsonPath = path.join(tempDir, 'package.json')
+
+        await fs.writeFile(
+          packageJsonPath,
+          JSON.stringify({
+            pando: {
+              postCommands: {
+                add: ['echo from-package-json'],
+              },
+            },
+          })
+        )
+
+        // .pando.toml exists but does NOT define postCommands, so it must not
+        // win the postCommandsSourcePath even though it is higher priority.
+        await fs.writeFile(
+          path.join(tempDir, '.pando.toml'),
+          `
+[rsync]
+enabled = false
+`
+        )
+
+        const result = await loader.loadWithSources({ cwd: tempDir, gitRoot: tempDir })
+
+        expect(result.config.postCommands.add).toEqual(['echo from-package-json'])
+        expect(result.postCommandsSourcePath).toBe(packageJsonPath)
+      })
     })
 
     describe('clearCache', () => {

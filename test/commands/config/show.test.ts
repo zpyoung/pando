@@ -325,7 +325,7 @@ enabled = false
 
       // Should have default values
       expect(parsed.rsync.enabled).toBe(true)
-      expect(parsed.rsync.flags).toEqual(['--archive', '--exclude', '.git'])
+      expect(parsed.rsync.flags).toEqual(['--archive'])
       expect(parsed.symlink.patterns).toEqual([])
       expect(parsed.symlink.relative).toBe(true)
     })

@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import * as path from 'path'
 import * as fs from 'fs-extra'
 import { createGitHelper } from '../../src/utils/git'
 import type { PandoConfig } from '../../src/config/schema'
+import AddWorktree from '../../src/commands/add'
+import type { WorktreeSetupOrchestrator } from '../../src/utils/worktreeSetup'
 
 /**
  * Tests for add command
@@ -753,6 +755,56 @@ describe('add', () => {
       }
 
       expect(worktreeResult.isExistingBranch).toBe(false)
+    })
+  })
+
+  describe('SIGINT interrupt handler', () => {
+    // The handler is extracted via createSetupInterruptHandler so it can be
+    // invoked directly without sending a real signal (Item 3).
+    it('rolls back via the orchestrator and exits 130 on interrupt', async () => {
+      const command = new AddWorktree([], { runHook: vi.fn() } as never)
+
+      const rollback = vi.fn().mockResolvedValue({ rolledBack: true, warnings: [] })
+      const fakeOrchestrator = { rollback } as unknown as WorktreeSetupOrchestrator
+
+      const spinner = { stop: vi.fn(), start: vi.fn(), isSpinning: true } as never
+
+      const logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
+      const exitSpy = vi
+        .spyOn(process, 'exit')
+        .mockImplementation((() => undefined as never) as never)
+
+      const handler = command.createSetupInterruptHandler(fakeOrchestrator, spinner)
+      await handler()
+
+      expect((spinner as unknown as { stop: ReturnType<typeof vi.fn> }).stop).toHaveBeenCalled()
+      expect(rollback).toHaveBeenCalledTimes(1)
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Interrupted'))
+      expect(exitSpy).toHaveBeenCalledWith(130)
+
+      logSpy.mockRestore()
+      exitSpy.mockRestore()
+    })
+
+    it('still exits 130 even if rollback throws', async () => {
+      const command = new AddWorktree([], { runHook: vi.fn() } as never)
+
+      const rollback = vi.fn().mockRejectedValue(new Error('rollback boom'))
+      const fakeOrchestrator = { rollback } as unknown as WorktreeSetupOrchestrator
+
+      const logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
+      const exitSpy = vi
+        .spyOn(process, 'exit')
+        .mockImplementation((() => undefined as never) as never)
+
+      const handler = command.createSetupInterruptHandler(fakeOrchestrator, null)
+      await handler()
+
+      expect(rollback).toHaveBeenCalledTimes(1)
+      expect(exitSpy).toHaveBeenCalledWith(130)
+
+      logSpy.mockRestore()
+      exitSpy.mockRestore()
     })
   })
 })

@@ -86,7 +86,7 @@ describe('config init', () => {
       // Check rsync defaults
       const rsync = config.rsync as Record<string, unknown>
       expect(rsync.enabled).toBe(true)
-      expect(rsync.flags).toEqual(['--archive', '--exclude', '.git'])
+      expect(rsync.flags).toEqual(['--archive'])
       expect(rsync.exclude).toEqual([])
 
       // Check symlink defaults
@@ -237,7 +237,7 @@ patterns = ["node_modules"]
       expect(config.symlink.patterns).toEqual(['node_modules'])
 
       // Defaults added
-      expect(config.rsync.flags).toEqual(['--archive', '--exclude', '.git'])
+      expect(config.rsync.flags).toEqual(['--archive'])
       expect(config.symlink.relative).toBe(true)
       expect(config.worktree).toBeDefined()
     })
