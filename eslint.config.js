@@ -88,6 +88,15 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'bin/**', 'scripts/**', '*.config.ts', 'coverage/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'bin/**',
+      'scripts/**',
+      '*.config.ts',
+      'coverage/**',
+      '.worktrees/**',
+      '.claude/**',
+    ],
   },
 ]
