@@ -112,6 +112,29 @@ describe('FileOperationTransaction', () => {
       // Rollback should not throw even if file doesn't exist
       await expect(transaction.rollback()).resolves.not.toThrow()
     })
+
+    // SECURITY/ROBUSTNESS: a dangling symlink points at a non-existent target.
+    // fs.pathExists follows the link and returns false, which would leave the
+    // broken link behind. Rollback must use lstat and still unlink it.
+    it('should remove a DANGLING symlink on rollback', async () => {
+      const linkPath = path.join(testDir, 'dangling-link')
+      const missingTarget = path.join(testDir, 'does-not-exist.txt')
+
+      // Create a symlink to a target that does not exist (dangling).
+      await fs.symlink(missingTarget, linkPath)
+
+      // Sanity: pathExists (follows the link) reports false...
+      expect(await fs.pathExists(linkPath)).toBe(false)
+      // ...but lstat still sees the link itself.
+      const stats = await fs.lstat(linkPath)
+      expect(stats.isSymbolicLink()).toBe(true)
+
+      transaction.record(OperationType.CREATE_SYMLINK, linkPath)
+      await transaction.rollback()
+
+      // The dangling symlink must be gone after rollback.
+      await expect(fs.lstat(linkPath)).rejects.toThrow()
+    })
   })
 
   describe('rollback - RSYNC', () => {
@@ -499,6 +522,76 @@ describe('RsyncHelper', () => {
         expect(info.supportsProgress).toBe(isModern)
         expect(info.supportsStats).toBe(isModern)
       }
+    })
+  })
+
+  describe('estimateFileCount', () => {
+    let estimateDir: string
+
+    beforeEach(async () => {
+      estimateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pando-estimate-test-'))
+    })
+
+    afterEach(async () => {
+      await fs.remove(estimateDir)
+    })
+
+    it('returns a non-negative file count for a real directory', async () => {
+      if (!(await rsyncHelper.isInstalled())) {
+        return // skip if rsync unavailable
+      }
+      const src = path.join(estimateDir, 'src')
+      await fs.ensureDir(src)
+      await fs.writeFile(path.join(src, 'a.txt'), 'a')
+      await fs.writeFile(path.join(src, 'b.txt'), 'b')
+      await fs.writeFile(path.join(src, 'c.txt'), 'c')
+
+      const count = await rsyncHelper.estimateFileCount(src, {
+        enabled: true,
+        flags: ['--archive'],
+        exclude: [],
+      })
+
+      expect(typeof count).toBe('number')
+      expect(count).toBeGreaterThanOrEqual(3)
+    })
+
+    // SECURITY: estimateFileCount must use spawn('rsync', args) with no shell.
+    // A malicious flag from config must be passed as a literal argv element and
+    // never interpreted by /bin/sh. We embed a `; touch <marker>` payload that a
+    // shell WOULD execute and assert the marker file is never created.
+    it('does not execute shell metacharacters in config flags (no injection)', async () => {
+      if (!(await rsyncHelper.isInstalled())) {
+        return
+      }
+      const src = path.join(estimateDir, 'src')
+      await fs.ensureDir(src)
+      await fs.writeFile(path.join(src, 'file.txt'), 'content')
+
+      const marker = path.join(estimateDir, 'PWNED')
+
+      // Under shell execution, this would run `touch <marker>`. Under spawn it
+      // is a single (invalid) rsync argument and is never shell-evaluated.
+      const count = await rsyncHelper.estimateFileCount(src, {
+        enabled: true,
+        flags: ['--archive', `--no-such-flag; touch ${marker}`],
+        exclude: [],
+      })
+
+      // Either way it returns a number (0 on rsync error is fine).
+      expect(typeof count).toBe('number')
+      // The crucial assertion: no shell side effect occurred.
+      expect(await fs.pathExists(marker)).toBe(false)
+    })
+
+    it('returns 0 gracefully when source does not exist', async () => {
+      const count = await rsyncHelper.estimateFileCount(path.join(estimateDir, 'missing-source'), {
+        enabled: true,
+        flags: ['--archive'],
+        exclude: [],
+      })
+      expect(typeof count).toBe('number')
+      expect(count).toBeGreaterThanOrEqual(0)
     })
   })
 
@@ -1037,6 +1130,51 @@ describe('SymlinkHelper', () => {
       // Should only contain parent (child is inside parent)
       expect(matches).toContain('parent')
       expect(matches).not.toContain('parent/child.txt')
+    })
+
+    // SECURITY: never symlink the worktree's `.git` (would corrupt git tracking)
+    it('should never return the .git directory even when explicitly matched', async () => {
+      await fs.ensureDir(path.join(testDir, '.git'))
+      await fs.writeFile(path.join(testDir, '.git', 'config'), '[core]\n')
+      await fs.writeFile(path.join(testDir, 'keep.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['.git', 'keep.txt'])
+
+      expect(matches).not.toContain('.git')
+      expect(matches).toContain('keep.txt')
+    })
+
+    it('should never return files inside .git even with a wildcard', async () => {
+      await fs.ensureDir(path.join(testDir, '.git'))
+      await fs.writeFile(path.join(testDir, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+      await fs.writeFile(path.join(testDir, 'regular.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['*', '**/*'])
+
+      expect(matches).toContain('regular.txt')
+      expect(matches.some((m) => m === '.git' || m.startsWith('.git/'))).toBe(false)
+    })
+  })
+
+  describe('isGitPath (static denylist)', () => {
+    it('flags exactly .git', () => {
+      expect(SymlinkHelper.isGitPath('.git')).toBe(true)
+    })
+
+    it('flags paths inside .git/', () => {
+      expect(SymlinkHelper.isGitPath('.git/config')).toBe(true)
+      expect(SymlinkHelper.isGitPath('.git/hooks/pre-commit')).toBe(true)
+    })
+
+    it('normalizes Windows-style backslashes', () => {
+      expect(SymlinkHelper.isGitPath('.git\\config')).toBe(true)
+    })
+
+    it('does not flag unrelated paths', () => {
+      expect(SymlinkHelper.isGitPath('.gitignore')).toBe(false)
+      expect(SymlinkHelper.isGitPath('.github/workflows/ci.yml')).toBe(false)
+      expect(SymlinkHelper.isGitPath('src/.git-helper.ts')).toBe(false)
+      expect(SymlinkHelper.isGitPath('package.json')).toBe(false)
     })
   })
 })
