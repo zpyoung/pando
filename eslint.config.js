@@ -97,6 +97,9 @@ export default [
       'coverage/**',
       '.worktrees/**',
       '.claude/**',
+      '.pegasus-worktrees/**',
+      '.pegasus/**',
+      '.memsearch/**',
     ],
   },
 ]
