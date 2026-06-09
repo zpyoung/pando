@@ -32,12 +32,12 @@
     }
   },
   "include": [
-    "src/**/*",
-    "scripts/**/*"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "test"
+    "test",
+    "scripts"
   ]
 }
