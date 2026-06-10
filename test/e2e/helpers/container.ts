@@ -31,18 +31,18 @@ export interface E2EContainer {
 /**
  * Parse the first valid JSON object/array from a command's stdout.
  *
- * Some commands (notably `remove` on its error path) currently emit more than
- * one JSON line to stdout — the legitimate payload followed by a stray
+ * The `remove` command's --json error path used to emit two JSON lines —
+ * the legitimate payload followed by a stray
  * `{"success":false,"error":"EEXIT: 1"}` from re-serializing the oclif exit
- * error. `JSON.parse` over the whole blob fails in that case. We therefore try
- * the trimmed whole string first (the common, single-object case) and fall back
- * to the first line that parses on its own, which is always the real payload.
+ * error. That bug is fixed (command catch blocks re-throw oclif ExitErrors
+ * via `isOclifExitError`), but the defensive fallback is kept: try the
+ * trimmed whole string first (the single-object case) and fall back to the
+ * first line that parses on its own.
  *
  * The fallback path also counts how many lines parse as standalone JSON: if
- * MORE than one does, that's a double-emit regression (the documented `remove`
- * workaround is the only known case). We still return the first object, but
- * emit a console.warn naming the command so a new double-emit in another
- * command isn't silently swallowed.
+ * MORE than one does, that's a double-emit regression. We still return the
+ * first object, but emit a console.warn naming the command so a regression
+ * isn't silently swallowed.
  *
  * @param stdout - Raw command stdout
  * @param command - Human-readable command label (e.g. the joined argv) used in
@@ -84,8 +84,8 @@ function parseFirstJsonObject(
       console.warn(
         `[e2e] parseFirstJsonObject: command "${command ?? 'unknown'}" emitted ` +
           `${jsonLineCount} JSON object lines on stdout; returning the first. ` +
-          `This is expected only for the documented \`remove\` workaround — a new ` +
-          `occurrence elsewhere indicates a double-emit regression.`
+          `Commands must emit a single JSON document in --json mode — this ` +
+          `indicates a double-emit regression.`
       )
     }
 

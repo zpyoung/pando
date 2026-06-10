@@ -432,6 +432,37 @@ describe('remove', () => {
 
       expect(exitSpy).toHaveBeenCalledTimes(1)
     })
+
+    it('should emit exactly one JSON object when the worktree is not found in --json mode', async () => {
+      const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
+      ]
+
+      mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+
+      const exitSpy = vi.spyOn(command, 'exit').mockImplementation((code?: number) => {
+        return Errors.exit(code ?? 0)
+      })
+
+      command.argv = ['--path', '/path/to/nonexistent', '--json']
+
+      await expect(command.run()).rejects.toMatchObject({ code: 'EEXIT' })
+
+      const jsonObjects = parseLoggedJsonObjects(logSpy.mock.calls)
+      expect(jsonObjects).toHaveLength(1)
+
+      const payload = jsonObjects[0] as Record<string, unknown>
+      expect(payload).toMatchObject({
+        success: false,
+        error: 'Worktree not found at /path/to/nonexistent',
+      })
+      expect(payload.error).not.toBe('EEXIT: 1')
+
+      expect(exitSpy).toHaveBeenCalledTimes(1)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
   })
 
   describe('interactive mode', () => {
