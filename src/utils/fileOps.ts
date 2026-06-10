@@ -382,28 +382,34 @@ export class RsyncHelper {
   private static readonly INTERNAL_FLAGS = ['--stats', '--progress', '--dry-run']
 
   /**
-   * Transport/exec-class flags that let rsync spawn an arbitrary command or a
-   * remote shell. Pando only ever rsyncs between two LOCAL paths, so these
-   * flags are meaningless here — but a config file from an untrusted source
-   * could use them to run arbitrary code (e.g. `-e 'sh -c <payload>'` or
-   * `--rsync-path='sh -c <payload>'`). We strip them unconditionally as a
+   * Long-form transport/exec-class flags that let rsync spawn an arbitrary
+   * command or a remote shell. Pando only ever rsyncs between two LOCAL paths,
+   * so these flags are meaningless here — but a config file from an untrusted
+   * source could use them to run arbitrary code (e.g. `--rsh='sh -c <payload>'`
+   * or `--rsync-path='sh -c <payload>'`). We strip them unconditionally as a
    * defense-in-depth denylist, independent of the trust gate.
    *
-   * Covers both the short (`-e`, `-M`) and long (`--rsh`, `--rsync-path`,
-   * `--remote-option`) spellings, including any `--flag=value` form.
+   * Long-form matching is exact on the bare flag and the `--flag=value` form.
    *
-   * NOTE: rsync short options are CASE-SENSITIVE. `-M` is the dangerous
-   * `--remote-option` shorthand, whereas lowercase `-m` is the benign
-   * `--prune-empty-dirs`. Matching here is exact (no case-folding) so we never
-   * strip a user's harmless `-m`.
+   * Short-form `-e`/`-M` are handled separately (see DENYLISTED_SHORT_OPTS and
+   * sanitizeFlags) because rsync accepts attached and bundled spellings
+   * (`-essh`, `-aMe`) that a simple equality check would miss.
    */
-  private static readonly DENYLISTED_FLAGS = [
-    '-e',
-    '-M',
-    '--rsh',
-    '--rsync-path',
-    '--remote-option',
-  ]
+  private static readonly DENYLISTED_LONG_FLAGS = ['--rsh', '--rsync-path', '--remote-option']
+
+  /**
+   * Dangerous short option *letters*. rsync's `-e` (--rsh) and `-M`
+   * (--remote-option) both TAKE A VALUE, and rsync accepts that value either
+   * attached (`-essh` ≡ `-e ssh`) or bundled into a cluster (`-aMe`, `-Me<val>`).
+   * Because everything after such a letter in a single-dash token becomes its
+   * value, no part of a cluster containing one of these letters can be safely
+   * salvaged — so we strip the ENTIRE token if it contains any of them.
+   *
+   * rsync short options are CASE-SENSITIVE: dangerous `-M` (--remote-option)
+   * must not be confused with benign lowercase `-m` (--prune-empty-dirs), and
+   * uppercase `-E` is unrelated to `-e`. Matching is therefore exact-case.
+   */
+  private static readonly DENYLISTED_SHORT_OPTS = ['e', 'M']
 
   /**
    * Validate and sanitize rsync flags
@@ -421,23 +427,39 @@ export class RsyncHelper {
         return false
       }
 
-      // rsync flags are case-sensitive, so match the trimmed flag exactly
-      // (no case-folding) — e.g. dangerous `-M` must not collide with benign `-m`.
       const trimmedFlag = flag.trim()
 
-      // Filter out flags we manage internally
+      // Filter out flags we manage internally. These are pando-managed long
+      // flags (not security-sensitive), so match them case-INsensitively to
+      // tolerate `--STATS`/`--Progress` etc. without leaking duplicate args.
+      const lowerFlag = trimmedFlag.toLowerCase()
       for (const internal of RsyncHelper.INTERNAL_FLAGS) {
-        if (trimmedFlag === internal || trimmedFlag.startsWith(`${internal}=`)) {
+        if (lowerFlag === internal || lowerFlag.startsWith(`${internal}=`)) {
           return false
         }
       }
 
-      // Filter out transport/exec-class flags. Match the bare flag and the
-      // `--flag=value` form (the `-e value` / `-M value` separated forms drop
-      // the value as a stray arg, which rsync rejects harmlessly).
-      for (const denied of RsyncHelper.DENYLISTED_FLAGS) {
-        if (trimmedFlag === denied || trimmedFlag.startsWith(`${denied}=`)) {
-          return false
+      // Security denylist below is EXACT-CASE: rsync short/long options are
+      // case-sensitive, so dangerous `-M`/`--rsh` must never be conflated with
+      // benign `-m`/`--RSH`.
+
+      if (trimmedFlag.startsWith('--')) {
+        // Long form: match the bare flag and the `--flag=value` form.
+        for (const denied of RsyncHelper.DENYLISTED_LONG_FLAGS) {
+          if (trimmedFlag === denied || trimmedFlag.startsWith(`${denied}=`)) {
+            return false
+          }
+        }
+      } else if (trimmedFlag.startsWith('-')) {
+        // Single-dash token (short option or cluster). rsync's `-e`/`-M` take a
+        // value that may be attached (`-essh`) or bundled (`-aMe`, `-Me<val>`),
+        // and everything after such a letter becomes its value — so a cluster
+        // can never be partially salvaged. Strip the WHOLE token if it contains
+        // any dangerous letter; benign clusters (`-avz`, `-m`) survive.
+        for (const opt of RsyncHelper.DENYLISTED_SHORT_OPTS) {
+          if (trimmedFlag.includes(opt)) {
+            return false
+          }
         }
       }
 

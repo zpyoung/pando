@@ -889,6 +889,85 @@ describe('RsyncHelper', () => {
         expect(args).toContain('--archive')
         expect(args).toContain('--remove-source-files')
       })
+
+      // SECURITY: rsync also accepts dangerous short options in ATTACHED form
+      // (`-essh` ≡ `-e ssh`) and BUNDLED in a cluster (`-aMe`, `-Me<val>`). The
+      // value swallows the rest of the token, so the WHOLE token must be
+      // stripped — a bare-equality denylist would let these slip through.
+      it('strips attached short-option form -essh (≡ -e ssh)', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-essh'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-essh')
+        expect(args.some((a) => a.startsWith('-e'))).toBe(false)
+      })
+
+      it('strips attached short-option form -Mx (≡ -M x)', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-Mx'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-Mx')
+        expect(args.some((a) => a.includes('M'))).toBe(false)
+      })
+
+      it('strips a bundled cluster containing M (-aMe)', () => {
+        // `-aMe` bundles -a with the dangerous -M (whose value swallows the
+        // trailing `e`). The entire cluster is unsafe to salvage.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-aMe'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-aMe')
+      })
+
+      it('strips a bundled cluster containing e (-Me)', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-Me'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-Me')
+      })
+
+      it('keeps benign clusters without e/M (-avz, -m survive)', () => {
+        // Clusters that contain no dangerous letter take no value and are safe.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['-avz', '-m'],
+          exclude: [],
+        })
+
+        expect(args).toContain('-avz')
+        expect(args).toContain('-m')
+      })
+    })
+
+    // INTERNAL_FLAGS (--stats/--progress/--dry-run) are pando-managed long
+    // flags, not security-sensitive, so they are matched case-INsensitively to
+    // avoid leaking a duplicate when a user writes them in a different case.
+    it('strips internally-managed flags case-insensitively (--STATS)', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: ['--archive', '--STATS'],
+        exclude: [],
+      })
+
+      expect(args).toContain('--archive')
+      expect(args).not.toContain('--STATS')
+      expect(args.some((a) => a.toLowerCase() === '--stats')).toBe(false)
     })
   })
 
