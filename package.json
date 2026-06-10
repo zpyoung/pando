@@ -108,7 +108,7 @@
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^9.1.2",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
+    "lint-staged": "^17.0.7",
     "oclif": "^4.22.57",
     "prettier": "^3.7.4",
     "testcontainers": "^10.28.0",
