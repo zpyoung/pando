@@ -45,6 +45,27 @@ vi.mock('@inquirer/prompts', () => ({
   confirm: vi.fn(),
 }))
 
+/**
+ * Collect every logged argument that parses as a JSON object. Used to assert
+ * the command emits exactly one JSON payload in error mode.
+ */
+const parseLoggedJsonObjects = (calls: unknown[][]): unknown[] => {
+  const objects: unknown[] = []
+  for (const call of calls) {
+    const arg = call[0]
+    if (typeof arg !== 'string') continue
+    try {
+      const parsed: unknown = JSON.parse(arg)
+      if (parsed !== null && typeof parsed === 'object') {
+        objects.push(parsed)
+      }
+    } catch {
+      // Not JSON (e.g. human-readable line) — ignore.
+    }
+  }
+  return objects
+}
+
 describe('remove', () => {
   let command: RemoveWorktree
   let mockGitHelper: any
@@ -341,27 +362,6 @@ describe('remove', () => {
   // ExitError so the production catch path is exercised, then assert exactly one
   // JSON object is logged.
   describe('--json single JSON emit (regression)', () => {
-    /**
-     * Collect every logged argument that parses as a JSON object. Used to assert
-     * the command emits exactly one JSON payload in error mode.
-     */
-    const parseLoggedJsonObjects = (calls: unknown[][]): unknown[] => {
-      const objects: unknown[] = []
-      for (const call of calls) {
-        const arg = call[0]
-        if (typeof arg !== 'string') continue
-        try {
-          const parsed: unknown = JSON.parse(arg)
-          if (parsed !== null && typeof parsed === 'object') {
-            objects.push(parsed)
-          }
-        } catch {
-          // Not JSON (e.g. human-readable line) — ignore.
-        }
-      }
-      return objects
-    }
-
     it('should emit exactly one JSON object when removal fails in --json mode', async () => {
       const mockWorktrees: WorktreeInfo[] = [
         { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },

@@ -226,14 +226,14 @@ export default class AddWorktree extends Command {
 
     // Narrow string flags from the erased Record<string, unknown> to their
     // actual oclif types (all defined via Flags.string -> string | undefined).
-    const pathFlag = flags.path as string | undefined
-    const branchFlag = flags.branch as string | undefined
-    const commitFlag = flags.commit as string | undefined
+    const pathArg = flags.path as string | undefined
+    const branchArg = flags.branch as string | undefined
+    const commitArg = flags.commit as string | undefined
 
     // Resolve path: CLI flag > config default > error
     const fs = await import('fs-extra')
     // Validate: require either --branch or --path (or both)
-    if (!branchFlag && !pathFlag) {
+    if (!branchArg && !pathArg) {
       ErrorHelper.validation(
         this,
         'Either --branch or --path is required.',
@@ -244,13 +244,13 @@ export default class AddWorktree extends Command {
     const path = await import('path')
     let worktreePath: string
 
-    if (pathFlag) {
+    if (pathArg) {
       // Path provided via flag
-      worktreePath = pathFlag
-    } else if (config.worktree.defaultPath && branchFlag) {
+      worktreePath = pathArg
+    } else if (config.worktree.defaultPath && branchArg) {
       // Use config default path + branch name
       // Sanitize branch name: convert slashes to underscores for filesystem safety
-      const sanitizedBranch = branchFlag.replace(/\//g, '_')
+      const sanitizedBranch = branchArg.replace(/\//g, '_')
 
       // Insert project subfolder if enabled
       if (config.worktree.useProjectSubfolder) {
@@ -285,7 +285,7 @@ export default class AddWorktree extends Command {
     await fs.ensureDir(path.dirname(resolvedPath))
 
     // Validate force flag requires branch
-    if (flags.force && !branchFlag) {
+    if (flags.force && !branchArg) {
       ErrorHelper.validation(
         this,
         'The --force flag requires --branch to be specified.\n\n' +
@@ -299,15 +299,15 @@ export default class AddWorktree extends Command {
     }
 
     // Validate branch/commit combination when force is NOT set
-    if (branchFlag && commitFlag && !flags.force) {
+    if (branchArg && commitArg && !flags.force) {
       // Check if branch already exists
-      const branchExists = await gitHelper.branchExists(branchFlag)
+      const branchExists = await gitHelper.branchExists(branchArg)
       if (branchExists) {
         ErrorHelper.validation(
           this,
-          `Branch '${branchFlag}' already exists.\n\n` +
+          `Branch '${branchArg}' already exists.\n\n` +
             'Options:\n' +
-            `  • Use --force to reset '${branchFlag}' to commit ${commitFlag.substring(0, 7)}\n` +
+            `  • Use --force to reset '${branchArg}' to commit ${commitArg.substring(0, 7)}\n` +
             '  • Choose a different branch name with --branch <new-name>\n' +
             '  • Omit --branch to checkout the commit in detached HEAD state',
           flags.json as boolean | undefined
