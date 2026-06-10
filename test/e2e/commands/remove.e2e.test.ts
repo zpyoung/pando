@@ -55,6 +55,15 @@ describe('pando remove (E2E)', () => {
       const result = await pandoRemove(container, repoPath, ['--path', '../worktrees/nonexistent'])
 
       expectJsonError(result, 'not found')
+
+      // REGRESSION: --json failures must be a single JSON document on stdout.
+      // The not-found path used to emit a second {"success":false,"error":"EEXIT: 1"}
+      // line when the catch block re-serialized oclif's ExitError instead of
+      // re-throwing it. JSON.parse over the whole stdout throws if more than
+      // one object is present.
+      const payload = JSON.parse(result.stdout.trim()) as Record<string, unknown>
+      expect(payload.success).toBe(false)
+      expect(payload.error).not.toBe('EEXIT: 1')
     })
   })
 
