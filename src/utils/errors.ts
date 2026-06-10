@@ -1,6 +1,54 @@
 import type { Command } from '@oclif/core'
 
 /**
+ * Detect oclif's internal "exit" error.
+ *
+ * `command.exit(code)` throws an oclif `ExitError` to unwind the stack and
+ * signal the process exit code. This is control flow, not a real failure, so
+ * command-level `catch` blocks must re-throw it rather than re-logging it as
+ * an error (which would emit a duplicate/incorrect error payload — see the
+ * `remove` command's `--json` double-emit bug).
+ *
+ * oclif's `ExitError` is identified by either:
+ * - `code === 'EEXIT'`, and/or
+ * - an `oclif` object carrying an `exit` property.
+ *
+ * Both shapes are checked so this guard is robust across the oclif versions
+ * and the slightly different ad-hoc checks it replaces.
+ *
+ * @param error - The caught value (typically `unknown`)
+ * @returns True if the value is an oclif exit error
+ *
+ * @example
+ * try {
+ *   // ...command logic that may call this.exit(1)
+ * } catch (error) {
+ *   if (isOclifExitError(error)) throw error // let oclif handle the exit
+ *   // ...real error handling
+ * }
+ */
+export function isOclifExitError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false
+  }
+
+  // Shape 1: ExitError exposes `code === 'EEXIT'`.
+  if ('code' in error && (error as { code?: unknown }).code === 'EEXIT') {
+    return true
+  }
+
+  // Shape 2: oclif attaches an `oclif` object with an `exit` property.
+  if ('oclif' in error) {
+    const oclif = (error as { oclif?: unknown }).oclif
+    if (typeof oclif === 'object' && oclif !== null && 'exit' in oclif) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
  * Error Helper Utility
  *
  * Provides centralized error handling for the Pando CLI with proper

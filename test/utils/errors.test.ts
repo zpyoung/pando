@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ErrorHelper } from '../../src/utils/errors.js'
+import { Errors } from '@oclif/core'
+import { ErrorHelper, isOclifExitError } from '../../src/utils/errors.js'
 import type { Command } from '@oclif/core'
 
 describe('ErrorHelper', () => {
@@ -313,5 +314,72 @@ describe('ErrorHelper', () => {
       expect(warn).toHaveProperty('status')
       expect(warn).toHaveProperty('warning')
     })
+  })
+})
+
+describe('isOclifExitError', () => {
+  it('should detect the real oclif ExitError thrown by Errors.exit', () => {
+    // Errors.exit(code) throws the same ExitError that command.exit(code) does.
+    let thrown: unknown
+    try {
+      Errors.exit(1)
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeDefined()
+    expect(isOclifExitError(thrown)).toBe(true)
+  })
+
+  it('should detect an error with code "EEXIT"', () => {
+    const error = Object.assign(new Error('EEXIT: 1'), { code: 'EEXIT' })
+    expect(isOclifExitError(error)).toBe(true)
+  })
+
+  it('should detect an error carrying an oclif.exit property', () => {
+    const error = Object.assign(new Error('exit'), { oclif: { exit: 1 } })
+    expect(isOclifExitError(error)).toBe(true)
+  })
+
+  it('should detect an oclif.exit of 0 (presence, not truthiness)', () => {
+    const error = Object.assign(new Error('exit'), { oclif: { exit: 0 } })
+    expect(isOclifExitError(error)).toBe(true)
+  })
+
+  it('should detect a plain object with the oclif exit shape', () => {
+    expect(isOclifExitError({ oclif: { exit: 2 } })).toBe(true)
+  })
+
+  it('should return false for a generic error', () => {
+    expect(isOclifExitError(new Error('something failed'))).toBe(false)
+  })
+
+  it('should return false for an error with an unrelated code', () => {
+    const error = Object.assign(new Error('not found'), { code: 'ENOENT' })
+    expect(isOclifExitError(error)).toBe(false)
+  })
+
+  it('should return false when oclif exists but lacks an exit property', () => {
+    const error = Object.assign(new Error('partial'), { oclif: {} })
+    expect(isOclifExitError(error)).toBe(false)
+  })
+
+  it('should return false when oclif is not an object', () => {
+    const error = Object.assign(new Error('weird'), { oclif: 'nope' })
+    expect(isOclifExitError(error)).toBe(false)
+  })
+
+  it('should return false for null', () => {
+    expect(isOclifExitError(null)).toBe(false)
+  })
+
+  it('should return false for undefined', () => {
+    expect(isOclifExitError(undefined)).toBe(false)
+  })
+
+  it('should return false for primitives', () => {
+    expect(isOclifExitError('EEXIT')).toBe(false)
+    expect(isOclifExitError(1)).toBe(false)
+    expect(isOclifExitError(true)).toBe(false)
   })
 })

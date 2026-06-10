@@ -3,7 +3,7 @@ import { createGitHelper } from '../utils/git.js'
 import { loadConfig } from '../config/loader.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
-import { ErrorHelper } from '../utils/errors.js'
+import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
 import { validateBranchName } from '../utils/validation.js'
 import {
   computeConfigHash,
@@ -224,10 +224,16 @@ export default class AddWorktree extends Command {
 
     const gitHelper = createGitHelper()
 
+    // Narrow string flags from the erased Record<string, unknown> to their
+    // actual oclif types (all defined via Flags.string -> string | undefined).
+    const pathArg = flags.path as string | undefined
+    const branchArg = flags.branch as string | undefined
+    const commitArg = flags.commit as string | undefined
+
     // Resolve path: CLI flag > config default > error
     const fs = await import('fs-extra')
     // Validate: require either --branch or --path (or both)
-    if (!flags.branch && !flags.path) {
+    if (!branchArg && !pathArg) {
       ErrorHelper.validation(
         this,
         'Either --branch or --path is required.',
@@ -238,13 +244,13 @@ export default class AddWorktree extends Command {
     const path = await import('path')
     let worktreePath: string
 
-    if (flags.path) {
+    if (pathArg) {
       // Path provided via flag
-      worktreePath = String(flags.path)
-    } else if (config.worktree.defaultPath && flags.branch) {
+      worktreePath = pathArg
+    } else if (config.worktree.defaultPath && branchArg) {
       // Use config default path + branch name
       // Sanitize branch name: convert slashes to underscores for filesystem safety
-      const sanitizedBranch = String(flags.branch).replace(/\//g, '_')
+      const sanitizedBranch = branchArg.replace(/\//g, '_')
 
       // Insert project subfolder if enabled
       if (config.worktree.useProjectSubfolder) {
@@ -279,7 +285,7 @@ export default class AddWorktree extends Command {
     await fs.ensureDir(path.dirname(resolvedPath))
 
     // Validate force flag requires branch
-    if (flags.force && !flags.branch) {
+    if (flags.force && !branchArg) {
       ErrorHelper.validation(
         this,
         'The --force flag requires --branch to be specified.\n\n' +
@@ -293,15 +299,15 @@ export default class AddWorktree extends Command {
     }
 
     // Validate branch/commit combination when force is NOT set
-    if (flags.branch && flags.commit && !flags.force) {
+    if (branchArg && commitArg && !flags.force) {
       // Check if branch already exists
-      const branchExists = await gitHelper.branchExists(String(flags.branch))
+      const branchExists = await gitHelper.branchExists(branchArg)
       if (branchExists) {
         ErrorHelper.validation(
           this,
-          `Branch '${String(flags.branch)}' already exists.\n\n` +
+          `Branch '${branchArg}' already exists.\n\n` +
             'Options:\n' +
-            `  • Use --force to reset '${String(flags.branch)}' to commit ${String(flags.commit).substring(0, 7)}\n` +
+            `  • Use --force to reset '${branchArg}' to commit ${commitArg.substring(0, 7)}\n` +
             '  • Choose a different branch name with --branch <new-name>\n' +
             '  • Omit --branch to checkout the commit in detached HEAD state',
           flags.json as boolean | undefined
@@ -960,7 +966,7 @@ export default class AddWorktree extends Command {
     chalk: Awaited<typeof import('chalk').default> | null,
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null
   ): Promise<void> {
-    if (error instanceof Error && 'code' in error && error.code === 'EEXIT') {
+    if (isOclifExitError(error)) {
       throw error
     }
 
