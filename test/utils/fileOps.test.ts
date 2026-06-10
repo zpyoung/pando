@@ -62,21 +62,41 @@ describe('FileOperationTransaction', () => {
   })
 
   describe('createCheckpoint', () => {
-    it('should create a checkpoint with data', () => {
+    it('should create a checkpoint and make it retrievable by name', () => {
       const checkpointName = 'test-checkpoint'
       const checkpointData = { content: 'test data' }
 
       transaction.createCheckpoint(checkpointName, checkpointData)
 
-      // Checkpoints are private, but we can verify by attempting rollback
-      expect(true).toBe(true) // Checkpoint creation succeeds
+      // The checkpoint must be retrievable with the exact value stored.
+      expect(transaction.getCheckpoint(checkpointName)).toEqual(checkpointData)
     })
 
-    it('should store multiple checkpoints', () => {
+    it('should store multiple checkpoints independently', () => {
       transaction.createCheckpoint('checkpoint1', { value: 1 })
       transaction.createCheckpoint('checkpoint2', { value: 2 })
 
-      expect(true).toBe(true) // Multiple checkpoints succeed
+      // Each checkpoint keeps its own value; storing a second does not clobber
+      // the first.
+      expect(transaction.getCheckpoint('checkpoint1')).toEqual({ value: 1 })
+      expect(transaction.getCheckpoint('checkpoint2')).toEqual({ value: 2 })
+    })
+
+    it('should overwrite a checkpoint when the same name is reused', () => {
+      transaction.createCheckpoint('dup', { value: 'first' })
+      transaction.createCheckpoint('dup', { value: 'second' })
+
+      expect(transaction.getCheckpoint('dup')).toEqual({ value: 'second' })
+    })
+
+    it('should clear checkpoints after rollback', async () => {
+      transaction.createCheckpoint('ephemeral', { value: 42 })
+      expect(transaction.getCheckpoint('ephemeral')).toEqual({ value: 42 })
+
+      await transaction.rollback()
+
+      // Internal checkpoints are cleared once a rollback completes.
+      expect(transaction.getCheckpoint('ephemeral')).toBeUndefined()
     })
   })
 
@@ -748,6 +768,109 @@ describe('RsyncHelper', () => {
       expect(args).toContain('--checksum')
       expect(args).not.toContain('')
       expect(args).not.toContain('   ')
+    })
+
+    // SECURITY: transport/exec-class flags let rsync spawn an arbitrary command
+    // or remote shell. Pando is local-only, so these are meaningless here and a
+    // latent RCE footgun from untrusted configs. They MUST be stripped while
+    // benign flags survive.
+    describe('transport/exec-class flag denylist', () => {
+      it('strips -e (remote shell) while keeping --archive', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-e', 'ssh'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-e')
+      })
+
+      it('strips --rsh and --rsh=<value>', () => {
+        const bare = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--rsh'],
+          exclude: [],
+        })
+        expect(bare).not.toContain('--rsh')
+        expect(bare).toContain('--archive')
+
+        const withValue = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', "--rsh=sh -c 'touch /tmp/pwned'"],
+          exclude: [],
+        })
+        expect(withValue.some((a) => a.startsWith('--rsh'))).toBe(false)
+        expect(withValue).toContain('--archive')
+      })
+
+      it('strips --rsync-path and --rsync-path=<value>', () => {
+        const bare = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--rsync-path', '--checksum'],
+          exclude: [],
+        })
+        expect(bare).not.toContain('--rsync-path')
+        expect(bare).toContain('--checksum')
+
+        const withValue = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ["--rsync-path=sh -c 'id'", '--checksum'],
+          exclude: [],
+        })
+        expect(withValue.some((a) => a.startsWith('--rsync-path'))).toBe(false)
+        expect(withValue).toContain('--checksum')
+      })
+
+      it('strips --remote-option', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--remote-option', '--checksum'],
+          exclude: [],
+        })
+
+        expect(args).not.toContain('--remote-option')
+        expect(args).toContain('--archive')
+        expect(args).toContain('--checksum')
+      })
+
+      it('strips -M (short form of --remote-option) including -M=<value>', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-M', '-M=--munge-links'],
+          exclude: [],
+        })
+
+        expect(args).not.toContain('-M')
+        expect(args.some((a) => a.startsWith('-M'))).toBe(false)
+        expect(args).toContain('--archive')
+      })
+
+      it('matches denylisted flags case-insensitively', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--RSH=ssh', '-E'],
+          exclude: [],
+        })
+
+        expect(args.some((a) => a.toLowerCase().startsWith('--rsh'))).toBe(false)
+        expect(args).not.toContain('-E')
+        expect(args).toContain('--archive')
+      })
+
+      it('keeps benign flags whose names merely start with a denied prefix', () => {
+        // `--remote-option` is denied, but `--remove-source-files` and
+        // `--exclude` are not and must survive. The denylist matches on exact
+        // flag or `flag=`, never a loose prefix.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--remove-source-files'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).toContain('--remove-source-files')
+      })
     })
   })
 

@@ -382,8 +382,29 @@ export class RsyncHelper {
   private static readonly INTERNAL_FLAGS = ['--stats', '--progress', '--dry-run']
 
   /**
+   * Transport/exec-class flags that let rsync spawn an arbitrary command or a
+   * remote shell. Pando only ever rsyncs between two LOCAL paths, so these
+   * flags are meaningless here — but a config file from an untrusted source
+   * could use them to run arbitrary code (e.g. `-e 'sh -c <payload>'` or
+   * `--rsync-path='sh -c <payload>'`). We strip them unconditionally as a
+   * defense-in-depth denylist, independent of the trust gate.
+   *
+   * Covers both the short (`-e`, `-M`) and long (`--rsh`, `--rsync-path`,
+   * `--remote-option`) spellings, including any `--flag=value` form.
+   */
+  private static readonly DENYLISTED_FLAGS = [
+    '-e',
+    '--rsh',
+    '--rsync-path',
+    '--remote-option',
+    '-m',
+  ]
+
+  /**
    * Validate and sanitize rsync flags
-   * Removes internally-managed flags to prevent conflicts
+   *
+   * Removes internally-managed flags (to prevent conflicts) and
+   * transport/exec-class flags (a latent RCE footgun from untrusted configs).
    *
    * @param flags - User-provided flags
    * @returns Sanitized flags array
@@ -395,10 +416,20 @@ export class RsyncHelper {
         return false
       }
 
-      // Filter out flags we manage internally
       const normalizedFlag = flag.trim().toLowerCase()
+
+      // Filter out flags we manage internally
       for (const internal of RsyncHelper.INTERNAL_FLAGS) {
         if (normalizedFlag === internal || normalizedFlag.startsWith(`${internal}=`)) {
+          return false
+        }
+      }
+
+      // Filter out transport/exec-class flags. Match the bare flag and the
+      // `--flag=value` form (the `-e value` / `-M value` separated forms drop
+      // the value as a stray arg, which rsync rejects harmlessly).
+      for (const denied of RsyncHelper.DENYLISTED_FLAGS) {
+        if (normalizedFlag === denied || normalizedFlag.startsWith(`${denied}=`)) {
           return false
         }
       }
