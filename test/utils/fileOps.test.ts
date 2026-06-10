@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fs from 'fs-extra'
 import * as path from 'path'
 import * as os from 'os'
@@ -62,21 +62,41 @@ describe('FileOperationTransaction', () => {
   })
 
   describe('createCheckpoint', () => {
-    it('should create a checkpoint with data', () => {
+    it('should create a checkpoint and make it retrievable by name', () => {
       const checkpointName = 'test-checkpoint'
       const checkpointData = { content: 'test data' }
 
       transaction.createCheckpoint(checkpointName, checkpointData)
 
-      // Checkpoints are private, but we can verify by attempting rollback
-      expect(true).toBe(true) // Checkpoint creation succeeds
+      // The checkpoint must be retrievable with the exact value stored.
+      expect(transaction.getCheckpoint(checkpointName)).toEqual(checkpointData)
     })
 
-    it('should store multiple checkpoints', () => {
+    it('should store multiple checkpoints independently', () => {
       transaction.createCheckpoint('checkpoint1', { value: 1 })
       transaction.createCheckpoint('checkpoint2', { value: 2 })
 
-      expect(true).toBe(true) // Multiple checkpoints succeed
+      // Each checkpoint keeps its own value; storing a second does not clobber
+      // the first.
+      expect(transaction.getCheckpoint('checkpoint1')).toEqual({ value: 1 })
+      expect(transaction.getCheckpoint('checkpoint2')).toEqual({ value: 2 })
+    })
+
+    it('should overwrite a checkpoint when the same name is reused', () => {
+      transaction.createCheckpoint('dup', { value: 'first' })
+      transaction.createCheckpoint('dup', { value: 'second' })
+
+      expect(transaction.getCheckpoint('dup')).toEqual({ value: 'second' })
+    })
+
+    it('should clear checkpoints after rollback', async () => {
+      transaction.createCheckpoint('ephemeral', { value: 42 })
+      expect(transaction.getCheckpoint('ephemeral')).toEqual({ value: 42 })
+
+      await transaction.rollback()
+
+      // Internal checkpoints are cleared once a rollback completes.
+      expect(transaction.getCheckpoint('ephemeral')).toBeUndefined()
     })
   })
 
@@ -111,6 +131,29 @@ describe('FileOperationTransaction', () => {
 
       // Rollback should not throw even if file doesn't exist
       await expect(transaction.rollback()).resolves.not.toThrow()
+    })
+
+    // SECURITY/ROBUSTNESS: a dangling symlink points at a non-existent target.
+    // fs.pathExists follows the link and returns false, which would leave the
+    // broken link behind. Rollback must use lstat and still unlink it.
+    it('should remove a DANGLING symlink on rollback', async () => {
+      const linkPath = path.join(testDir, 'dangling-link')
+      const missingTarget = path.join(testDir, 'does-not-exist.txt')
+
+      // Create a symlink to a target that does not exist (dangling).
+      await fs.symlink(missingTarget, linkPath)
+
+      // Sanity: pathExists (follows the link) reports false...
+      expect(await fs.pathExists(linkPath)).toBe(false)
+      // ...but lstat still sees the link itself.
+      const stats = await fs.lstat(linkPath)
+      expect(stats.isSymbolicLink()).toBe(true)
+
+      transaction.record(OperationType.CREATE_SYMLINK, linkPath)
+      await transaction.rollback()
+
+      // The dangling symlink must be gone after rollback.
+      await expect(fs.lstat(linkPath)).rejects.toThrow()
     })
   })
 
@@ -502,6 +545,116 @@ describe('RsyncHelper', () => {
     })
   })
 
+  describe('estimateFileCount', () => {
+    let estimateDir: string
+
+    beforeEach(async () => {
+      estimateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pando-estimate-test-'))
+    })
+
+    afterEach(async () => {
+      await fs.remove(estimateDir)
+    })
+
+    it('returns a non-negative file count for a real directory', async () => {
+      if (!(await rsyncHelper.isInstalled())) {
+        return // skip if rsync unavailable
+      }
+      const src = path.join(estimateDir, 'src')
+      await fs.ensureDir(src)
+      await fs.writeFile(path.join(src, 'a.txt'), 'a')
+      await fs.writeFile(path.join(src, 'b.txt'), 'b')
+      await fs.writeFile(path.join(src, 'c.txt'), 'c')
+
+      const count = await rsyncHelper.estimateFileCount(src, {
+        enabled: true,
+        flags: ['--archive'],
+        exclude: [],
+      })
+
+      expect(typeof count).toBe('number')
+      expect(count).toBeGreaterThanOrEqual(3)
+    })
+
+    // SECURITY: estimateFileCount must use spawn('rsync', args) with no shell.
+    // A malicious flag from config must be passed as a literal argv element and
+    // never interpreted by /bin/sh. We embed a `; touch <marker>` payload that a
+    // shell WOULD execute and assert the marker file is never created.
+    it('does not execute shell metacharacters in config flags (no injection)', async () => {
+      if (!(await rsyncHelper.isInstalled())) {
+        return
+      }
+      const src = path.join(estimateDir, 'src')
+      await fs.ensureDir(src)
+      await fs.writeFile(path.join(src, 'file.txt'), 'content')
+
+      const marker = path.join(estimateDir, 'PWNED')
+
+      // Under shell execution, this would run `touch <marker>`. Under spawn it
+      // is a single (invalid) rsync argument and is never shell-evaluated.
+      const count = await rsyncHelper.estimateFileCount(src, {
+        enabled: true,
+        flags: ['--archive', `--no-such-flag; touch ${marker}`],
+        exclude: [],
+      })
+
+      // Either way it returns a number (0 on rsync error is fine).
+      expect(typeof count).toBe('number')
+      // The crucial assertion: no shell side effect occurred.
+      expect(await fs.pathExists(marker)).toBe(false)
+    })
+
+    it('returns 0 gracefully when source does not exist', async () => {
+      const count = await rsyncHelper.estimateFileCount(path.join(estimateDir, 'missing-source'), {
+        enabled: true,
+        flags: ['--archive'],
+        exclude: [],
+      })
+      expect(typeof count).toBe('number')
+      expect(count).toBeGreaterThanOrEqual(0)
+    })
+
+    // Verbose output is unbounded under --dry-run (rsync enumerates every
+    // candidate file) and we buffer it into a string here. Estimation strips
+    // -v/--verbose so we only buffer the small --stats summary. This is local
+    // to estimation — the real rsync path still honors verbose flags.
+    it('strips -v/--verbose from config flags for the estimate invocation only', async () => {
+      const buildArgsSpy = vi.spyOn(rsyncHelper, 'buildArgs')
+
+      await rsyncHelper.estimateFileCount(path.join(estimateDir, 'missing-source'), {
+        enabled: true,
+        flags: ['--archive', '-v', '--verbose'],
+        exclude: [],
+      })
+
+      expect(buildArgsSpy).toHaveBeenCalledTimes(1)
+      const configArg = buildArgsSpy.mock.calls[0][2]
+      // Verbose flags removed...
+      expect(configArg.flags).not.toContain('-v')
+      expect(configArg.flags).not.toContain('--verbose')
+      // ...but other flags are preserved.
+      expect(configArg.flags).toContain('--archive')
+
+      buildArgsSpy.mockRestore()
+    })
+
+    it('does not mutate the caller config when stripping verbose flags', async () => {
+      const buildArgsSpy = vi.spyOn(rsyncHelper, 'buildArgs')
+      const callerConfig = {
+        enabled: true,
+        flags: ['--archive', '--verbose'],
+        exclude: [],
+      }
+
+      await rsyncHelper.estimateFileCount(path.join(estimateDir, 'missing-source'), callerConfig)
+
+      // Original config object is untouched (a copy is filtered internally).
+      expect(callerConfig.flags).toEqual(['--archive', '--verbose'])
+
+      buildArgsSpy.mockRestore()
+    })
+  })
+
   describe('buildArgs', () => {
     it('should build correct args array with flags', () => {
       const args = rsyncHelper.buildArgs('/source', '/dest', {
@@ -615,6 +768,206 @@ describe('RsyncHelper', () => {
       expect(args).toContain('--checksum')
       expect(args).not.toContain('')
       expect(args).not.toContain('   ')
+    })
+
+    // SECURITY: transport/exec-class flags let rsync spawn an arbitrary command
+    // or remote shell. Pando is local-only, so these are meaningless here and a
+    // latent RCE footgun from untrusted configs. They MUST be stripped while
+    // benign flags survive.
+    describe('transport/exec-class flag denylist', () => {
+      it('strips -e (remote shell) while keeping --archive', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-e', 'ssh'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-e')
+      })
+
+      it('strips --rsh and --rsh=<value>', () => {
+        const bare = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--rsh'],
+          exclude: [],
+        })
+        expect(bare).not.toContain('--rsh')
+        expect(bare).toContain('--archive')
+
+        const withValue = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', "--rsh=sh -c 'touch /tmp/pwned'"],
+          exclude: [],
+        })
+        expect(withValue.some((a) => a.startsWith('--rsh'))).toBe(false)
+        expect(withValue).toContain('--archive')
+      })
+
+      it('strips --rsync-path and --rsync-path=<value>', () => {
+        const bare = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--rsync-path', '--checksum'],
+          exclude: [],
+        })
+        expect(bare).not.toContain('--rsync-path')
+        expect(bare).toContain('--checksum')
+
+        const withValue = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ["--rsync-path=sh -c 'id'", '--checksum'],
+          exclude: [],
+        })
+        expect(withValue.some((a) => a.startsWith('--rsync-path'))).toBe(false)
+        expect(withValue).toContain('--checksum')
+      })
+
+      it('strips --remote-option', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--remote-option', '--checksum'],
+          exclude: [],
+        })
+
+        expect(args).not.toContain('--remote-option')
+        expect(args).toContain('--archive')
+        expect(args).toContain('--checksum')
+      })
+
+      it('strips -M (short form of --remote-option) including -M=<value>', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-M', '-M=--munge-links'],
+          exclude: [],
+        })
+
+        expect(args).not.toContain('-M')
+        expect(args.some((a) => a.startsWith('-M'))).toBe(false)
+        expect(args).toContain('--archive')
+      })
+
+      it('matches denylisted flags case-sensitively (rsync flags are case-sensitive)', () => {
+        // rsync short/long options are case-sensitive. The dangerous spellings
+        // are exactly `-M`/`--rsh`; wrong-case variants like `--RSH` or `-e`'s
+        // uppercase `-E` are NOT the same flags and must survive untouched.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--RSH=ssh', '-E'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--RSH=ssh')
+        expect(args).toContain('-E')
+        expect(args).toContain('--archive')
+      })
+
+      it('keeps benign -m (--prune-empty-dirs) while stripping dangerous -M', () => {
+        // CRITICAL: lowercase `-m` is `--prune-empty-dirs` (benign); uppercase
+        // `-M` is `--remote-option` (an RCE footgun). Case-folding would strip
+        // both — the denylist must distinguish them.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-m', '-M'],
+          exclude: [],
+        })
+
+        expect(args).toContain('-m')
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-M')
+      })
+
+      it('keeps benign flags whose names merely start with a denied prefix', () => {
+        // `--remote-option` is denied, but `--remove-source-files` and
+        // `--exclude` are not and must survive. The denylist matches on exact
+        // flag or `flag=`, never a loose prefix.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '--remove-source-files'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).toContain('--remove-source-files')
+      })
+
+      // SECURITY: rsync also accepts dangerous short options in ATTACHED form
+      // (`-essh` ≡ `-e ssh`) and BUNDLED in a cluster (`-aMe`, `-Me<val>`). The
+      // value swallows the rest of the token, so the WHOLE token must be
+      // stripped — a bare-equality denylist would let these slip through.
+      it('strips attached short-option form -essh (≡ -e ssh)', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-essh'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-essh')
+        expect(args.some((a) => a.startsWith('-e'))).toBe(false)
+      })
+
+      it('strips attached short-option form -Mx (≡ -M x)', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-Mx'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-Mx')
+        expect(args.some((a) => a.includes('M'))).toBe(false)
+      })
+
+      it('strips a bundled cluster containing M (-aMe)', () => {
+        // `-aMe` bundles -a with the dangerous -M (whose value swallows the
+        // trailing `e`). The entire cluster is unsafe to salvage.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-aMe'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-aMe')
+      })
+
+      it('strips a bundled cluster containing e (-Me)', () => {
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-Me'],
+          exclude: [],
+        })
+
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-Me')
+      })
+
+      it('keeps benign clusters without e/M (-avz, -m survive)', () => {
+        // Clusters that contain no dangerous letter take no value and are safe.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['-avz', '-m'],
+          exclude: [],
+        })
+
+        expect(args).toContain('-avz')
+        expect(args).toContain('-m')
+      })
+    })
+
+    // INTERNAL_FLAGS (--stats/--progress/--dry-run) are pando-managed long
+    // flags, not security-sensitive, so they are matched case-INsensitively to
+    // avoid leaking a duplicate when a user writes them in a different case.
+    it('strips internally-managed flags case-insensitively (--STATS)', () => {
+      const args = rsyncHelper.buildArgs('/source', '/dest', {
+        enabled: true,
+        flags: ['--archive', '--STATS'],
+        exclude: [],
+      })
+
+      expect(args).toContain('--archive')
+      expect(args).not.toContain('--STATS')
+      expect(args.some((a) => a.toLowerCase() === '--stats')).toBe(false)
     })
   })
 
@@ -1037,6 +1390,51 @@ describe('SymlinkHelper', () => {
       // Should only contain parent (child is inside parent)
       expect(matches).toContain('parent')
       expect(matches).not.toContain('parent/child.txt')
+    })
+
+    // SECURITY: never symlink the worktree's `.git` (would corrupt git tracking)
+    it('should never return the .git directory even when explicitly matched', async () => {
+      await fs.ensureDir(path.join(testDir, '.git'))
+      await fs.writeFile(path.join(testDir, '.git', 'config'), '[core]\n')
+      await fs.writeFile(path.join(testDir, 'keep.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['.git', 'keep.txt'])
+
+      expect(matches).not.toContain('.git')
+      expect(matches).toContain('keep.txt')
+    })
+
+    it('should never return files inside .git even with a wildcard', async () => {
+      await fs.ensureDir(path.join(testDir, '.git'))
+      await fs.writeFile(path.join(testDir, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+      await fs.writeFile(path.join(testDir, 'regular.txt'), 'content')
+
+      const matches = await symlinkHelper.matchPatterns(testDir, ['*', '**/*'])
+
+      expect(matches).toContain('regular.txt')
+      expect(matches.some((m) => m === '.git' || m.startsWith('.git/'))).toBe(false)
+    })
+  })
+
+  describe('isGitPath (static denylist)', () => {
+    it('flags exactly .git', () => {
+      expect(SymlinkHelper.isGitPath('.git')).toBe(true)
+    })
+
+    it('flags paths inside .git/', () => {
+      expect(SymlinkHelper.isGitPath('.git/config')).toBe(true)
+      expect(SymlinkHelper.isGitPath('.git/hooks/pre-commit')).toBe(true)
+    })
+
+    it('normalizes Windows-style backslashes', () => {
+      expect(SymlinkHelper.isGitPath('.git\\config')).toBe(true)
+    })
+
+    it('does not flag unrelated paths', () => {
+      expect(SymlinkHelper.isGitPath('.gitignore')).toBe(false)
+      expect(SymlinkHelper.isGitPath('.github/workflows/ci.yml')).toBe(false)
+      expect(SymlinkHelper.isGitPath('src/.git-helper.ts')).toBe(false)
+      expect(SymlinkHelper.isGitPath('package.json')).toBe(false)
     })
   })
 })

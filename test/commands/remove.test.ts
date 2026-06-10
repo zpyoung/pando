@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { Errors } from '@oclif/core'
 import { WorktreeInfo } from '../../src/utils/git.js'
 import RemoveWorktree from '../../src/commands/remove.js'
 
@@ -43,6 +44,27 @@ vi.mock('@inquirer/prompts', () => ({
   checkbox: vi.fn(),
   confirm: vi.fn(),
 }))
+
+/**
+ * Collect every logged argument that parses as a JSON object. Used to assert
+ * the command emits exactly one JSON payload in error mode.
+ */
+const parseLoggedJsonObjects = (calls: unknown[][]): unknown[] => {
+  const objects: unknown[] = []
+  for (const call of calls) {
+    const arg = call[0]
+    if (typeof arg !== 'string') continue
+    try {
+      const parsed: unknown = JSON.parse(arg)
+      if (parsed !== null && typeof parsed === 'object') {
+        objects.push(parsed)
+      }
+    } catch {
+      // Not JSON (e.g. human-readable line) — ignore.
+    }
+  }
+  return objects
+}
 
 describe('remove', () => {
   let command: RemoveWorktree
@@ -98,6 +120,7 @@ describe('remove', () => {
 
   it('should handle json output flag', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -138,8 +161,52 @@ describe('remove', () => {
     expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
   })
 
+  // SECURITY: direct --path mode must not be able to target the main worktree.
+  it('should refuse to remove the main worktree via --path', async () => {
+    const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
+      { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+    ]
+
+    mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+    mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+
+    command.argv = ['--path', '/path/to/main']
+
+    await expect(command.run()).rejects.toThrow('Cannot remove the main worktree')
+    expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
+  })
+
+  it('should refuse to remove the main worktree via --path in JSON mode', async () => {
+    const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
+      { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+    ]
+
+    mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+    mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+
+    const exitSpy = vi.spyOn(command, 'exit').mockImplementation(() => {
+      throw new Error('exit called')
+    })
+
+    command.argv = ['--path', '/path/to/main', '--json']
+
+    await expect(command.run()).rejects.toThrow('exit called')
+    expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    // JSON error payload should mention the main worktree
+    const jsonCall = logSpy.mock.calls.find(
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('main worktree')
+    )
+    expect(jsonCall).toBeDefined()
+  })
+
   it('should warn about uncommitted changes without force', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -166,6 +233,7 @@ describe('remove', () => {
 
   it('should force remove worktree with uncommitted changes', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -185,6 +253,7 @@ describe('remove', () => {
 
   it('should show warning message when forcing removal', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -201,6 +270,7 @@ describe('remove', () => {
 
   it('should output json error for uncommitted changes', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -224,6 +294,7 @@ describe('remove', () => {
 
   it('should handle git errors gracefully', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -241,6 +312,7 @@ describe('remove', () => {
 
   it('should output json error format on failure', async () => {
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -265,6 +337,7 @@ describe('remove', () => {
   it('should match worktree by path', async () => {
     const testPath = '/path/to/feature'
     const mockWorktrees: WorktreeInfo[] = [
+      { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
       { path: testPath, branch: 'feature-x', commit: 'def456', isPrunable: false },
     ]
 
@@ -280,6 +353,85 @@ describe('remove', () => {
 
     expect(mockGitHelper.removeWorktree).toHaveBeenCalledWith(testPath, false)
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Successfully removed 1 worktree'))
+  })
+
+  // REGRESSION: in --json error mode, `this.exit(1)` inside the try block throws
+  // a real oclif ExitError. The outer catch must re-throw it instead of logging a
+  // second JSON object (previously emitted {"success":false,"error":"EEXIT: 1"}
+  // after the real payload). These tests drive `exit` through the *real* oclif
+  // ExitError so the production catch path is exercised, then assert exactly one
+  // JSON object is logged.
+  describe('--json single JSON emit (regression)', () => {
+    it('should emit exactly one JSON object when removal fails in --json mode', async () => {
+      const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
+        { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+      ]
+
+      mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+      mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
+      // Force a per-worktree failure so the command reports !result.success and
+      // then calls this.exit(1).
+      mockGitHelper.removeWorktree.mockRejectedValue(new Error('git operation failed'))
+
+      // Drive exit through the REAL oclif ExitError, exactly as production does.
+      const exitSpy = vi.spyOn(command, 'exit').mockImplementation((code?: number) => {
+        return Errors.exit(code ?? 0)
+      })
+
+      command.argv = ['--path', '/path/to/feature', '--json']
+
+      // The re-thrown ExitError propagates out of run().
+      await expect(command.run()).rejects.toMatchObject({ code: 'EEXIT' })
+
+      const jsonObjects = parseLoggedJsonObjects(logSpy.mock.calls)
+      expect(jsonObjects).toHaveLength(1)
+
+      // The single payload is the real result, not the EEXIT re-log.
+      const payload = jsonObjects[0] as Record<string, unknown>
+      expect(payload).toMatchObject({
+        success: false,
+        path: '/path/to/feature',
+        error: 'git operation failed',
+      })
+      expect(payload.error).not.toBe('EEXIT: 1')
+
+      // exit(1) was requested once; it was not re-invoked by the catch block.
+      expect(exitSpy).toHaveBeenCalledTimes(1)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('should emit exactly one JSON object for uncommitted changes in --json mode', async () => {
+      const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
+        { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
+      ]
+
+      mockGitHelper.isRepository.mockResolvedValue(true)
+      mockGitHelper.getRepositoryRoot.mockResolvedValue('/path/to/repo')
+      mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
+      mockGitHelper.hasUncommittedChanges.mockResolvedValue(true)
+
+      const exitSpy = vi.spyOn(command, 'exit').mockImplementation((code?: number) => {
+        return Errors.exit(code ?? 0)
+      })
+
+      command.argv = ['--path', '/path/to/feature', '--json']
+
+      await expect(command.run()).rejects.toMatchObject({ code: 'EEXIT' })
+
+      const jsonObjects = parseLoggedJsonObjects(logSpy.mock.calls)
+      expect(jsonObjects).toHaveLength(1)
+
+      const payload = jsonObjects[0] as Record<string, unknown>
+      expect(payload).toMatchObject({ success: false })
+      expect(payload.error).toEqual(expect.stringContaining('Has uncommitted changes'))
+      expect(payload.error).not.toBe('EEXIT: 1')
+
+      expect(exitSpy).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('interactive mode', () => {
@@ -596,6 +748,7 @@ describe('remove', () => {
 
     it('should show branch deletion info in JSON output', async () => {
       const mockWorktrees: WorktreeInfo[] = [
+        { path: '/path/to/main', branch: 'main', commit: 'main000', isPrunable: false },
         { path: '/path/to/feature', branch: 'feature-x', commit: 'def456', isPrunable: false },
       ]
 

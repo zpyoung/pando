@@ -179,8 +179,12 @@ export class FileOperationTransaction {
       try {
         switch (op.type) {
           case OperationType.CREATE_SYMLINK:
-            // Remove symlink if it exists
-            if (await fs.pathExists(op.path)) {
+            // Remove symlink if it exists.
+            // Use lstat (NOT fs.pathExists, which follows symlinks): a dangling
+            // symlink points at a non-existent target, so pathExists returns
+            // false and would leave the broken link behind. lstat succeeds on a
+            // dangling symlink, letting us detect and unlink it.
+            try {
               const stats = await fsLstat(op.path)
               if (stats.isSymbolicLink()) {
                 await fs.unlink(op.path)
@@ -191,8 +195,10 @@ export class FileOperationTransaction {
                   `Skipped rollback of ${op.type} at ${op.path}: path exists but is not a symlink`
                 )
               }
+            } catch {
+              // lstat failed (ENOENT): path doesn't exist, nothing to rollback
+              // (already cleaned up)
             }
-            // If path doesn't exist, nothing to rollback (already cleaned up)
             break
 
           case OperationType.RSYNC:
@@ -376,21 +382,40 @@ export class RsyncHelper {
   private static readonly INTERNAL_FLAGS = ['--stats', '--progress', '--dry-run']
 
   /**
-   * Escape a string for safe use in shell commands
-   * Uses single quotes which prevent all shell expansion
+   * Long-form transport/exec-class flags that let rsync spawn an arbitrary
+   * command or a remote shell. Pando only ever rsyncs between two LOCAL paths,
+   * so these flags are meaningless here — but a config file from an untrusted
+   * source could use them to run arbitrary code (e.g. `--rsh='sh -c <payload>'`
+   * or `--rsync-path='sh -c <payload>'`). We strip them unconditionally as a
+   * defense-in-depth denylist, independent of the trust gate.
    *
-   * @param str - String to escape
-   * @returns Shell-safe escaped string
+   * Long-form matching is exact on the bare flag and the `--flag=value` form.
+   *
+   * Short-form `-e`/`-M` are handled separately (see DENYLISTED_SHORT_OPTS and
+   * sanitizeFlags) because rsync accepts attached and bundled spellings
+   * (`-essh`, `-aMe`) that a simple equality check would miss.
    */
-  private shellEscape(str: string): string {
-    // Single quotes prevent all shell expansion
-    // To include a single quote, we end the quoted string, add an escaped single quote, and restart
-    return `'${str.replace(/'/g, "'\\''")}'`
-  }
+  private static readonly DENYLISTED_LONG_FLAGS = ['--rsh', '--rsync-path', '--remote-option']
+
+  /**
+   * Dangerous short option *letters*. rsync's `-e` (--rsh) and `-M`
+   * (--remote-option) both TAKE A VALUE, and rsync accepts that value either
+   * attached (`-essh` ≡ `-e ssh`) or bundled into a cluster (`-aMe`, `-Me<val>`).
+   * Because everything after such a letter in a single-dash token becomes its
+   * value, no part of a cluster containing one of these letters can be safely
+   * salvaged — so we strip the ENTIRE token if it contains any of them.
+   *
+   * rsync short options are CASE-SENSITIVE: dangerous `-M` (--remote-option)
+   * must not be confused with benign lowercase `-m` (--prune-empty-dirs), and
+   * uppercase `-E` is unrelated to `-e`. Matching is therefore exact-case.
+   */
+  private static readonly DENYLISTED_SHORT_OPTS = ['e', 'M']
 
   /**
    * Validate and sanitize rsync flags
-   * Removes internally-managed flags to prevent conflicts
+   *
+   * Removes internally-managed flags (to prevent conflicts) and
+   * transport/exec-class flags (a latent RCE footgun from untrusted configs).
    *
    * @param flags - User-provided flags
    * @returns Sanitized flags array
@@ -402,11 +427,39 @@ export class RsyncHelper {
         return false
       }
 
-      // Filter out flags we manage internally
-      const normalizedFlag = flag.trim().toLowerCase()
+      const trimmedFlag = flag.trim()
+
+      // Filter out flags we manage internally. These are pando-managed long
+      // flags (not security-sensitive), so match them case-INsensitively to
+      // tolerate `--STATS`/`--Progress` etc. without leaking duplicate args.
+      const lowerFlag = trimmedFlag.toLowerCase()
       for (const internal of RsyncHelper.INTERNAL_FLAGS) {
-        if (normalizedFlag === internal || normalizedFlag.startsWith(`${internal}=`)) {
+        if (lowerFlag === internal || lowerFlag.startsWith(`${internal}=`)) {
           return false
+        }
+      }
+
+      // Security denylist below is EXACT-CASE: rsync short/long options are
+      // case-sensitive, so dangerous `-M`/`--rsh` must never be conflated with
+      // benign `-m`/`--RSH`.
+
+      if (trimmedFlag.startsWith('--')) {
+        // Long form: match the bare flag and the `--flag=value` form.
+        for (const denied of RsyncHelper.DENYLISTED_LONG_FLAGS) {
+          if (trimmedFlag === denied || trimmedFlag.startsWith(`${denied}=`)) {
+            return false
+          }
+        }
+      } else if (trimmedFlag.startsWith('-')) {
+        // Single-dash token (short option or cluster). rsync's `-e`/`-M` take a
+        // value that may be attached (`-essh`) or bundled (`-aMe`, `-Me<val>`),
+        // and everything after such a letter becomes its value — so a cluster
+        // can never be partially salvaged. Strip the WHOLE token if it contains
+        // any dangerous letter; benign clusters (`-avz`, `-m`) survive.
+        for (const opt of RsyncHelper.DENYLISTED_SHORT_OPTS) {
+          if (trimmedFlag.includes(opt)) {
+            return false
+          }
         }
       }
 
@@ -415,62 +468,11 @@ export class RsyncHelper {
   }
 
   /**
-   * Build rsync command from configuration
-   */
-  buildCommand(
-    source: string,
-    destination: string,
-    config: RsyncConfig,
-    additionalExcludes: string[] = []
-  ): string {
-    const parts: string[] = ['rsync']
-
-    // Add flags from config (sanitized to remove internally-managed flags)
-    if (config.flags && config.flags.length > 0) {
-      const sanitizedFlags = this.sanitizeFlags(config.flags)
-      parts.push(...sanitizedFlags)
-    }
-
-    // Collect all exclude patterns
-    const excludes: string[] = []
-
-    // Add excludes from config
-    if (config.exclude && config.exclude.length > 0) {
-      excludes.push(...config.exclude)
-    }
-
-    // Add additional excludes
-    if (additionalExcludes.length > 0) {
-      excludes.push(...additionalExcludes)
-    }
-
-    // SAFETY: Always exclude .git directory to prevent worktree corruption
-    // Each worktree has its own .git file that points to the main repository's
-    // .git/worktrees/<name> directory. Syncing .git content between worktrees
-    // would break git's worktree tracking and corrupt repository state.
-    // This exclusion is intentionally non-configurable for safety.
-    if (!excludes.includes('.git')) {
-      excludes.push('.git')
-    }
-
-    // Add exclude flags (shell-escaped to prevent expansion)
-    for (const pattern of excludes) {
-      parts.push('--exclude', this.shellEscape(pattern))
-    }
-
-    // Add source and destination (shell-escaped)
-    // IMPORTANT: Source needs trailing slash to copy contents, not the directory itself
-    // Without trailing slash: rsync /src/dir /dest → /dest/dir/...
-    // With trailing slash: rsync /src/dir/ /dest → /dest/...
-    const sourceWithSlash = source.endsWith('/') ? source : `${source}/`
-    parts.push(this.shellEscape(sourceWithSlash), this.shellEscape(destination))
-
-    return parts.join(' ')
-  }
-
-  /**
    * Build rsync command arguments array for spawn
-   * Unlike buildCommand(), this returns an array suitable for child_process.spawn
+   *
+   * Returns an array suitable for child_process.spawn (no shell). This is the
+   * ONLY way rsync is invoked with user/config-supplied flags, so that flags
+   * can never be interpreted by a shell (no injection surface).
    */
   buildArgs(
     source: string,
@@ -504,7 +506,10 @@ export class RsyncHelper {
       excludes.push(...additionalExcludes)
     }
 
-    // SAFETY: Always exclude .git directory (see buildCommand for rationale)
+    // SAFETY: Always exclude .git directory to prevent worktree corruption.
+    // Each worktree has its own .git file that points to the main repository's
+    // .git/worktrees/<name> directory. Syncing .git content between worktrees
+    // would break git's worktree tracking. This exclusion is non-configurable.
     if (!excludes.includes('.git')) {
       excludes.push('.git')
     }
@@ -758,39 +763,74 @@ export class RsyncHelper {
 
   /**
    * Get estimated file count for rsync
+   *
+   * Uses spawn('rsync', args) with the array-args path (no shell) so that
+   * config-supplied rsync flags can never be interpreted by /bin/sh. The
+   * --dry-run and --stats flags are passed as internal flags so they are not
+   * stripped by sanitizeFlags().
    */
   async estimateFileCount(source: string, config: RsyncConfig): Promise<number> {
-    // Run rsync with --dry-run and --stats to get file count
-    const dryRunConfig: RsyncConfig = {
-      ...config,
-      flags: [...(config.flags || []), '--dry-run', '--stats'],
-    }
-
     // Use a temporary destination that won't be created (dry-run)
     // Include process ID and timestamp for uniqueness to avoid conflicts
     // when multiple processes run concurrently
     const uniqueId = `${process.pid}-${Date.now()}`
     const tempDest = path.join(os.tmpdir(), `pando-rsync-estimate-${uniqueId}`)
-    const command = this.buildCommand(source, tempDest, dryRunConfig)
 
-    try {
-      const { stdout, stderr } = await execAsync(command)
-      const output = stdout + stderr
-
-      // Parse file count from output
-      // Look for "Number of files: X" or "Number of regular files transferred: X"
-      const filesMatch = output.match(/Number of (?:regular )?files(?: transferred)?: (\d+)/)
-      if (filesMatch && filesMatch[1]) {
-        return parseInt(filesMatch[1], 10)
-      }
-
-      // Fallback: count lines that look like file transfers
-      const lines = output.split('\n').filter((line) => line.trim() && !line.startsWith('sending'))
-      return lines.length
-    } catch {
-      // If estimation fails, return 0 (caller can handle gracefully)
-      return 0
+    // Strip verbose flags for the ESTIMATE invocation only. With --dry-run,
+    // -v/--verbose makes rsync enumerate every candidate file, which we buffer
+    // into a string here — unbounded growth on large trees. We only need the
+    // "Number of files" line from --stats, so verbose output is pure overhead.
+    // This is local to estimation; the real rsync path (buildArgs/sanitizeFlags)
+    // still honors user-supplied verbose flags.
+    const estimateConfig: RsyncConfig = {
+      ...config,
+      flags: (config.flags ?? []).filter((flag) => {
+        const normalized = flag.trim().toLowerCase()
+        return normalized !== '-v' && normalized !== '--verbose'
+      }),
     }
+
+    // Build args array for spawn. --dry-run and --stats are internal flags so
+    // they survive sanitizeFlags() (which strips them from user config).
+    const args = this.buildArgs(source, tempDest, estimateConfig, [], ['--dry-run', '--stats'])
+
+    return new Promise((resolve) => {
+      const rsyncProcess = spawn('rsync', args)
+      let stdout = ''
+      let stderr = ''
+
+      rsyncProcess.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString()
+      })
+
+      rsyncProcess.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString()
+      })
+
+      rsyncProcess.on('close', () => {
+        const output = stdout + stderr
+
+        // Parse file count from output
+        // Look for "Number of files: X" or "Number of regular files transferred: X"
+        const filesMatch = output.match(/Number of (?:regular )?files(?: transferred)?: (\d+)/)
+        if (filesMatch && filesMatch[1]) {
+          resolve(parseInt(filesMatch[1], 10))
+          return
+        }
+
+        // Fallback: count lines that look like file transfers
+        const lines = output
+          .split('\n')
+          .filter((line) => line.trim() && !line.startsWith('sending'))
+        resolve(lines.length)
+      })
+
+      rsyncProcess.on('error', () => {
+        // If estimation fails (e.g., rsync not installed), return 0
+        // (caller can handle gracefully)
+        resolve(0)
+      })
+    })
   }
 }
 
@@ -814,6 +854,20 @@ export interface RsyncResult {
  */
 export class SymlinkHelper {
   constructor(private _transaction: FileOperationTransaction) {}
+
+  /**
+   * Determine whether a matched relative path is the worktree's `.git` entry
+   * or lives inside it. Such paths must never be symlinked (see matchPatterns).
+   *
+   * Normalizes backslashes to forward slashes so the check works on Windows.
+   *
+   * @param relativePath - A relative path produced by pattern matching
+   * @returns True if the path is `.git` or starts with `.git/`
+   */
+  static isGitPath(relativePath: string): boolean {
+    const normalized = relativePath.replace(/\\/g, '/')
+    return normalized === '.git' || normalized.startsWith('.git/')
+  }
 
   /**
    * Match files and directories against glob patterns
@@ -871,9 +925,16 @@ export class SymlinkHelper {
       // Combine and deduplicate
       const allMatches = [...new Set([...fileMatches, ...globDirMatches, ...directDirMatches])]
 
+      // SAFETY: Never symlink the worktree's `.git` (file or directory) or
+      // anything inside it. Each worktree has its own `.git` file that points to
+      // the main repo's .git/worktrees/<name> dir; replacing it with a symlink
+      // to the main worktree's `.git` would corrupt git's worktree tracking.
+      // This mirrors the non-configurable `.git` exclusion in rsync's buildArgs.
+      const safeMatches = allMatches.filter((match) => !SymlinkHelper.isGitPath(match))
+
       // Deduplicate: remove files that are inside a matched directory
       // (if both .cursor/ and .cursor/file.md match, only keep .cursor/)
-      return this.deduplicateMatches(allMatches, baseDir)
+      return this.deduplicateMatches(safeMatches, baseDir)
     } catch (error) {
       throw new FileOperationError('Failed to match patterns', error as Error)
     }

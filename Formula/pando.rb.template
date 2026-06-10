@@ -1,0 +1,38 @@
+class Pando < Formula
+  desc "TypeScript CLI for managing Git worktrees"
+  homepage "https://github.com/zpyoung/pando"
+  version "${VERSION}"
+  license "MIT"
+
+  on_macos do
+    on_intel do
+      url "https://github.com/zpyoung/pando/releases/download/v${VERSION}/pando-v${VERSION}-darwin-x64.tar.gz"
+      sha256 "${SHA_DARWIN_X64}"
+    end
+    on_arm do
+      url "https://github.com/zpyoung/pando/releases/download/v${VERSION}/pando-v${VERSION}-darwin-arm64.tar.gz"
+      sha256 "${SHA_DARWIN_ARM64}"
+    end
+  end
+
+  on_linux do
+    on_intel do
+      url "https://github.com/zpyoung/pando/releases/download/v${VERSION}/pando-v${VERSION}-linux-x64.tar.gz"
+      sha256 "${SHA_LINUX_X64}"
+    end
+    on_arm do
+      url "https://github.com/zpyoung/pando/releases/download/v${VERSION}/pando-v${VERSION}-linux-arm64.tar.gz"
+      sha256 "${SHA_LINUX_ARM64}"
+    end
+  end
+
+  def install
+    # oclif tarballs extract to a directory tree (pando/bin/pando, pando/client/, ...)
+    libexec.install Dir["*"]
+    bin.install_symlink libexec/"bin/pando"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/pando --version")
+  end
+end

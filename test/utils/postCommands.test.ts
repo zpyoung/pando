@@ -50,7 +50,10 @@ describe('postCommands', () => {
   })
 
   it('runs successful scripts in the worktree directory and captures output', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-'))
+    // On macOS os.tmpdir() returns a /var path that is a symlink to /private/var,
+    // so `pwd` (and any realpath comparison) reports the resolved path. Resolve
+    // immediately so tempDir is consistent everywhere it's used (cwd + assertions).
+    tempDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-')))
 
     const results = await runPostCommandScripts(
       [{ name: 'write-marker', command: 'pwd && printf "$PANDO_BRANCH" > branch.txt' }],
@@ -79,7 +82,7 @@ describe('postCommands', () => {
   })
 
   it('throws with captured result when a script exits non-zero', async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-'))
+    tempDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-')))
 
     await expect(
       runPostCommandScripts([{ command: 'printf fail-message >&2; exit 7' }], {

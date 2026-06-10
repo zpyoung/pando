@@ -237,6 +237,24 @@ export class GitHelper {
   }
 
   /**
+   * Count the number of modified files in a worktree's working tree
+   *
+   * Counts files that have staged or unstaged modifications (M, MM, AM,
+   * RM, CM in either the index or working-dir position).
+   *
+   * @param worktreePath - Path to the worktree
+   * @returns Number of modified files
+   */
+  async getUncommittedFileCount(worktreePath: string): Promise<number> {
+    const gitInWorktree = simpleGit(worktreePath)
+    const status = await gitInWorktree.status()
+    const modifiedStates = ['M', 'MM', 'AM', 'RM', 'CM']
+    return status.files.filter(
+      (f) => modifiedStates.includes(f.index) || modifiedStates.includes(f.working_dir)
+    ).length
+  }
+
+  /**
    * Remove a worktree
    */
   async removeWorktree(path: string, force?: boolean): Promise<void> {
@@ -455,6 +473,39 @@ export class GitHelper {
       const remote = await this.git.raw(['config', `branch.${branchName}.remote`])
       return remote.trim() || null
     } catch {
+      return null
+    }
+  }
+
+  /**
+   * Get the full upstream tracking ref for a branch (e.g. "origin/main")
+   *
+   * Combines `branch.<name>.remote` (the remote, e.g. "origin") with
+   * `branch.<name>.merge` (the upstream ref, e.g. "refs/heads/main"),
+   * stripping the `refs/heads/` prefix. Works for any remote name.
+   *
+   * @param branchName - Name of the branch
+   * @returns Full tracking ref (e.g. "origin/main") or null if no upstream
+   */
+  async getTrackingBranch(branchName: string): Promise<string | null> {
+    try {
+      // The two config reads are independent; run them concurrently. If either
+      // rejects, Promise.all rejects and the catch below returns null.
+      const [remote, merge] = await Promise.all([
+        this.git.raw(['config', `branch.${branchName}.remote`]),
+        this.git.raw(['config', `branch.${branchName}.merge`]),
+      ])
+
+      const remoteName = remote.trim()
+      const mergeRef = merge.trim().replace(/^refs\/heads\//, '')
+
+      if (!remoteName || !mergeRef) {
+        return null
+      }
+
+      return `${remoteName}/${mergeRef}`
+    } catch {
+      // No upstream configured (one of the config keys is missing)
       return null
     }
   }

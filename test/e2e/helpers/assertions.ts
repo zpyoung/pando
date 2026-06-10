@@ -32,38 +32,42 @@ export function expectJsonSuccess(result: PandoResult): void {
 }
 
 export function expectJsonError(result: PandoResult, errorContains?: string): void {
-  // Error could be in JSON or in stderr/stdout
-  const hasJsonError = Boolean(
-    result.json &&
-    (result.json?.error ||
-      result.json?.message ||
-      result.json?.reason ||
-      result.json?.success === false ||
-      result.json?.status === 'error')
+  // A --json error must be BOTH:
+  //   1. a parseable JSON error payload (an explicit error indicator), AND
+  //   2. a non-zero exit code.
+  // The previous version passed on ANY of {json error | non-empty stderr |
+  // non-zero exit}, so a command that crashed with a stack trace on stderr and
+  // emitted no structured JSON would still "pass". Requiring both closes that
+  // gap and verifies the contract that `--json` failures are machine-readable.
+  expect(
+    result.json,
+    `Expected a parseable JSON error payload on stdout.\nexitCode: ${result.exitCode}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`
+  ).toBeDefined()
+
+  const json = result.json as Record<string, unknown>
+  const hasErrorField = Boolean(
+    json.error || json.message || json.reason || json.success === false || json.status === 'error'
   )
-  const hasStderrError = Boolean(result.stderr && result.stderr.length > 0)
-  const hasExitCodeError = result.exitCode !== 0
 
   expect(
-    hasJsonError || hasStderrError || hasExitCodeError,
-    `Expected error response. exitCode: ${result.exitCode}, stderr: ${result.stderr}, json: ${JSON.stringify(result.json)}`
+    hasErrorField,
+    `Expected JSON to carry an error indicator (error/message/reason, success:false, or status:'error'). Got: ${JSON.stringify(json)}`
   ).toBe(true)
 
+  expect(
+    result.exitCode,
+    `Expected a non-zero exit code for a JSON error. exitCode: ${result.exitCode}, json: ${JSON.stringify(json)}`
+  ).not.toBe(0)
+
   if (errorContains) {
-    const errorText = [
-      result.json?.error,
-      result.json?.message,
-      result.json?.reason,
-      result.stderr,
-      result.stdout,
-    ]
-      .filter(Boolean)
+    const errorText = [json.error, json.message, json.reason]
+      .filter((value): value is string => typeof value === 'string')
       .join(' ')
       .toLowerCase()
 
     expect(
       errorText.includes(errorContains.toLowerCase()),
-      `Expected error to contain '${errorContains}'. Got: ${errorText}`
+      `Expected JSON error to contain '${errorContains}'. Got: ${errorText}`
     ).toBe(true)
   }
 }

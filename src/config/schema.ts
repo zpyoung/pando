@@ -17,7 +17,9 @@ import { z } from 'zod'
  */
 export const RsyncConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  flags: z.array(z.string()).default(['--archive', '--exclude', '.git']),
+  // Note: `.git` is excluded programmatically in fileOps.buildArgs (non-configurable),
+  // so it must NOT be duplicated in the default flags.
+  flags: z.array(z.string()).default(['--archive']),
   exclude: z.array(z.string()).default([]),
 })
 
@@ -144,7 +146,9 @@ export interface RsyncConfig {
 
   /**
    * Flags to pass to rsync command
-   * @default ['--archive', '--exclude', '.git']
+   * Note: `.git` is excluded programmatically (non-configurable), so it is not
+   * part of the default flags.
+   * @default ['--archive']
    */
   flags: string[]
 
@@ -346,6 +350,12 @@ export interface ConfigLoadResult {
   errors: ConfigParseError[]
   /** Files that were successfully parsed */
   parsedFiles: ConfigFile[]
+  /**
+   * Absolute path of the config FILE that supplied the winning `postCommands`,
+   * or undefined when post-commands came purely from environment variables (or
+   * there are none). Used by the post-command trust gate.
+   */
+  postCommandsSourcePath?: string
 }
 
 /**
@@ -375,7 +385,8 @@ export class ConfigParseFailureError extends Error {
 export const DEFAULT_CONFIG: PandoConfig = {
   rsync: {
     enabled: true,
-    flags: ['--archive', '--exclude', '.git'],
+    // `.git` is excluded programmatically in fileOps.buildArgs (non-configurable).
+    flags: ['--archive'],
     exclude: [],
   },
   symlink: {

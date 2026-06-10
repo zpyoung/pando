@@ -117,7 +117,6 @@ describe('WorktreeSetupOrchestrator', () => {
         totalSize: 2048000,
         duration: 500,
       } as RsyncResult),
-      buildCommand: vi.fn().mockReturnValue('rsync -av --delete source dest'),
       estimateFileCount: vi.fn().mockResolvedValue(100),
     } as any
 
@@ -706,6 +705,31 @@ describe('WorktreeSetupOrchestrator', () => {
         expect(error).toBeInstanceOf(SetupError)
         expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
       }
+    })
+
+    it('rollback() is idempotent: a second call is a no-op', async () => {
+      // Mirrors the real-world case where both the SIGINT handler and the
+      // setup catch-block invoke rollback (process.exit is mocked out in tests,
+      // so both run). The second call must NOT re-run the transaction/git
+      // cleanup against already-removed state.
+      mockTransaction.rollback.mockResolvedValue({
+        rolledBackOperations: [],
+        failedRollbacks: [],
+        checkpoints: new Map([['worktree', { path: '/repo/feature' }]]),
+      })
+
+      // First rollback performs the real cleanup.
+      const first = await orchestrator.rollback()
+      expect(first.rolledBack).toBe(true)
+      expect(mockTransaction.rollback).toHaveBeenCalledTimes(1)
+      expect(mockGitHelper.removeWorktree).toHaveBeenCalledTimes(1)
+
+      // Second rollback short-circuits: no further transaction or git calls.
+      const second = await orchestrator.rollback()
+      expect(second.rolledBack).toBe(true)
+      expect(second.warnings).toEqual([])
+      expect(mockTransaction.rollback).toHaveBeenCalledTimes(1)
+      expect(mockGitHelper.removeWorktree).toHaveBeenCalledTimes(1)
     })
   })
 

@@ -4,7 +4,7 @@ import * as fs from 'fs-extra'
 import { stat } from 'fs/promises'
 import { createGitHelper } from '../utils/git.js'
 import { FileOperationTransaction, createSymlinkHelper } from '../utils/fileOps.js'
-import { ErrorHelper } from '../utils/errors.js'
+import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
 
 export default class SymlinkWorktreeFile extends Command {
   static description = 'Move a file to the main worktree and replace it with a symlink'
@@ -205,7 +205,7 @@ export default class SymlinkWorktreeFile extends Command {
         throw error
       }
     } catch (error) {
-      if (this.isOclifExitError(error)) {
+      if (isOclifExitError(error)) {
         throw error
       }
 
@@ -217,17 +217,6 @@ export default class SymlinkWorktreeFile extends Command {
         flags.json
       )
     }
-  }
-
-  private isOclifExitError(error: unknown): boolean {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'oclif' in error &&
-      typeof error.oclif === 'object' &&
-      error.oclif !== null &&
-      'exit' in error.oclif
-    )
   }
 
   private async initializeUI(isJson: boolean): Promise<{

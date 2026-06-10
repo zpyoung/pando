@@ -28,6 +28,16 @@ import { getEnvConfig, hasEnvConfig } from './env.js'
 // ============================================================================
 
 /**
+ * A fully-merged Pando configuration, annotated with the path of the file that
+ * supplied the winning `postCommands` (undefined when env-sourced or absent).
+ *
+ * This is the return type of {@link loadConfig}. The extra field is optional and
+ * non-validated, so existing consumers that only read PandoConfig fields are
+ * unaffected.
+ */
+export type LoadedPandoConfig = PandoConfig & { postCommandsSourcePath?: string }
+
+/**
  * Type for parsed Pando configuration from TOML
  */
 interface ParsedTomlConfig {
@@ -50,6 +60,20 @@ interface PyprojectToml {
  */
 interface CargoToml {
   package?: { metadata?: { pando?: ParsedTomlConfig } }
+}
+
+/**
+ * Type for package.json / deno.json structure (top-level "pando" key)
+ */
+interface PackageJsonWithPando {
+  pando?: ParsedTomlConfig
+}
+
+/**
+ * Type for composer.json structure ("extra.pando" section)
+ */
+interface ComposerJsonWithPando {
+  extra?: { pando?: ParsedTomlConfig }
 }
 
 /**
@@ -277,8 +301,8 @@ export async function parseCargoToml(filePath: string): Promise<PartialPandoConf
  */
 export async function parsePackageJson(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = JSON.parse(contents)
-  const pandoConfig = parsed?.pando || {}
+  const parsed = JSON.parse(contents) as PackageJsonWithPando
+  const pandoConfig = parsed?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 
@@ -292,8 +316,8 @@ export async function parsePackageJson(filePath: string): Promise<PartialPandoCo
  */
 export async function parseDenoJson(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = JSON.parse(contents)
-  const pandoConfig = parsed?.pando || {}
+  const parsed = JSON.parse(contents) as PackageJsonWithPando
+  const pandoConfig = parsed?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 
@@ -307,8 +331,8 @@ export async function parseDenoJson(filePath: string): Promise<PartialPandoConfi
  */
 export async function parseComposerJson(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = JSON.parse(contents)
-  const pandoConfig = parsed?.extra?.pando || {}
+  const parsed = JSON.parse(contents) as ComposerJsonWithPando
+  const pandoConfig = parsed?.extra?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 
@@ -394,6 +418,11 @@ export function mergeConfigs(
  * Merge multiple configuration sources
  *
  * Configs are merged in priority order (lower priority first).
+ *
+ * NOTE: Keep the priority/sort logic here in sync with
+ * {@link ConfigLoader.resolvePostCommandsSourcePath}, which independently
+ * replays this same ascending-priority order to determine WHICH file supplied
+ * the winning postCommands. If you change the sort here, change it there too.
  *
  * @param configs - Array of (config, source) tuples
  * @returns Merged configuration with source tracking
@@ -496,7 +525,7 @@ function extractLineColumn(error: Error): { line?: number; column?: number } {
  * Configuration loader with caching
  */
 export class ConfigLoader {
-  private cache: Map<string, PandoConfig> = new Map()
+  private cache: Map<string, LoadedPandoConfig> = new Map()
 
   /**
    * Load configuration from all sources
@@ -505,7 +534,7 @@ export class ConfigLoader {
    * have parse errors. Use loadWithSources() to get errors without throwing.
    *
    * @param options - Load options
-   * @returns Complete merged configuration
+   * @returns Complete merged configuration, annotated with postCommandsSourcePath
    * @throws {ConfigParseFailureError} If project-level config files have parse errors
    */
   async load(options: {
@@ -513,7 +542,7 @@ export class ConfigLoader {
     gitRoot?: string
     skipCache?: boolean
     onWarning?: (message: string) => void
-  }): Promise<PandoConfig> {
+  }): Promise<LoadedPandoConfig> {
     const cwd = options.cwd || process.cwd()
     const gitRoot = options.gitRoot || cwd
 
@@ -531,12 +560,18 @@ export class ConfigLoader {
       throw new ConfigParseFailureError(getProjectConfigErrors(result))
     }
 
-    // Only cache if no errors at all (prevents cache poisoning)
-    if (result.errors.length === 0) {
-      this.cache.set(cacheKey, result.config)
+    // Annotate the merged config with the post-commands source file path.
+    const annotated: LoadedPandoConfig = {
+      ...result.config,
+      postCommandsSourcePath: result.postCommandsSourcePath,
     }
 
-    return result.config
+    // Only cache if no errors at all (prevents cache poisoning)
+    if (result.errors.length === 0) {
+      this.cache.set(cacheKey, annotated)
+    }
+
+    return annotated
   }
 
   /**
@@ -562,6 +597,13 @@ export class ConfigLoader {
 
     // Parse each config file that exists
     const parsedConfigs: Array<{ config: PartialPandoConfig; source: ConfigSource }> = []
+    // Track the originating file path for each parsed config so we can report
+    // WHICH file supplied post-commands (needed for the trust gate).
+    const parsedConfigPaths: Array<{
+      config: PartialPandoConfig
+      path: string
+      source: ConfigSource
+    }> = []
     const errors: ConfigParseError[] = []
     const parsedFiles: ConfigFile[] = []
 
@@ -576,6 +618,7 @@ export class ConfigLoader {
           config,
           source: configFile.source,
         })
+        parsedConfigPaths.push({ config, path: configFile.path, source: configFile.source })
         parsedFiles.push(configFile)
       } catch (error) {
         // Collect error with structured details
@@ -609,12 +652,52 @@ export class ConfigLoader {
     // Merge all configs with source tracking
     const { config, sources } = mergeMultipleConfigs(parsedConfigs)
 
+    // Determine WHICH config file supplied the winning postCommands (for the
+    // trust gate). Replicate mergeMultipleConfigs' selection: configs are merged
+    // in ascending priority order (stable sort), so the LAST config with a
+    // non-empty postCommands wins. Env-sourced post-commands have no file path
+    // and are treated as implicitly trusted (left undefined here).
+    const postCommandsSourcePath = this.resolvePostCommandsSourcePath(parsedConfigPaths)
+
     return {
       config,
       sources,
       errors,
       parsedFiles,
+      postCommandsSourcePath,
     }
+  }
+
+  /**
+   * Resolve the path of the config file whose postCommands win after merging.
+   *
+   * Mirrors the merge order in mergeMultipleConfigs (ascending source priority,
+   * stable). Returns undefined when no file supplies non-empty post-commands.
+   *
+   * NOTE: Keep the sort/precedence here in sync with
+   * {@link mergeMultipleConfigs} — this function deliberately replays that
+   * function's merge order so the reported source matches the value that
+   * actually won the merge. The `loader postCommandsSourcePath` regression test
+   * guards against the two drifting apart.
+   *
+   * @param parsedConfigPaths - Parsed configs paired with their file paths
+   * @returns The winning file path, or undefined
+   */
+  private resolvePostCommandsSourcePath(
+    parsedConfigPaths: Array<{ config: PartialPandoConfig; path: string; source: ConfigSource }>
+  ): string | undefined {
+    const sorted = [...parsedConfigPaths].sort(
+      (a, b) => (SOURCE_PRIORITY[a.source] ?? 0) - (SOURCE_PRIORITY[b.source] ?? 0)
+    )
+
+    let winner: string | undefined
+    for (const { config, path: filePath } of sorted) {
+      const pc = config.postCommands
+      if (pc && Object.keys(pc).length > 0) {
+        winner = filePath
+      }
+    }
+    return winner
   }
 
   /**
@@ -645,6 +728,6 @@ export async function loadConfig(options?: {
   cwd?: string
   gitRoot?: string
   skipCache?: boolean
-}): Promise<PandoConfig> {
+}): Promise<LoadedPandoConfig> {
   return configLoader.load(options || {})
 }

@@ -690,6 +690,94 @@ branch refs/heads/main
     })
   })
 
+  describe('getTrackingBranch', () => {
+    it('should combine remote and merge ref into a tracking branch', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('origin\n') // branch.<name>.remote
+        .mockResolvedValueOnce('refs/heads/main\n') // branch.<name>.merge
+
+      const result = await gitHelper.getTrackingBranch('feature/fix')
+
+      expect(result).toBe('origin/main')
+      expect(mockGit.raw).toHaveBeenNthCalledWith(1, ['config', 'branch.feature/fix.remote'])
+      expect(mockGit.raw).toHaveBeenNthCalledWith(2, ['config', 'branch.feature/fix.merge'])
+    })
+
+    it('should work for non-origin remotes', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('upstream\n')
+        .mockResolvedValueOnce('refs/heads/develop\n')
+
+      const result = await gitHelper.getTrackingBranch('topic')
+
+      expect(result).toBe('upstream/develop')
+    })
+
+    it('should preserve nested upstream branch names', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('origin\n')
+        .mockResolvedValueOnce('refs/heads/feature/auth\n')
+
+      const result = await gitHelper.getTrackingBranch('feature/auth')
+
+      expect(result).toBe('origin/feature/auth')
+    })
+
+    it('should return null when no remote is configured', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('key does not exist'))
+
+      const result = await gitHelper.getTrackingBranch('local-only')
+
+      expect(result).toBeNull()
+    })
+
+    it('should return null when merge ref is empty', async () => {
+      mockGit.raw = vi.fn().mockResolvedValueOnce('origin\n').mockResolvedValueOnce('   \n')
+
+      const result = await gitHelper.getTrackingBranch('feature/fix')
+
+      expect(result).toBeNull()
+    })
+
+    it('should return null when remote is whitespace-only', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValueOnce('   \n')
+        .mockResolvedValueOnce('refs/heads/main\n')
+
+      const result = await gitHelper.getTrackingBranch('feature/fix')
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('getUncommittedFileCount', () => {
+    it('should count files with index or working-dir modifications', async () => {
+      mockWorktreeGit.status.mockResolvedValue({
+        files: [
+          { path: 'a.ts', index: 'M', working_dir: ' ' },
+          { path: 'b.ts', index: ' ', working_dir: 'M' },
+          { path: 'c.ts', index: 'A', working_dir: ' ' }, // not a modified state
+        ],
+      })
+
+      const result = await gitHelper.getUncommittedFileCount('/path/to/worktree')
+
+      expect(result).toBe(2)
+    })
+
+    it('should return 0 for a clean worktree', async () => {
+      mockWorktreeGit.status.mockResolvedValue({ files: [] })
+
+      const result = await gitHelper.getUncommittedFileCount('/path/to/worktree')
+
+      expect(result).toBe(0)
+    })
+  })
+
   describe('listBackupBranches', () => {
     it('should list backup branches for a source branch', async () => {
       const mockOutput =

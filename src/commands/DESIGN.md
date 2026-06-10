@@ -8,11 +8,14 @@ This directory contains all CLI command implementations for Pando. Each command 
 
 | File | Description |
 |------|-------------|
-| `add.ts` | Create new git worktrees with optional rsync/symlink setup |
+| `add.ts` | Create new git worktrees with optional rsync/symlink setup and post-commands |
 | `list.ts` | List all git worktrees in the repository |
-| `remove.ts` | Remove worktrees with optional branch deletion |
+| `remove.ts` | Remove worktrees with optional branch deletion (guards the main worktree) |
+| `clean.ts` | Detect and remove stale worktrees (merged, gone upstream, prunable) |
 | `health.ts` | Show health status of all worktrees |
 | `symlink.ts` | Move file to main worktree and create symlink |
+| `branch/backup.ts` | Create or clear timestamped backup branches |
+| `branch/restore.ts` | Restore a branch from a backup branch |
 | `config/` | Configuration subcommands (init, show) |
 
 ## Command Architecture
@@ -103,7 +106,8 @@ export default class CommandName extends Command {
 - `uncommitted`: Has modified files (shows count)
 - `behind`: Branch is N commits behind upstream
 - `gone`: Remote tracking branch was deleted
-- `error`: Cannot check status (directory missing, git error)
+- `detached`: Worktree is in detached-HEAD state (no branch)
+- `error`: Cannot check status (directory missing, git error, or remote check failed)
 
 **Example Output**:
 ```
@@ -136,6 +140,7 @@ Worktree Health Report
   ],
   "summary": {
     "clean": 1,
+    "detached": 0,
     "uncommitted": 1,
     "behind": 0,
     "gone": 0,
