@@ -2,7 +2,7 @@ import { Command, Flags } from '@oclif/core'
 import * as path from 'node:path'
 import { createGitHelper, type WorktreeInfo, type GitHelper } from '../utils/git.js'
 import { jsonFlag, forceFlag, pathFlag } from '../utils/common-flags.js'
-import { ErrorHelper } from '../utils/errors.js'
+import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
 import { loadConfig } from '../config/loader.js'
 import type { DeleteBranchOption } from '../config/schema.js'
 import { checkbox, confirm } from '@inquirer/prompts'
@@ -491,6 +491,15 @@ export default class RemoveWorktree extends Command {
         }
       }
     } catch (error) {
+      // `this.exit(1)` inside the try block throws an oclif ExitError to unwind
+      // the stack. That is control flow, not a failure — re-throw it so oclif
+      // performs the exit. Without this guard, JSON mode would emit a second,
+      // bogus JSON payload (e.g. {"success":false,"error":"EEXIT: 1"}) after the
+      // real result, breaking scriptable single-object output.
+      if (isOclifExitError(error)) {
+        throw error
+      }
+
       // Handle errors appropriately
       if (flags.json) {
         this.log(

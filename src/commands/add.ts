@@ -3,7 +3,7 @@ import { createGitHelper } from '../utils/git.js'
 import { loadConfig } from '../config/loader.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
-import { ErrorHelper } from '../utils/errors.js'
+import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
 import { validateBranchName } from '../utils/validation.js'
 import {
   computeConfigHash,
@@ -966,7 +966,7 @@ export default class AddWorktree extends Command {
     chalk: Awaited<typeof import('chalk').default> | null,
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null
   ): Promise<void> {
-    if (error instanceof Error && 'code' in error && error.code === 'EEXIT') {
+    if (isOclifExitError(error)) {
       throw error
     }
 
