@@ -115,10 +115,19 @@ describe('pando clean (E2E)', () => {
     expect(await gitWorktreePaths()).toContain(worktreePath)
 
     // Cleanup so it doesn't leak into other ordering-sensitive assertions.
-    await pandoClean(container, repoPath, ['--force'])
+    // Assert the cleanup actually pruned the worktree so a silent failure here
+    // can't masquerade as the next test's "no stale worktrees" expectation.
+    const cleanup = await pandoClean(container, repoPath, ['--force'])
+    expectSuccess(cleanup)
+    expect(await gitWorktreePaths()).not.toContain(worktreePath)
   })
 
   it('emits human-readable output when --json is omitted', async () => {
+    // Self-contained: don't rely on prior tests having cleaned up. Run a
+    // defensive force-clean first so this passes regardless of ordering or
+    // test retries (any leftover stale worktree is pruned before we assert).
+    await pandoClean(container, repoPath, ['--force'])
+
     const result = await pandoCleanHuman(container, repoPath)
 
     expectSuccess(result)

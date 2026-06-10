@@ -195,6 +195,12 @@ describe('add: branch-name validation', () => {
 // validateAndInitialize: branch/commit conflict
 // ---------------------------------------------------------------------------
 
+// NOTE: validateAndInitialize internally calls createGitHelper() to obtain a
+// GitHelper. These tests depend on the module-level `vi.mock('../../src/utils/git.js')`
+// factory above returning the SAME `mockGitHelper` object every call — that's how
+// `mockGitHelper.branchExists` assertions here observe the calls made inside
+// validateAndInitialize. Keep the mock factory-based (returning the shared
+// mockGitHelper); replacing it with a per-call/fresh mock would break these tests.
 describe('add: validateAndInitialize branch/commit conflict', () => {
   it('rejects --branch + --commit when the branch already exists and --force is absent', async () => {
     const { command, errorSpy } = createCommand()

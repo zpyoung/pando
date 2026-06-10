@@ -37,8 +37,21 @@ export interface E2EContainer {
  * error. `JSON.parse` over the whole blob fails in that case. We therefore try
  * the trimmed whole string first (the common, single-object case) and fall back
  * to the first line that parses on its own, which is always the real payload.
+ *
+ * The fallback path also counts how many lines parse as standalone JSON: if
+ * MORE than one does, that's a double-emit regression (the documented `remove`
+ * workaround is the only known case). We still return the first object, but
+ * emit a console.warn naming the command so a new double-emit in another
+ * command isn't silently swallowed.
+ *
+ * @param stdout - Raw command stdout
+ * @param command - Human-readable command label (e.g. the joined argv) used in
+ *   the multi-object warning so regressions are attributable.
  */
-function parseFirstJsonObject(stdout: string): Record<string, unknown> | undefined {
+function parseFirstJsonObject(
+  stdout: string,
+  command?: string
+): Record<string, unknown> | undefined {
   const trimmed = stdout.trim()
   if (!trimmed) {
     return undefined
@@ -47,18 +60,36 @@ function parseFirstJsonObject(stdout: string): Record<string, unknown> | undefin
   try {
     return JSON.parse(trimmed) as Record<string, unknown>
   } catch {
-    // Multi-object stdout: parse the first line that is itself valid JSON.
+    // Multi-object stdout: parse every line, keep the first that is valid JSON,
+    // but count all parseable objects so we can flag unexpected double-emits.
+    let first: Record<string, unknown> | undefined
+    let jsonLineCount = 0
     for (const line of trimmed.split('\n')) {
       const candidate = line.trim()
       if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
         continue
       }
       try {
-        return JSON.parse(candidate) as Record<string, unknown>
+        const parsed = JSON.parse(candidate) as Record<string, unknown>
+        jsonLineCount++
+        if (first === undefined) {
+          first = parsed
+        }
       } catch {
         // keep scanning
       }
     }
+
+    if (jsonLineCount > 1) {
+      console.warn(
+        `[e2e] parseFirstJsonObject: command "${command ?? 'unknown'}" emitted ` +
+          `${jsonLineCount} JSON object lines on stdout; returning the first. ` +
+          `This is expected only for the documented \`remove\` workaround — a new ` +
+          `occurrence elsewhere indicates a double-emit regression.`
+      )
+    }
+
+    return first
   }
 
   return undefined
@@ -139,7 +170,7 @@ export async function createE2EContainer(): Promise<E2EContainer> {
 
     let json: Record<string, unknown> | undefined
     if (args.includes('--json')) {
-      json = parseFirstJsonObject(result.stdout)
+      json = parseFirstJsonObject(result.stdout, `pando ${args.join(' ')}`)
     }
 
     return { ...result, json }
