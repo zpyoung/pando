@@ -29,7 +29,7 @@ pnpm build
 To run your local build as the `pando` command:
 
 ```bash
-pnpm link
+pnpm link --global
 ```
 
 ## Development Loop
@@ -47,8 +47,10 @@ Other useful scripts:
 
 ```bash
 pnpm build          # Compile TypeScript to dist/
-pnpm test           # Run the unit test suite (Vitest, watch mode)
-pnpm test:run       # Run unit tests once
+pnpm test           # Vitest in watch mode (interactive dev; use test:run for one-shot)
+pnpm test:run       # Run the unit test suite once (non-interactive)
+pnpm test:watch     # Vitest in explicit watch mode
+pnpm test:coverage  # Run tests with coverage report
 pnpm lint           # ESLint
 pnpm format         # Prettier (write)
 pnpm typecheck      # tsc --noEmit

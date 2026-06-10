@@ -44,7 +44,7 @@ git clone https://github.com/zpyoung/pando.git
 cd pando
 pnpm install
 pnpm build
-pnpm link
+pnpm link --global
 ```
 
 ## Quick Start
@@ -204,7 +204,7 @@ Remove a git worktree
 - `-p, --path`: Path to the worktree to remove (optional - will prompt interactively if omitted)
 - `-f, --force`: Force removal even with uncommitted changes
 - `-k, --keep-branch`: Keep the local branch (do not delete it)
-- `-d, --delete-branch`: Delete associated branch after removing worktree (`none`|`local`|`remote`)
+- `-d, --delete-branch`: Override branch deletion behavior (`none`|`local`|`remote`); when omitted, uses the configured default (`local` unless overridden by `worktree.deleteBranchOnRemove`)
   - `none`: Don't delete any branches
   - `local`: Delete local branch only (default)
   - `remote`: Delete both local and remote branches
@@ -702,22 +702,12 @@ pando list --json | jq '.[] | select(.branch == "feature-x")'
 ## Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm dev list
-
-# Build
-pnpm build
-
-# Run tests
-pnpm test
-
-# Lint & format
-pnpm lint
-pnpm format
+pnpm install        # Install dependencies
+pnpm dev list       # Run the CLI from source (no rebuild)
+pnpm validate       # Format check, lint, typecheck, and tests
 ```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full development workflow.
 
 ## Project Structure
 

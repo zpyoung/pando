@@ -296,6 +296,8 @@ async listWorktrees(): Promise<WorktreeInfo[]> { ... }
 
 ### Plugin System
 
+**Status**: Idea
+
 **Idea**: Allow community-contributed commands
 
 ```bash
@@ -342,6 +344,8 @@ The original challenges were resolved as follows:
 
 ### Editor Integration
 
+**Status**: Idea
+
 **Idea**: Helper commands for editor navigation
 
 ```bash
@@ -355,6 +359,8 @@ pando workspace --output pando.code-workspace
 **Benefit**: Seamless workflow integration
 
 ### Template System
+
+**Status**: Idea
 
 **Idea**: Worktree templates with pre-configured setups
 
