@@ -74,7 +74,7 @@ describe('clean', () => {
 
     // Get the mocked GitHelper instance
     const { createGitHelper } = await import('../../src/utils/git.js')
-    mockGitHelper = createGitHelper() as unknown as ReturnType<typeof getMockGitHelper>
+    mockGitHelper = createGitHelper() as unknown as ReturnType<typeof _getMockGitHelper>
 
     // Spy on log method
     logSpy = vi.spyOn(command, 'log').mockImplementation(() => {})
@@ -272,8 +272,20 @@ describe('clean', () => {
 
       command.argv = ['--json']
 
-      // Command should not throw in json mode, just include errors in output
-      await expect(command.run()).rejects.toThrow()
+      // When the only worktree fails to remove, status is 'error' and the
+      // command calls this.exit(1) — which oclif surfaces as a thrown
+      // EEXIT error carrying the exit code. Assert both the exit behavior
+      // and the JSON payload that was emitted before exiting.
+      await expect(command.run()).rejects.toMatchObject({ oclif: { exit: 1 } })
+
+      const loggedJson = logSpy.mock.calls[0]?.[0]
+      expect(loggedJson).toBeDefined()
+      const result = JSON.parse(loggedJson)
+      expect(result.status).toBe('error')
+      expect(result.removed).toHaveLength(0)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]?.path).toBe('/path/to/merged')
+      expect(result.errors[0]?.error).toContain('Cannot remove worktree')
     })
   })
 

@@ -117,7 +117,6 @@ describe('WorktreeSetupOrchestrator', () => {
         totalSize: 2048000,
         duration: 500,
       } as RsyncResult),
-      buildCommand: vi.fn().mockReturnValue('rsync -av --delete source dest'),
       estimateFileCount: vi.fn().mockResolvedValue(100),
     } as any
 
