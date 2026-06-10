@@ -19,10 +19,10 @@
 enabled = true
 
 # Rsync flags to use
-# Default: ["--archive", "--exclude", ".git"]
+# Default: ["--archive"]
 # --archive: Preserves permissions, timestamps, symlinks
-# .git is always excluded
-flags = ["--archive", "--exclude", ".git"]
+# Note: .git is ALWAYS excluded automatically by Pando — do not add it here.
+flags = ["--archive"]
 
 # Additional patterns to exclude from rsync
 # Useful for large directories you don't want copied
@@ -135,6 +135,23 @@ deleteBranchOnRemove = "local"
 # fetch = true
 
 # ============================================================================
+# Post-command Scripts
+# ============================================================================
+# Shell commands to run after a pando command succeeds. Keys are command ids;
+# the only supported hook today is "add". For `pando add`, scripts run from the
+# newly created worktree once rsync/symlink setup has finished.
+#
+# SECURITY — trust prompt: post-commands run with a shell, so the FIRST time a
+# config file would run them, Pando shows the commands and asks you to trust the
+# file (direnv-style). Trust is pinned to the file's content hash and stored at
+# $XDG_CONFIG_HOME/pando/trusted-configs.json (fallback ~/.config/pando).
+# Non-interactive and --json runs SKIP untrusted post-commands; set
+# PANDO_TRUST_CONFIG=1 in CI to allow them.
+#
+# [postCommands]
+# add = ["pnpm install", "pnpm run prepare"]
+
+# ============================================================================
 # Project-Specific Examples
 # ============================================================================
 
@@ -168,7 +185,7 @@ deleteBranchOnRemove = "local"
 # You can override any setting with environment variables:
 #
 #   PANDO_RSYNC_ENABLED=false
-#   PANDO_RSYNC_FLAGS=--archive,--exclude,.git
+#   PANDO_RSYNC_FLAGS=--archive
 #   PANDO_RSYNC_EXCLUDE=*.log,tmp/
 #   PANDO_SYMLINK_PATTERNS=package.json,pnpm-lock.yaml
 #   PANDO_SYMLINK_RELATIVE=false

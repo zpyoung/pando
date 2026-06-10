@@ -44,7 +44,7 @@ git clone https://github.com/zpyoung/pando.git
 cd pando
 pnpm install
 pnpm build
-pnpm link
+pnpm link --global
 ```
 
 ## Quick Start
@@ -76,12 +76,20 @@ Create a new git worktree (supports both creating new branches and checking out 
 **Flags:**
 
 - `-p, --path`: Path for the new worktree (optional if `worktree.defaultPath` is configured)
-- `-b, --branch`: Branch to checkout or create
+- `-b, --branch`: Branch to checkout or create (also accepted as a positional argument, e.g. `pando add feature-x`)
 - `-c, --commit`: Commit hash to base the new branch on
 - `-f, --force`: Force create branch even if it exists (uses git worktree add -B)
 - `--no-rebase`: Skip automatic rebase of existing branch onto source branch
+- `--skip-rsync`: Skip the rsync copy step (ignores rsync config)
+- `--rsync-flags`: Override rsync flags (comma-separated; repeatable)
+- `--rsync-exclude`: Additional rsync exclude patterns (comma-separated; repeatable)
+- `--skip-symlink`: Skip symlink creation (ignores symlink config)
+- `--symlink`: Additional symlink patterns, overriding config (comma-separated; repeatable)
+- `--absolute-symlinks`: Use absolute paths for symlinks instead of relative
 - `--details`: Show detailed setup information after the worktree is created
 - `-j, --json`: Output in JSON format
+
+> When `--skip-rsync` is combined with `--rsync-flags` or `--rsync-exclude`, the rsync flags are ignored and a warning is shown.
 
 **Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
 
@@ -143,7 +151,8 @@ Show health status of all worktrees
 - `uncommitted`: Has modified files (shows count)
 - `behind`: Branch is N commits behind upstream
 - `gone`: Remote tracking branch was deleted
-- `error`: Cannot check status (directory missing, git error)
+- `detached`: Worktree is in detached-HEAD state (no branch)
+- `error`: Cannot check status (directory missing, git error, or remote check failed)
 
 **Examples:**
 
@@ -195,7 +204,7 @@ Remove a git worktree
 - `-p, --path`: Path to the worktree to remove (optional - will prompt interactively if omitted)
 - `-f, --force`: Force removal even with uncommitted changes
 - `-k, --keep-branch`: Keep the local branch (do not delete it)
-- `-d, --delete-branch`: Delete associated branch after removing worktree (`none`|`local`|`remote`)
+- `-d, --delete-branch`: Override branch deletion behavior (`none`|`local`|`remote`); when omitted, uses the configured default (`local` unless overridden by `worktree.deleteBranchOnRemove`)
   - `none`: Don't delete any branches
   - `local`: Delete local branch only (default)
   - `remote`: Delete both local and remote branches
@@ -492,7 +501,7 @@ Pando uses TOML format for configuration:
 # Rsync Configuration
 [rsync]
 enabled = true
-flags = ["--archive", "--exclude", ".git"]
+flags = ["--archive"]         # .git is always excluded automatically (do not add it here)
 exclude = ["dist/", "node_modules/"]
 
 # Symlink Configuration
@@ -503,10 +512,11 @@ beforeRsync = true
 
 # Worktree Configuration
 [worktree]
-defaultPath = "../worktrees"  # Default parent directory for worktrees
-rebaseOnAdd = true            # Rebase existing branches when adding worktree
-deleteBranchOnRemove = "none" # Delete branch on worktree remove: "none", "local", "remote"
-targetBranch = "main"         # Target branch for merge checks (used by clean command)
+defaultPath = "../worktrees"      # Default parent directory for worktrees
+rebaseOnAdd = true                # Rebase existing branches when adding worktree
+deleteBranchOnRemove = "local"    # Delete branch on worktree remove: "none", "local", "remote" (default: "local")
+useProjectSubfolder = false       # Nest worktrees as defaultPath/projectName/branchName (default: false)
+targetBranch = "main"             # Target branch for merge checks (used by clean command)
 
 # Clean Configuration
 [clean]
@@ -535,6 +545,33 @@ Scripts configured for `add` run **after** the worktree has been created and rsy
 - `PANDO_COMMIT` — created worktree commit
 
 Human-readable output shows each script, its working directory, exit status, stdout, and stderr. JSON output includes a stable `postCommands` array with `name`, `command`, `cwd`, `exitCode`, `signal`, `stdout`, `stderr`, `success`, and `duration` fields. A non-zero exit code stops later scripts and returns the existing JSON error shape with `success: false`, `error`, `postCommands`, and `failedPostCommand`.
+
+### Post-command trust
+
+Post-commands defined in a config file run with a shell, so a `.pando.toml`
+committed in a repository you just cloned could otherwise execute arbitrary
+commands the first time you run `pando add`. To prevent that, Pando uses a
+**direnv-style trust gate**: the post-commands in a config file only run once you
+have explicitly trusted that exact file.
+
+How it works:
+
+- **One-time prompt.** The first time a config file would run post-commands,
+  Pando lists them and asks whether to trust the file. If you decline, the
+  scripts are skipped.
+- **Content-hash pinning.** Trust is recorded against the file's SHA-256 content
+  hash and stored at `$XDG_CONFIG_HOME/pando/trusted-configs.json` (falling back
+  to `~/.config/pando/trusted-configs.json`). The store is written with `0o600`
+  permissions.
+- **Re-prompt on change.** Editing the config file changes its hash and
+  invalidates the trust, so you are prompted again.
+- **Non-interactive / `--json` runs skip.** When there is no interactive TTY, or
+  when `--json` output is requested, untrusted post-commands are **not** run; a
+  warning explains how to trust them.
+- **CI escape hatch.** Set `PANDO_TRUST_CONFIG=1` (or `true`) to run
+  post-commands without prompting — intended for CI and automation.
+- **Environment-only post-commands** (configured purely via `PANDO_*` variables,
+  with no file on disk) are implicitly trusted and always run.
 
 ### Embedding in Project Files
 
@@ -625,6 +662,31 @@ pando add --branch feature-x
 
 Environment variables override file-based configuration but are overridden by explicit command-line flags.
 
+**Supported variables:**
+
+| Variable                                 | Config path                    | Type    |
+| ---------------------------------------- | ------------------------------ | ------- |
+| `PANDO_RSYNC_ENABLED`                    | `rsync.enabled`                | boolean |
+| `PANDO_RSYNC_FLAGS`                      | `rsync.flags`                  | array   |
+| `PANDO_RSYNC_EXCLUDE`                    | `rsync.exclude`                | array   |
+| `PANDO_SYMLINK_PATTERNS`                 | `symlink.patterns`             | array   |
+| `PANDO_SYMLINK_RELATIVE`                 | `symlink.relative`             | boolean |
+| `PANDO_SYMLINK_BEFORE_RSYNC`             | `symlink.beforeRsync`          | boolean |
+| `PANDO_WORKTREE_DEFAULT_PATH`            | `worktree.defaultPath`         | string  |
+| `PANDO_WORKTREE_REBASE_ON_ADD`           | `worktree.rebaseOnAdd`         | boolean |
+| `PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE` | `worktree.deleteBranchOnRemove`| string  |
+| `PANDO_WORKTREE_USE_PROJECT_SUBFOLDER`   | `worktree.useProjectSubfolder` | boolean |
+| `PANDO_WORKTREE_TARGET_BRANCH`           | `worktree.targetBranch`        | string  |
+| `PANDO_CLEAN_FETCH`                      | `clean.fetch`                  | boolean |
+
+- Booleans accept `true`/`false`, `1`/`0`, or `yes`/`no` (case-insensitive).
+- Arrays are comma-separated, e.g. `PANDO_RSYNC_EXCLUDE=*.log,tmp/`.
+
+`PANDO_TRUST_CONFIG` is a separate, non-config escape hatch for the
+[post-command trust gate](#post-command-trust) — set it to `1` or `true` to run
+post-commands from config files non-interactively (e.g. in CI). It is not part
+of the merged configuration.
+
 ## Automation & JSON Output
 
 All commands support the `--json` flag for machine-readable output:
@@ -640,22 +702,12 @@ pando list --json | jq '.[] | select(.branch == "feature-x")'
 ## Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm dev list
-
-# Build
-pnpm build
-
-# Run tests
-pnpm test
-
-# Lint & format
-pnpm lint
-pnpm format
+pnpm install        # Install dependencies
+pnpm dev list       # Run the CLI from source (no rebuild)
+pnpm validate       # Format check, lint, typecheck, and tests
 ```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full development workflow.
 
 ## Project Structure
 
@@ -672,7 +724,7 @@ pando/
 
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 18.0.0 (development targets Node 20, pinned in `.node-version`)
 - Git >= 2.5.0 (for worktree support)
 
 ## Troubleshooting
@@ -743,7 +795,10 @@ node --inspect bin/dev.js list
 
 ## Contributing
 
-Contributions are welcome! Please read [ARCHITECTURE.md](./ARCHITECTURE.md) and [DESIGN.md](./DESIGN.md) to understand the project structure and design decisions.
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup,
+the development loop, quality gates, and PR expectations. For the project
+structure and design rationale, read [ARCHITECTURE.md](./ARCHITECTURE.md) and
+[DESIGN.md](./DESIGN.md).
 
 ## License
 

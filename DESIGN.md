@@ -296,6 +296,8 @@ async listWorktrees(): Promise<WorktreeInfo[]> { ... }
 
 ### Plugin System
 
+**Status**: Idea
+
 **Idea**: Allow community-contributed commands
 
 ```bash
@@ -312,23 +314,37 @@ pando worktree:backup --to s3://...
 
 ### Configuration Files
 
-**Idea**: `.pandorc` for defaults and preferences
+**Status**: Implemented. Pando loads configuration from `.pando.toml` (project
+and git-root), embedded `[tool.pando]` / `"pando"` sections in `pyproject.toml`,
+`Cargo.toml`, `package.json`, etc., a user-level
+`~/.config/pando/config.toml`, and `PANDO_*` environment variables. Values are
+validated with Zod schemas and merged by priority (CLI flags > env vars >
+project files > global config > built-in defaults).
 
-```json
-{
-  "defaultBranch": "main",
-  "worktreeDir": "../worktrees",
-  "editor": "code",
-  "format": "json"
-}
+See `src/config/` (`schema.ts`, `loader.ts`, `env.ts`) and the
+[Configuration section of the README](./README.md#configuration) for the full
+reference.
+
+```toml
+[worktree]
+defaultPath = "../worktrees"
+targetBranch = "main"
+
+[rsync]
+enabled = true
+flags = ["--archive"]   # .git is always excluded automatically
 ```
 
-**Challenges**:
-- Where to look for config (repo, home, global)
-- Schema versioning
-- Overriding via flags
+The original challenges were resolved as follows:
+- **Where to look for config**: a fixed discovery order (project → git root →
+  embedded project files → global), see the README configuration locations table.
+- **Schema versioning**: Zod schemas in `src/config/schema.ts` validate and apply
+  defaults; malformed files produce a clear error pointing at `pando config show`.
+- **Overriding via flags**: CLI flags always win, then env vars, then files.
 
 ### Editor Integration
+
+**Status**: Idea
 
 **Idea**: Helper commands for editor navigation
 
@@ -343,6 +359,8 @@ pando workspace --output pando.code-workspace
 **Benefit**: Seamless workflow integration
 
 ### Template System
+
+**Status**: Idea
 
 **Idea**: Worktree templates with pre-configured setups
 

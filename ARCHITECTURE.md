@@ -42,7 +42,12 @@ commands/
 ├── add.ts         # pando add (create worktree)
 ├── list.ts        # pando list (list worktrees)
 ├── remove.ts      # pando remove (remove worktree)
-├── symlink.ts     # pando symlink (create symlinks)
+├── clean.ts       # pando clean (remove stale worktrees)
+├── health.ts      # pando health (worktree health report)
+├── symlink.ts     # pando symlink (move file to main worktree + symlink)
+├── branch/
+│   ├── backup.ts  # pando branch backup (timestamped backup branches)
+│   └── restore.ts # pando branch restore (restore from a backup)
 └── config/
     ├── init.ts    # pando config init
     └── show.ts    # pando config show
@@ -87,6 +92,21 @@ class GitHelper {
 - Provides simplified interface to complex git operations
 - Handles error transformation and type safety
 - Encapsulates simple-git implementation details
+
+#### Other Utility Modules (`src/utils/`)
+
+| Module | Purpose |
+|--------|---------|
+| `worktreeSetup.ts` | Orchestrates post-creation setup (rsync, symlink) as a transaction |
+| `fileOps.ts` | Rsync and symlink operations with rollback; strips transport/exec-class rsync flags |
+| `postCommands.ts` | Runs configured post-command shell scripts and shapes their results |
+| `configTrust.ts` | direnv-style trust store gating config-file post-commands |
+| `branch-backups.ts` | Timestamp formatting and backup branch name parsing/formatting |
+| `commandDetails.ts` | Builds the `--details` payload (rsync totals, symlink samples) for `add` |
+| `rsyncProgress.ts` | Typed interfaces for real-time rsync progress reporting |
+| `common-flags.ts` | Shared flag definitions (`json`, `force`, `path`) for consistency |
+| `errors.ts` | `ErrorHelper` for consistent validation/operation/warning output (human + JSON) |
+| `validation.ts` | Branch-name validation against core `git check-ref-format` rules |
 
 ### 3. Type Definitions
 
@@ -135,10 +155,10 @@ Pando follows **feature-based organization** (vertical slices):
 
 ```
 Feature: Worktree Management
-├── Commands:    src/commands/*.ts (add, list, remove, symlink)
-├── Logic:       src/utils/git.ts (worktree methods)
+├── Commands:    src/commands/*.ts (add, list, remove, clean, health, symlink, branch/backup, branch/restore)
+├── Logic:       src/utils/*.ts (git, worktreeSetup, fileOps, postCommands, configTrust, branch-backups, validation, ...)
 ├── Types:       WorktreeInfo, etc.
-└── Tests:       test/commands/*.test.ts
+└── Tests:       test/commands/*.test.ts, test/utils/*.test.ts
 ```
 
 **Benefits**:
@@ -266,9 +286,10 @@ Commands support `--json` flag. To add new formats:
   "oclif": {
     "bin": "pando",
     "dirname": "pando",
-    "commands": "./dist/commands",
-    "topicSeparator": ":",
+    "commands": "./dist/src/commands",
+    "topicSeparator": " ",
     "topics": {
+      "branch": { "description": "Manage branch backups and restoration" },
       "config": { "description": "Manage pando configuration" }
     }
   }
