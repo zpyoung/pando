@@ -254,10 +254,13 @@ export default class ConfigInit extends Command {
         this.log('')
         this.log(`Added ${mergeResult.added.length} missing setting(s):`)
         for (const setting of mergeResult.added) {
+          const value = setting.value
           const valueStr =
-            typeof setting.value === 'object'
-              ? JSON.stringify(setting.value)
-              : String(setting.value)
+            typeof value === 'string'
+              ? value
+              : typeof value === 'number' || typeof value === 'boolean'
+                ? value.toString()
+                : JSON.stringify(value)
           this.log(`  • ${setting.path} = ${valueStr}`)
         }
       }

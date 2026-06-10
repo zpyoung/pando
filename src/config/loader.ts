@@ -63,6 +63,20 @@ interface CargoToml {
 }
 
 /**
+ * Type for package.json / deno.json structure (top-level "pando" key)
+ */
+interface PackageJsonWithPando {
+  pando?: ParsedTomlConfig
+}
+
+/**
+ * Type for composer.json structure ("extra.pando" section)
+ */
+interface ComposerJsonWithPando {
+  extra?: { pando?: ParsedTomlConfig }
+}
+
+/**
  * Configuration Loader
  *
  * Discovers and loads Pando configuration from multiple sources:
@@ -287,8 +301,8 @@ export async function parseCargoToml(filePath: string): Promise<PartialPandoConf
  */
 export async function parsePackageJson(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = JSON.parse(contents)
-  const pandoConfig = parsed?.pando || {}
+  const parsed = JSON.parse(contents) as PackageJsonWithPando
+  const pandoConfig = parsed?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 
@@ -302,8 +316,8 @@ export async function parsePackageJson(filePath: string): Promise<PartialPandoCo
  */
 export async function parseDenoJson(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = JSON.parse(contents)
-  const pandoConfig = parsed?.pando || {}
+  const parsed = JSON.parse(contents) as PackageJsonWithPando
+  const pandoConfig = parsed?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 
@@ -317,8 +331,8 @@ export async function parseDenoJson(filePath: string): Promise<PartialPandoConfi
  */
 export async function parseComposerJson(filePath: string): Promise<PartialPandoConfig> {
   const contents = await fs.readFile(filePath, 'utf-8')
-  const parsed = JSON.parse(contents)
-  const pandoConfig = parsed?.extra?.pando || {}
+  const parsed = JSON.parse(contents) as ComposerJsonWithPando
+  const pandoConfig = parsed?.extra?.pando ?? {}
   return validatePartialConfig(pandoConfig)
 }
 

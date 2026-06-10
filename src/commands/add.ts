@@ -224,10 +224,16 @@ export default class AddWorktree extends Command {
 
     const gitHelper = createGitHelper()
 
+    // Narrow string flags from the erased Record<string, unknown> to their
+    // actual oclif types (all defined via Flags.string -> string | undefined).
+    const pathFlag = flags.path as string | undefined
+    const branchFlag = flags.branch as string | undefined
+    const commitFlag = flags.commit as string | undefined
+
     // Resolve path: CLI flag > config default > error
     const fs = await import('fs-extra')
     // Validate: require either --branch or --path (or both)
-    if (!flags.branch && !flags.path) {
+    if (!branchFlag && !pathFlag) {
       ErrorHelper.validation(
         this,
         'Either --branch or --path is required.',
@@ -238,13 +244,13 @@ export default class AddWorktree extends Command {
     const path = await import('path')
     let worktreePath: string
 
-    if (flags.path) {
+    if (pathFlag) {
       // Path provided via flag
-      worktreePath = String(flags.path)
-    } else if (config.worktree.defaultPath && flags.branch) {
+      worktreePath = pathFlag
+    } else if (config.worktree.defaultPath && branchFlag) {
       // Use config default path + branch name
       // Sanitize branch name: convert slashes to underscores for filesystem safety
-      const sanitizedBranch = String(flags.branch).replace(/\//g, '_')
+      const sanitizedBranch = branchFlag.replace(/\//g, '_')
 
       // Insert project subfolder if enabled
       if (config.worktree.useProjectSubfolder) {
@@ -279,7 +285,7 @@ export default class AddWorktree extends Command {
     await fs.ensureDir(path.dirname(resolvedPath))
 
     // Validate force flag requires branch
-    if (flags.force && !flags.branch) {
+    if (flags.force && !branchFlag) {
       ErrorHelper.validation(
         this,
         'The --force flag requires --branch to be specified.\n\n' +
@@ -293,15 +299,15 @@ export default class AddWorktree extends Command {
     }
 
     // Validate branch/commit combination when force is NOT set
-    if (flags.branch && flags.commit && !flags.force) {
+    if (branchFlag && commitFlag && !flags.force) {
       // Check if branch already exists
-      const branchExists = await gitHelper.branchExists(String(flags.branch))
+      const branchExists = await gitHelper.branchExists(branchFlag)
       if (branchExists) {
         ErrorHelper.validation(
           this,
-          `Branch '${String(flags.branch)}' already exists.\n\n` +
+          `Branch '${branchFlag}' already exists.\n\n` +
             'Options:\n' +
-            `  • Use --force to reset '${String(flags.branch)}' to commit ${String(flags.commit).substring(0, 7)}\n` +
+            `  • Use --force to reset '${branchFlag}' to commit ${commitFlag.substring(0, 7)}\n` +
             '  • Choose a different branch name with --branch <new-name>\n' +
             '  • Omit --branch to checkout the commit in detached HEAD state',
           flags.json as boolean | undefined

@@ -430,8 +430,9 @@ export class WorktreeSetupOrchestrator {
       const duration = Date.now() - startTime
 
       // Re-throw original error with context
+      const errorMessage = error instanceof Error ? error.message : String(error)
       throw new SetupError(
-        `Setup failed: ${error}`,
+        `Setup failed: ${errorMessage}`,
         {
           success: false,
           rsyncResult,
