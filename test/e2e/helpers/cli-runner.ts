@@ -107,6 +107,38 @@ export function pandoConfigShowHuman(
   return runPando(container, { command: 'config show', args, cwd, json: false })
 }
 
+export function pandoClean(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'clean', args, cwd, json: true })
+}
+
+export function pandoCleanHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'clean', args, cwd, json: false })
+}
+
+export function pandoHealth(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'health', args, cwd, json: true })
+}
+
+export function pandoHealthHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'health', args, cwd, json: false })
+}
+
 // Branch backup/restore commands
 export function pandoBranchBackup(
   container: E2EContainer,
