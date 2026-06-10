@@ -130,7 +130,7 @@ jobs:
           : "${SHA_LINUX_X64:?SHA_LINUX_X64 is empty (missing build-tarballs output)}"
           : "${SHA_LINUX_ARM64:?SHA_LINUX_ARM64 is empty (missing build-tarballs output)}"
           envsubst \
-            '${VERSION} ${SHA_DARWIN_X64} ${SHA_DARWIN_ARM64} ${SHA_LINUX_X64} ${SHA_LINUX_ARM64}' \
+            "\${VERSION} \${SHA_DARWIN_X64} \${SHA_DARWIN_ARM64} \${SHA_LINUX_X64} \${SHA_LINUX_ARM64}" \
             < Formula/pando.rb.template \
             > Formula/pando.rb
 
