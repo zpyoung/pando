@@ -103,8 +103,12 @@ export const PostCommandScriptSchema = z.union([
   }),
 ])
 
-export const PostCommandsConfigSchema = z.record(z.array(PostCommandScriptSchema)).default({})
-export const PostCommandsConfigSchemaPartial = z.record(z.array(PostCommandScriptSchema)).optional()
+export const PostCommandsConfigSchema = z
+  .record(z.string(), z.array(PostCommandScriptSchema))
+  .default({})
+export const PostCommandsConfigSchemaPartial = z
+  .record(z.string(), z.array(PostCommandScriptSchema))
+  .optional()
 
 /**
  * Complete Pando configuration schema
