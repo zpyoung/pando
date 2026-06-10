@@ -20,7 +20,12 @@ Pando makes it effortless to work on multiple branches simultaneously using Git 
 
 ### Using Homebrew (macOS/Linux)
 
+> **Not yet available.** The Homebrew tap (`zpyoung/homebrew-pando`) has not been
+> published; until it exists, install via pnpm/npm below. Tracked in
+> [ROADMAP.md](./ROADMAP.md).
+
 ```bash
+# Coming soon
 brew tap zpyoung/pando
 brew install pando
 ```

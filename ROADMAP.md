@@ -62,6 +62,10 @@ Select branch or type new name: _
 - **Trust-store realpath canonicalization** - canonicalize config paths (resolve
   symlinks) before keying the post-command trust store, as a residual hardening
   follow-up
+- **Homebrew tap** - create the `zpyoung/homebrew-pando` tap repo, point the
+  release workflow's `update-formula` job at it (it currently commits the
+  formula to this repo), and verify a real `brew install` against an oclif
+  directory-style tarball before advertising the install path in README
 
 ## Completed
 

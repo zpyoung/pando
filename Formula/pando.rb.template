@@ -27,7 +27,9 @@ class Pando < Formula
   end
 
   def install
-    bin.install "pando"
+    # oclif tarballs extract to a directory tree (pando/bin/pando, pando/client/, ...)
+    libexec.install Dir["*"]
+    bin.install_symlink libexec/"bin/pando"
   end
 
   test do
