@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository root); only linked worktrees can be removed.
 - Malformed configuration files now produce a clear error pointing at
   `pando config show` rather than crashing.
+- **`pando remove --json`** no longer emits a spurious second JSON object
+  (`EEXIT`) after the real error payload; oclif exit signals are now detected
+  via a shared `isOclifExitError()` helper used across commands.
 
 ### Security
 
