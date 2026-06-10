@@ -846,16 +846,34 @@ describe('RsyncHelper', () => {
         expect(args).toContain('--archive')
       })
 
-      it('matches denylisted flags case-insensitively', () => {
+      it('matches denylisted flags case-sensitively (rsync flags are case-sensitive)', () => {
+        // rsync short/long options are case-sensitive. The dangerous spellings
+        // are exactly `-M`/`--rsh`; wrong-case variants like `--RSH` or `-e`'s
+        // uppercase `-E` are NOT the same flags and must survive untouched.
         const args = rsyncHelper.buildArgs('/source', '/dest', {
           enabled: true,
           flags: ['--archive', '--RSH=ssh', '-E'],
           exclude: [],
         })
 
-        expect(args.some((a) => a.toLowerCase().startsWith('--rsh'))).toBe(false)
-        expect(args).not.toContain('-E')
+        expect(args).toContain('--RSH=ssh')
+        expect(args).toContain('-E')
         expect(args).toContain('--archive')
+      })
+
+      it('keeps benign -m (--prune-empty-dirs) while stripping dangerous -M', () => {
+        // CRITICAL: lowercase `-m` is `--prune-empty-dirs` (benign); uppercase
+        // `-M` is `--remote-option` (an RCE footgun). Case-folding would strip
+        // both — the denylist must distinguish them.
+        const args = rsyncHelper.buildArgs('/source', '/dest', {
+          enabled: true,
+          flags: ['--archive', '-m', '-M'],
+          exclude: [],
+        })
+
+        expect(args).toContain('-m')
+        expect(args).toContain('--archive')
+        expect(args).not.toContain('-M')
       })
 
       it('keeps benign flags whose names merely start with a denied prefix', () => {

@@ -391,13 +391,18 @@ export class RsyncHelper {
    *
    * Covers both the short (`-e`, `-M`) and long (`--rsh`, `--rsync-path`,
    * `--remote-option`) spellings, including any `--flag=value` form.
+   *
+   * NOTE: rsync short options are CASE-SENSITIVE. `-M` is the dangerous
+   * `--remote-option` shorthand, whereas lowercase `-m` is the benign
+   * `--prune-empty-dirs`. Matching here is exact (no case-folding) so we never
+   * strip a user's harmless `-m`.
    */
   private static readonly DENYLISTED_FLAGS = [
     '-e',
+    '-M',
     '--rsh',
     '--rsync-path',
     '--remote-option',
-    '-m',
   ]
 
   /**
@@ -416,11 +421,13 @@ export class RsyncHelper {
         return false
       }
 
-      const normalizedFlag = flag.trim().toLowerCase()
+      // rsync flags are case-sensitive, so match the trimmed flag exactly
+      // (no case-folding) — e.g. dangerous `-M` must not collide with benign `-m`.
+      const trimmedFlag = flag.trim()
 
       // Filter out flags we manage internally
       for (const internal of RsyncHelper.INTERNAL_FLAGS) {
-        if (normalizedFlag === internal || normalizedFlag.startsWith(`${internal}=`)) {
+        if (trimmedFlag === internal || trimmedFlag.startsWith(`${internal}=`)) {
           return false
         }
       }
@@ -429,7 +436,7 @@ export class RsyncHelper {
       // `--flag=value` form (the `-e value` / `-M value` separated forms drop
       // the value as a stray arg, which rsync rejects harmlessly).
       for (const denied of RsyncHelper.DENYLISTED_FLAGS) {
-        if (normalizedFlag === denied || normalizedFlag.startsWith(`${denied}=`)) {
+        if (trimmedFlag === denied || trimmedFlag.startsWith(`${denied}=`)) {
           return false
         }
       }
