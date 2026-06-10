@@ -24,50 +24,6 @@ Currently, branch names must match exactly when creating worktrees. This is fric
 
 ---
 
-### Enhancement: Worktree Health Check
-**Priority:** High | **Effort:** Low | **Tags:** enhancement, ai-proposed
-
-New command: `pando health` (or `pando status`)
-
-Shows at a glance:
-- Which worktrees have uncommitted changes
-- Which branches are behind their upstream
-- Which worktrees point to gone/missing directories
-- Stale worktrees (merged branches, gone remotes)
-
-**Example output:**
-```
-Worktree Health Report
-======================
-
-🚨 Uncommitted changes:
-  - feature/auth (2 files modified)
-
-⚠️  Behind upstream:
-  - feature/payments (3 commits behind main)
-
-✅ All good:
-  - main
-  - develop
-  - feature/ui-refresh
-```
-
-**JSON output:**
-```json
-{
-  "uncommitted": [{"path": "../feature/auth", "files": 2}],
-  "behind": [{"path": "../feature/payments", "commits": 3, "target": "main"}],
-  "clean": ["../main", "../develop", "../feature/ui-refresh"]
-}
-```
-
-**Implementation:**
-- Reuse existing GitHelper methods (hasUncommittedChanges, getBranchStatus)
-- Add new command `src/commands/health.ts`
-- Simple status aggregation and formatting
-
----
-
 ### Enhancement: Smart Branch Suggestions
 **Priority:** Low | **Effort:** Medium | **Tags:** enhancement, ux, ai-proposed
 
@@ -101,9 +57,14 @@ Select branch or type new name: _
 - **Worktree templates** - pre-populated structure for new branches
 - **Batch operations** - `pando add-many` from a list
 - **Conflict detection** - warn before creating worktree if conflicts likely
-- **Integration hooks** - pre/post commands via config
 - **Performance dashboard** - operation timing and optimization suggestions
+- **Shell completion** - tab completion via `@oclif/plugin-autocomplete`
+- **Trust-store realpath canonicalization** - canonicalize config paths (resolve
+  symlinks) before keying the post-command trust store, as a residual hardening
+  follow-up
 
 ## Completed
 
+- **Worktree Health Check** - `pando health` command (2026-06-09)
+- **Integration hooks** - pre/post commands via config (`[postCommands]`) (2026-06-09)
 - *AI First Transformation sprint* (2026-02-03)
