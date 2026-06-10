@@ -226,7 +226,15 @@ jobs:
           exit 1
 
       - name: Run published E2E tests
-        run: pnpm run test:e2e:published
         env:
+          # Pin the smoke test to the exact version just published (from the tag),
+          # not whatever `latest` currently resolves to. The container helper
+          # passes this through to the Docker build as the PANDO_VERSION build arg.
+          VERSION_REF: ${{ github.ref_name }}
           TESTCONTAINERS_RYUK_DISABLED: 'false'
           DOCKER_HOST: unix:///var/run/docker.sock
+        run: |
+          set -euo pipefail
+          export PANDO_VERSION="${VERSION_REF#v}"
+          echo "Smoke-testing published @zyoung-ff/pando@${PANDO_VERSION}"
+          pnpm run test:e2e:published
