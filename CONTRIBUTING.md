@@ -7,8 +7,8 @@ Git worktrees, built on [oclif](https://oclif.io) and
 ## Prerequisites
 
 - **Node.js 20** — the project pins Node 20 via the `.node-version` file. The
-  published package supports Node >= 18, and CI also runs the test matrix on
-  Node 18, 20, and 22, but Node 20 is the recommended development version.
+  published package supports Node >= 20, and CI also runs the test matrix on
+  Node 20 and 22, but Node 20 is the recommended development version.
 - **pnpm** — the package manager for this repo (`packageManager` is pinned in
   `package.json`). Install with `npm install -g pnpm` or via
   [corepack](https://nodejs.org/api/corepack.html).
