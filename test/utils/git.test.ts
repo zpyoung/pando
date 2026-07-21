@@ -568,8 +568,26 @@ branch refs/heads/main
       expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
         'update-index',
         '--skip-worktree',
+        '--',
         'package.json',
         'pnpm-lock.yaml',
+      ])
+    })
+
+    it('should mark a tracked path that starts with a dash', async () => {
+      // Without a `--` separator before the path list, `-weird.txt` is parsed
+      // as a short-option cluster by git and update-index fails outright.
+      mockGitCalls({ trackedOutput: '-weird.txt\0' })
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['-weird.txt'])
+
+      expect(result.success).toBe(true)
+      expect(result.filesMarked).toBe(1)
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'update-index',
+        '--skip-worktree',
+        '--',
+        '-weird.txt',
       ])
     })
 
@@ -596,6 +614,7 @@ branch refs/heads/main
       expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
         'update-index',
         '--skip-worktree',
+        '--',
         'CLAUDE.md',
       ])
     })
@@ -623,6 +642,7 @@ branch refs/heads/main
       expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
         'update-index',
         '--skip-worktree',
+        '--',
         '.claude/settings.json',
         '.claude/rules/beads.md',
       ])

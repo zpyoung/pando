@@ -741,13 +741,14 @@ export class GitHelper {
     for (let i = 0; i < trackedFiles.length; i += chunkSize) {
       const chunk = trackedFiles.slice(i, i + chunkSize)
       try {
-        await gitInWorktree.raw(['update-index', '--skip-worktree', ...chunk])
+        // `--` prevents a file name starting with `-` from being parsed as a flag
+        await gitInWorktree.raw(['update-index', '--skip-worktree', '--', ...chunk])
         filesMarked += chunk.length
       } catch {
         // Batch failed - retry per file so one bad path cannot abort the rest
         for (const file of chunk) {
           try {
-            await gitInWorktree.raw(['update-index', '--skip-worktree', file])
+            await gitInWorktree.raw(['update-index', '--skip-worktree', '--', file])
             filesMarked++
           } catch {
             failedFiles.push(file)

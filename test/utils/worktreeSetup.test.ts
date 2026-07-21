@@ -209,6 +209,22 @@ describe('WorktreeSetupOrchestrator', () => {
         path: '/repo/feature',
       })
     })
+
+    it('creates the checkpoint before symlink planning, so a planning failure can still roll back the worktree', async () => {
+      // If matchPatterns/filterTrackedPaths throws before the checkpoint is
+      // created, rollback() has no 'worktree' checkpoint to remove the
+      // already-created git worktree - it would be silently orphaned. Asserting
+      // createCheckpoint still ran proves the ordering survives a planning
+      // failure (real FileOperationTransaction.rollback() behavior is covered
+      // separately in the "regression test" describe block below).
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockRejectedValue(new Error('glob explosion'))
+
+      await expect(orchestrator.setupNewWorktree('/repo/feature')).rejects.toThrow(SetupError)
+
+      expect(mockTransaction.createCheckpoint).toHaveBeenCalledWith('worktree', {
+        path: '/repo/feature',
+      })
+    })
   })
 
   // ==========================================================================
@@ -396,6 +412,15 @@ describe('WorktreeSetupOrchestrator', () => {
       mockConfig.rsync.enabled = false
 
       const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockRsyncHelper.rsync).not.toHaveBeenCalled()
+      expect(result.rsyncResult).toBeUndefined()
+    })
+
+    it('should skip rsync when rsyncOverride.enabled=false, even if base config enables it', async () => {
+      const options: SetupOptions = { rsyncOverride: { enabled: false } }
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature', options)
 
       expect(mockRsyncHelper.rsync).not.toHaveBeenCalled()
       expect(result.rsyncResult).toBeUndefined()

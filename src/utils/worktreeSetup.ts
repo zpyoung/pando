@@ -173,6 +173,19 @@ export class WorktreeSetupOrchestrator {
         throw new Error(`Worktree path does not exist: ${worktreePath}`)
       }
 
+      // ============================================================
+      // Phase 2: Create Checkpoint
+      // ============================================================
+      this.reportProgress(options.onProgress, SetupPhase.CHECKPOINT, 'Creating checkpoint')
+
+      // Create transaction checkpoint
+      // Snapshot worktree state for potential rollback. This MUST happen
+      // before any operation that can throw (including symlink planning
+      // below) - otherwise a failure there leaves rollback() with no
+      // 'worktree' checkpoint, and the already-created git worktree is never
+      // cleaned up.
+      this.transaction.createCheckpoint('worktree', { path: worktreePath })
+
       // Plan symlinks once: matched items minus (in strict mode) git-tracked
       // paths. The symlink phases and rsync exclusions all consume this plan so
       // every phase agrees on what will be symlinked. Tracked items that ARE
@@ -205,15 +218,6 @@ export class WorktreeSetupOrchestrator {
       }
 
       // ============================================================
-      // Phase 2: Create Checkpoint
-      // ============================================================
-      this.reportProgress(options.onProgress, SetupPhase.CHECKPOINT, 'Creating checkpoint')
-
-      // Create transaction checkpoint
-      // Snapshot worktree state for potential rollback
-      this.transaction.createCheckpoint('worktree', { path: worktreePath })
-
-      // ============================================================
       // Phase 3: Symlinks (Before Rsync)
       // ============================================================
       if (!options.skipSymlink && symlinkConfig.beforeRsync) {
@@ -239,7 +243,7 @@ export class WorktreeSetupOrchestrator {
       // ============================================================
       // Phase 4: Rsync
       // ============================================================
-      if (!options.skipRsync && this.config.rsync.enabled) {
+      if (!options.skipRsync && rsyncConfig.enabled) {
         this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Syncing files with rsync...')
 
         // Which files may cross worktrees depends on the mode:
