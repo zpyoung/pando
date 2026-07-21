@@ -3,6 +3,7 @@ import { symlink as fsSymlink, readlink as fsReadlink, lstat as fsLstat } from '
 import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import { globby } from 'globby'
+import micromatch from 'micromatch'
 import * as path from 'path'
 import * as os from 'os'
 import type { RsyncConfig, SymlinkConfig } from '../config/schema.js'
@@ -557,6 +558,45 @@ export class RsyncHelper {
   }
 
   /**
+   * Filter a list of relative paths against rsync-style exclude patterns.
+   *
+   * Interprets the common rsync pattern forms: a trailing `/` means "directory
+   * and everything under it", a leading `/` anchors to the transfer root, and
+   * an unanchored pattern matches at any depth. Full rsync filter grammar
+   * (`+`/`-` rules, negations) is out of scope - those still reach rsync
+   * itself via --exclude.
+   *
+   * @param files - Relative paths to filter
+   * @param patterns - rsync-style exclude patterns
+   * @returns Paths not matched by any pattern
+   */
+  static filterExcludedPaths(files: string[], patterns: string[]): string[] {
+    const globs: string[] = []
+    for (const rawPattern of patterns) {
+      let pattern = rawPattern.trim()
+      if (!pattern) continue
+      // Trailing slash: rsync dir-only semantics; the glob expansions below
+      // already cover the directory's contents
+      pattern = pattern.replace(/\/+$/, '')
+
+      if (pattern.startsWith('/')) {
+        // Anchored to the transfer root
+        const base = pattern.slice(1)
+        globs.push(base, `${base}/**`)
+      } else {
+        // Unanchored: matches at any depth
+        globs.push(pattern, `${pattern}/**`, `**/${pattern}`, `**/${pattern}/**`)
+      }
+    }
+
+    if (globs.length === 0) {
+      return files
+    }
+
+    return files.filter((file) => !micromatch.isMatch(file, globs, { dot: true }))
+  }
+
+  /**
    * Execute rsync from source to destination
    *
    * @param source - Source directory
@@ -566,6 +606,9 @@ export class RsyncHelper {
    * @param options.excludePatterns - Additional patterns to exclude
    * @param options.totalFiles - Pre-estimated file count for progress percentage
    * @param options.onProgress - Callback for real-time progress updates
+   * @param options.filesFrom - Restrict the transfer to exactly these relative
+   *   paths (via rsync --files-from). An empty array is a successful no-op.
+   *   Exclude patterns still apply on top of the list.
    */
   async rsync(
     source: string,
@@ -575,8 +618,24 @@ export class RsyncHelper {
       excludePatterns?: string[]
       totalFiles?: number
       onProgress?: RsyncProgressCallback
+      filesFrom?: string[]
     } = {}
   ): Promise<RsyncResult> {
+    // rsync implementations disagree on whether filter rules apply to
+    // --files-from entries (openrsync does not apply directory excludes to
+    // explicitly listed files), so the exclusion is enforced here on the list
+    // itself. The --exclude args are still passed as a second layer.
+    let filesFrom = options.filesFrom
+    if (filesFrom && filesFrom.length > 0) {
+      const allExcludes = [...(config.exclude || []), ...(options.excludePatterns || []), '.git']
+      filesFrom = RsyncHelper.filterExcludedPaths(filesFrom, allExcludes)
+    }
+
+    // Nothing to transfer: skip the spawn entirely and record no operation
+    if (filesFrom && filesFrom.length === 0) {
+      return { success: true, filesTransferred: 0, bytesSent: 0, totalSize: 0, duration: 0 }
+    }
+
     // Check if rsync is installed and get version info
     const versionInfo = await this.getVersionInfo()
     if (!versionInfo.installed) {
@@ -593,6 +652,18 @@ export class RsyncHelper {
       internalFlags.push('--progress')
     }
 
+    // File names can contain any character except NUL, so the list is written
+    // NUL-separated (--from0) to a temp file rather than passed as argv.
+    let filesFromPath: string | undefined
+    if (filesFrom) {
+      filesFromPath = path.join(
+        os.tmpdir(),
+        `pando-files-from-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      )
+      await fs.writeFile(filesFromPath, filesFrom.join('\0') + '\0')
+      internalFlags.push(`--files-from=${filesFromPath}`, '--from0')
+    }
+
     // Build args array for spawn
     // Pass internal flags separately so they aren't filtered by sanitizeFlags
     const args = this.buildArgs(
@@ -605,6 +676,12 @@ export class RsyncHelper {
 
     // Record start time
     const startTime = Date.now()
+
+    const cleanupFilesFrom = async (): Promise<void> => {
+      if (filesFromPath) {
+        await fs.remove(filesFromPath).catch(() => {})
+      }
+    }
 
     return new Promise((resolve, reject) => {
       const rsyncProcess = spawn('rsync', args)
@@ -662,6 +739,8 @@ export class RsyncHelper {
       })
 
       rsyncProcess.on('close', (code) => {
+        void cleanupFilesFrom()
+
         // Send final progress update (in case last update was throttled)
         if (options.onProgress && filesTransferred > 0) {
           const totalFiles = options.totalFiles || 0
@@ -691,6 +770,7 @@ export class RsyncHelper {
       })
 
       rsyncProcess.on('error', (error) => {
+        void cleanupFilesFrom()
         reject(new FileOperationError(`rsync failed: ${error.message}`, error))
       })
     })
@@ -1099,6 +1179,10 @@ export class SymlinkHelper {
 
   /**
    * Create multiple symlinks from patterns
+   *
+   * @param options.items - Precomputed relative paths to symlink, bypassing
+   *   pattern matching. Lets callers filter matches (e.g. drop git-tracked
+   *   paths) without literal file names being re-interpreted as globs.
    */
   async createSymlinks(
     sourceDir: string,
@@ -1107,6 +1191,7 @@ export class SymlinkHelper {
     options: {
       replaceExisting?: boolean
       skipConflicts?: boolean
+      items?: string[]
     } = {}
   ): Promise<SymlinkResult> {
     const result: SymlinkResult = {
@@ -1118,7 +1203,7 @@ export class SymlinkHelper {
 
     try {
       // Match files against config.patterns
-      const matches = await this.matchPatterns(sourceDir, config.patterns)
+      const matches = options.items ?? (await this.matchPatterns(sourceDir, config.patterns))
 
       // Build list of (source, target) pairs
       const links: Array<{ source: string; target: string }> = matches.map((relativePath) => ({

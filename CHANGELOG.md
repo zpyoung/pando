@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`rsync.onlyUntracked`** config option (env: `PANDO_RSYNC_ONLY_UNTRACKED`,
+  default `true`) — rsync now syncs only files that are gitignored in the
+  source worktree (build artifacts like `.venv/`, `node_modules/`, caches) via
+  `--files-from`. Tracked files always come from the new worktree's own
+  checkout, so rsync can never dirty the tree, and artifact syncing now works
+  for existing branches on different commits (previously skipped entirely).
+  Set to `false` for the legacy full-tree mirror, which still only runs when
+  source and target share the same commit.
+- **`symlink.allowTracked`** config option (env: `PANDO_SYMLINK_ALLOW_TRACKED`,
+  default `true`) — set to `false` for strict mode: symlink patterns matching
+  git-tracked paths are skipped with a warning so only gitignored paths get
+  symlinked.
+- **Clean-tree check** — after setup, `pando add` runs `git status` in the new
+  worktree and warns (with the offending paths) if anything unexpected shows
+  up; `--json` output includes `setup.cleanTree` for automation.
+
 - **`pando health`** — new command that reports the status of every worktree
   (`clean`, `uncommitted`, `behind`, `gone`, `detached`, `error`) with a summary
   and `--json` output.
@@ -44,6 +60,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`pando add` no longer leaves the new worktree dirty.** Marking symlinked
+  files as skip-worktree previously aborted the entire batch when any symlink
+  pattern matched an untracked/gitignored path (e.g. `.env`), leaving every
+  tracked symlink (e.g. `CLAUDE.md`, `.claude/`) visible as deleted or
+  type-changed (`filesMarked: 0, success: false`). `setSkipWorktree` now
+  filters to git-tracked paths, expands symlinked directories to their tracked
+  entries (a directory itself cannot be marked), marks in chunks with a
+  per-file fallback, and reports accurate `filesMarked`/`success` values.
+- rsync can no longer copy the source branch's tracked files over a different
+  branch's checkout (modified tracked files + untracked spillover) — see
+  `rsync.onlyUntracked` above.
 - **`pando health`** behind-upstream detection now counts commits in the correct
   direction, surfaces remote-check failures as `error` instead of silently
   reporting `clean`, and reports detached-HEAD worktrees as `detached`.

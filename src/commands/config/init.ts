@@ -301,6 +301,12 @@ export default class ConfigInit extends Command {
       } else {
         added.push({ path: 'rsync.exclude', value: DEFAULT_CONFIG.rsync.exclude })
       }
+
+      if (existing.rsync.onlyUntracked !== undefined) {
+        merged.rsync.onlyUntracked = existing.rsync.onlyUntracked
+      } else {
+        added.push({ path: 'rsync.onlyUntracked', value: DEFAULT_CONFIG.rsync.onlyUntracked })
+      }
     } else {
       added.push({ path: 'rsync', value: DEFAULT_CONFIG.rsync })
     }
@@ -323,6 +329,12 @@ export default class ConfigInit extends Command {
         merged.symlink.beforeRsync = existing.symlink.beforeRsync
       } else {
         added.push({ path: 'symlink.beforeRsync', value: DEFAULT_CONFIG.symlink.beforeRsync })
+      }
+
+      if (existing.symlink.allowTracked !== undefined) {
+        merged.symlink.allowTracked = existing.symlink.allowTracked
+      } else {
+        added.push({ path: 'symlink.allowTracked', value: DEFAULT_CONFIG.symlink.allowTracked })
       }
     } else {
       added.push({ path: 'symlink', value: DEFAULT_CONFIG.symlink })
@@ -410,6 +422,9 @@ export default class ConfigInit extends Command {
     const sections = [
       '# Rsync Configuration',
       '# Controls how files are copied from source tree to new worktrees',
+      '# onlyUntracked - Sync only gitignored artifacts (.venv, node_modules, caches)',
+      '#   true (default): safe for any branch; tracked files are never copied',
+      '#   false: mirror the full source tree (only when both are on the same commit)',
       '',
     ].join('\n')
 
@@ -418,6 +433,8 @@ export default class ConfigInit extends Command {
       '# Symlink Configuration',
       '# Controls which files are symlinked instead of copied',
       '# Patterns support glob syntax (e.g., "*.json", ".env*")',
+      '# allowTracked - Allow symlinking git-tracked paths (hidden via skip-worktree)',
+      '#   true (default); false = strict mode: tracked patterns are skipped with a warning',
       '',
     ].join('\n')
 

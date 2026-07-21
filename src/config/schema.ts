@@ -21,6 +21,7 @@ export const RsyncConfigSchema = z.object({
   // so it must NOT be duplicated in the default flags.
   flags: z.array(z.string()).default(['--archive']),
   exclude: z.array(z.string()).default([]),
+  onlyUntracked: z.boolean().default(true),
 })
 
 /**
@@ -30,6 +31,7 @@ export const RsyncConfigSchemaPartial = z.object({
   enabled: z.boolean().optional(),
   flags: z.array(z.string()).optional(),
   exclude: z.array(z.string()).optional(),
+  onlyUntracked: z.boolean().optional(),
 })
 
 /**
@@ -39,6 +41,7 @@ export const SymlinkConfigSchema = z.object({
   patterns: z.array(z.string()).default([]),
   relative: z.boolean().default(true),
   beforeRsync: z.boolean().default(true),
+  allowTracked: z.boolean().default(true),
 })
 
 /**
@@ -48,6 +51,7 @@ export const SymlinkConfigSchemaPartial = z.object({
   patterns: z.array(z.string()).optional(),
   relative: z.boolean().optional(),
   beforeRsync: z.boolean().optional(),
+  allowTracked: z.boolean().optional(),
 })
 
 /**
@@ -162,6 +166,16 @@ export interface RsyncConfig {
    * @example ['*.log', 'tmp/', 'node_modules/']
    */
   exclude: string[]
+
+  /**
+   * Only sync files that are untracked in the source worktree (build artifacts,
+   * virtualenvs, caches). Tracked files come from git checkout, so copying them
+   * would dirty the new worktree whenever branches differ. When false, the full
+   * source tree is mirrored - but only when source and target are on the same
+   * commit (a safety guard against cross-branch clobbering).
+   * @default true
+   */
+  onlyUntracked?: boolean
 }
 
 /**
@@ -188,6 +202,18 @@ export interface SymlinkConfig {
    * @default true
    */
   beforeRsync: boolean
+
+  /**
+   * Allow symlinking paths that are git-tracked in the new worktree
+   * (lockfiles, package.json). Tracked-path symlinks would show as
+   * deleted/type-changed in git status, so pando hides them via
+   * skip-worktree - local, per-clone state that git can silently drop; the
+   * post-setup clean-tree check catches any drift. Set to false to skip
+   * tracked patterns with a warning instead (strict mode: symlink only
+   * gitignored paths).
+   * @default true
+   */
+  allowTracked?: boolean
 }
 
 /**
@@ -392,11 +418,13 @@ export const DEFAULT_CONFIG: PandoConfig = {
     // `.git` is excluded programmatically in fileOps.buildArgs (non-configurable).
     flags: ['--archive'],
     exclude: [],
+    onlyUntracked: true,
   },
   symlink: {
     patterns: [],
     relative: true,
     beforeRsync: true,
+    allowTracked: true,
   },
   worktree: {
     rebaseOnAdd: true,

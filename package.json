@@ -89,6 +89,7 @@
     "chalk": "^5.6.2",
     "fs-extra": "^11.3.2",
     "globby": "^14.1.0",
+    "micromatch": "^4.0.8",
     "ora": "^8.2.0",
     "simple-git": "^3.30.0",
     "zod": "^4.4.3"
@@ -101,6 +102,7 @@
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
+    "@types/micromatch": "^4.0.10",
     "@types/node": "^25.9.2",
     "@typescript-eslint/eslint-plugin": "^8.50.0",
     "@typescript-eslint/parser": "^8.50.0",

@@ -29,11 +29,13 @@ const ENV_VAR_MAP: Record<string, string> = {
   PANDO_RSYNC_ENABLED: 'rsync.enabled',
   PANDO_RSYNC_FLAGS: 'rsync.flags',
   PANDO_RSYNC_EXCLUDE: 'rsync.exclude',
+  PANDO_RSYNC_ONLY_UNTRACKED: 'rsync.onlyUntracked',
 
   // Symlink settings
   PANDO_SYMLINK_PATTERNS: 'symlink.patterns',
   PANDO_SYMLINK_RELATIVE: 'symlink.relative',
   PANDO_SYMLINK_BEFORE_RSYNC: 'symlink.beforeRsync',
+  PANDO_SYMLINK_ALLOW_TRACKED: 'symlink.allowTracked',
 
   // Worktree settings
   PANDO_WORKTREE_DEFAULT_PATH: 'worktree.defaultPath',
@@ -117,13 +119,14 @@ export function parseEnvValue(key: string, value: string): unknown {
     return parseArray(value)
   }
 
-  // Boolean fields
+  // Boolean fields ('TRACKED' covers ONLY_UNTRACKED and ALLOW_TRACKED)
   if (
     key.includes('ENABLED') ||
     key.includes('RELATIVE') ||
     key.includes('BEFORE') ||
     key.includes('REBASE') ||
     key.includes('USE_') ||
+    key.includes('TRACKED') ||
     key.endsWith('_FETCH')
   ) {
     return parseBoolean(value)
