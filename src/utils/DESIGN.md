@@ -51,6 +51,47 @@ const result = await transaction.rollback()
 
 **Trade-off**: Requires rsync to be installed
 
+### Untracked-Only Sync (Clean-Tree Invariant)
+**Chosen**: By default, rsync transfers only files that are gitignored in the
+source worktree (`git ls-files --others --ignored --exclude-standard`), passed
+via `--files-from`/`--from0`.
+**Rationale**:
+- Tracked files come from the target's own `git checkout`; copying them from
+  the source clobbers the target whenever the branches differ (the "dirty
+  worktree" bug)
+- Gitignored artifacts (.venv, node_modules, caches) are exactly the
+  expensive-to-rebuild files worth carrying over, and they never appear in
+  `git status`
+- Non-ignored untracked files (WIP) are deliberately left behind so the new
+  worktree starts clean
+- Safe across commits, so existing-branch worktrees still get artifact sync
+
+The exclude patterns are ALSO applied to the file list in JS
+(`RsyncHelper.filterExcludedPaths`, micromatch-based) because rsync
+implementations disagree on whether filter rules apply to `--files-from`
+entries (openrsync does not apply directory excludes to listed files).
+
+`rsync.onlyUntracked = false` restores the legacy full-tree mirror, which only
+runs when source and target are on the same commit.
+
+After setup, the orchestrator verifies the invariant: `git status` in the new
+worktree must be empty aside from the symlinks pando itself created
+(`SetupResult.cleanTree`, surfaced as `setup.cleanTree` in `pando add --json`).
+
+### Skip-Worktree for Tracked Symlinks
+**Chosen**: `GitHelper.setSkipWorktree` intersects requested paths with
+`git ls-files` before marking, expanding directories to their tracked entries.
+**Rationale**:
+- `git update-index --skip-worktree` dies on any path not in the index, so a
+  single untracked path (a gitignored `.env` symlink) used to abort the whole
+  batch and leave every tracked symlink visible as deleted/modified
+- Untracked/ignored symlinks never show in status and need no marking
+- Directories cannot be marked; their tracked contents can
+- Failed batches retry per file so one bad path cannot hide the rest
+
+`symlink.allowTracked = false` (strict mode) skips tracked patterns entirely
+with a warning instead of symlinking + hiding them.
+
 ### Separate Concerns
 **Chosen**: Separate helpers for rsync, symlink, and orchestration
 **Rationale**:
