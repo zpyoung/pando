@@ -77,6 +77,12 @@ describe('WorktreeSetupOrchestrator', () => {
       getWorktreeCommit: vi.fn().mockResolvedValue('abc123def456'),
       removeWorktree: vi.fn().mockResolvedValue(undefined),
       setSkipWorktree: vi.fn().mockResolvedValue({ success: true, filesMarked: 0 }),
+      // No symlink pattern is git-tracked by default
+      filterTrackedPaths: vi.fn().mockResolvedValue([]),
+      listIgnoredFiles: vi
+        .fn()
+        .mockResolvedValue(['.venv/lib/pkg.py', 'node_modules/dep/index.js']),
+      getDirtyPaths: vi.fn().mockResolvedValue([]),
     } as any
 
     // Create mock config
@@ -220,6 +226,7 @@ describe('WorktreeSetupOrchestrator', () => {
         {
           replaceExisting: true,
           skipConflicts: true,
+          items: ['package.json', 'pnpm-lock.yaml'],
         }
       )
       expect(result.symlinkResult).toBeDefined()
@@ -307,7 +314,53 @@ describe('WorktreeSetupOrchestrator', () => {
       expect(result.rsyncResult).toBeUndefined()
     })
 
-    it('should skip rsync when source and target commits differ', async () => {
+    it('should sync only ignored files by default (onlyUntracked)', async () => {
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockGitHelper.listIgnoredFiles).toHaveBeenCalledWith('/repo/main')
+      expect(mockRsyncHelper.rsync).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.rsync,
+        expect.objectContaining({
+          filesFrom: ['.venv/lib/pkg.py', 'node_modules/dep/index.js'],
+        })
+      )
+      expect(result.rsyncResult).toBeDefined()
+    })
+
+    it('should rsync in onlyUntracked mode even when commits differ', async () => {
+      // Existing-branch worktrees are on a different commit than the source.
+      // Only ignored artifacts are synced, so crossing commits is safe - this
+      // is the case where the old commit guard silently disabled artifact sync.
+      vi.mocked(mockGitHelper.getWorktreeCommit)
+        .mockResolvedValueOnce('source1234567890')
+        .mockResolvedValueOnce('target1234567890')
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockRsyncHelper.rsync).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.rsync,
+        expect.objectContaining({
+          filesFrom: ['.venv/lib/pkg.py', 'node_modules/dep/index.js'],
+        })
+      )
+      expect(result.rsyncResult).toBeDefined()
+    })
+
+    it('should skip rsync in onlyUntracked mode when there are no ignored files', async () => {
+      vi.mocked(mockGitHelper.listIgnoredFiles).mockResolvedValue([])
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockRsyncHelper.rsync).not.toHaveBeenCalled()
+      expect(result.rsyncResult).toBeUndefined()
+    })
+
+    it('should skip rsync when source and target commits differ (full mirror mode)', async () => {
+      mockConfig.rsync.onlyUntracked = false
       vi.mocked(mockGitHelper.getWorktreeCommit)
         .mockResolvedValueOnce('source1234567890')
         .mockResolvedValueOnce('target1234567890')
@@ -320,6 +373,23 @@ describe('WorktreeSetupOrchestrator', () => {
       expect(result.warnings).toContain(
         'Skipped rsync because source worktree (source1) differs from target worktree (target1). This prevents tracked files from being copied across different commits.'
       )
+    })
+
+    it('should mirror the full tree in full mirror mode when commits match', async () => {
+      mockConfig.rsync.onlyUntracked = false
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockGitHelper.listIgnoredFiles).not.toHaveBeenCalled()
+      expect(mockRsyncHelper.rsync).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.rsync,
+        expect.objectContaining({
+          filesFrom: undefined,
+        })
+      )
+      expect(result.rsyncResult).toBeDefined()
     })
 
     it('should skip rsync when config.rsync.enabled=false', async () => {
@@ -416,6 +486,7 @@ describe('WorktreeSetupOrchestrator', () => {
         {
           replaceExisting: true,
           skipConflicts: true,
+          items: ['package.json', 'pnpm-lock.yaml'],
         }
       )
       expect(result.symlinkResult).toBeDefined()
@@ -445,6 +516,116 @@ describe('WorktreeSetupOrchestrator', () => {
       const result = await orchestrator.setupNewWorktree('/repo/feature')
 
       expect(result.warnings).toContain('Could not create 1 symlink(s) due to conflicts')
+    })
+  })
+
+  // ==========================================================================
+  // Tracked-path symlink guard
+  // ==========================================================================
+
+  describe('tracked-path symlink guard', () => {
+    it('symlinks tracked patterns without warnings by default (allowTracked)', async () => {
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue(['.claude', '.env'])
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockSymlinkHelper.createSymlinks).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.symlink,
+        expect.objectContaining({ items: ['.claude', '.env'] })
+      )
+      // Skip-worktree marking + clean-tree check cover tracked symlinks, so
+      // the default mode should not warn
+      expect(result.warnings.some((w) => w.includes('git-tracked'))).toBe(false)
+      // No tracked-path lookup needed when everything is allowed
+      expect(mockGitHelper.filterTrackedPaths).not.toHaveBeenCalled()
+    })
+
+    it('skips tracked patterns with a warning when allowTracked is false', async () => {
+      mockConfig.symlink.allowTracked = false
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue(['.claude', 'CLAUDE.md', '.env'])
+      vi.mocked(mockGitHelper.filterTrackedPaths).mockResolvedValue(['.claude', 'CLAUDE.md'])
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockSymlinkHelper.createSymlinks).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.symlink,
+        expect.objectContaining({ items: ['.env'] })
+      )
+      expect(
+        result.warnings.some((w) => w.includes('Skipped symlinking git-tracked path(s)'))
+      ).toBe(true)
+      expect(result.warnings.some((w) => w.includes('.claude, CLAUDE.md'))).toBe(true)
+    })
+
+    it('does not remove checked-out files for tracked patterns that were skipped', async () => {
+      mockConfig.symlink.allowTracked = false
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue(['CLAUDE.md', '.env'])
+      vi.mocked(mockGitHelper.filterTrackedPaths).mockResolvedValue(['CLAUDE.md'])
+
+      await orchestrator.setupNewWorktree('/repo/feature')
+
+      const removedPaths = vi.mocked(mockRemove).mock.calls.map((call) => call[0])
+      expect(removedPaths).not.toContain('/repo/feature/CLAUDE.md')
+      expect(removedPaths).toContain('/repo/feature/.env')
+    })
+  })
+
+  // ==========================================================================
+  // Clean-tree invariant
+  // ==========================================================================
+
+  describe('clean-tree invariant', () => {
+    it('reports cleanTree=true when git status is empty after setup', async () => {
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(mockGitHelper.getDirtyPaths).toHaveBeenCalledWith('/repo/feature')
+      expect(result.cleanTree).toBe(true)
+    })
+
+    it('reports cleanTree=false with a warning listing dirty paths', async () => {
+      vi.mocked(mockGitHelper.getDirtyPaths).mockResolvedValue([
+        'CLAUDE.md',
+        '.claude/settings.json',
+      ])
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(result.cleanTree).toBe(false)
+      expect(
+        result.warnings.some(
+          (w) =>
+            w.includes('Worktree is not clean after setup') &&
+            w.includes('CLAUDE.md') &&
+            w.includes('.claude/settings.json')
+        )
+      ).toBe(true)
+    })
+
+    it('leaves cleanTree undefined when the status check fails', async () => {
+      vi.mocked(mockGitHelper.getDirtyPaths).mockRejectedValue(new Error('git status failed'))
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(result.success).toBe(true)
+      expect(result.cleanTree).toBeUndefined()
+    })
+
+    it('tolerates the symlinks pando itself created', async () => {
+      // A symlink over a tracked directory shows as untracked (`?? .claude`)
+      // even when its files are skip-worktree'd - that is intentional state,
+      // not pollution
+      mockConfig.symlink.allowTracked = true
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue(['.claude', '.env'])
+      vi.mocked(mockGitHelper.filterTrackedPaths).mockResolvedValue(['.claude'])
+      vi.mocked(mockGitHelper.getDirtyPaths).mockResolvedValue(['.claude', '.env'])
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature')
+
+      expect(result.cleanTree).toBe(true)
     })
   })
 

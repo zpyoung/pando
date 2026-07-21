@@ -655,6 +655,130 @@ describe('RsyncHelper', () => {
     })
   })
 
+  describe('rsync with filesFrom', () => {
+    let syncDir: string
+
+    beforeEach(async () => {
+      syncDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pando-filesfrom-test-'))
+    })
+
+    afterEach(async () => {
+      await fs.remove(syncDir)
+    })
+
+    const config = { enabled: true, flags: ['--archive'], exclude: [] }
+
+    it('copies only the listed files, not the rest of the source tree', async () => {
+      if (!(await rsyncHelper.isInstalled())) return
+
+      const src = path.join(syncDir, 'src')
+      const dst = path.join(syncDir, 'dst')
+      await fs.ensureDir(path.join(src, 'artifacts'))
+      await fs.ensureDir(dst)
+      await fs.writeFile(path.join(src, 'tracked.txt'), 'tracked content')
+      await fs.writeFile(path.join(src, 'artifacts', 'cache.bin'), 'artifact content')
+
+      const result = await rsyncHelper.rsync(src, dst, config, {
+        filesFrom: ['artifacts/cache.bin'],
+      })
+
+      expect(result.success).toBe(true)
+      expect(await fs.pathExists(path.join(dst, 'artifacts', 'cache.bin'))).toBe(true)
+      expect(await fs.pathExists(path.join(dst, 'tracked.txt'))).toBe(false)
+    })
+
+    it('transfers nothing and skips spawning when the list is empty', async () => {
+      const src = path.join(syncDir, 'src')
+      const dst = path.join(syncDir, 'dst')
+      await fs.ensureDir(src)
+      await fs.ensureDir(dst)
+      await fs.writeFile(path.join(src, 'tracked.txt'), 'tracked content')
+
+      const result = await rsyncHelper.rsync(src, dst, config, { filesFrom: [] })
+
+      expect(result.success).toBe(true)
+      expect(result.filesTransferred).toBe(0)
+      expect(await fs.pathExists(path.join(dst, 'tracked.txt'))).toBe(false)
+      // Nothing happened, so nothing should be recorded for rollback
+      expect(transaction.getOperations()).toHaveLength(0)
+    })
+
+    it('still applies exclude patterns on top of the file list', async () => {
+      if (!(await rsyncHelper.isInstalled())) return
+
+      const src = path.join(syncDir, 'src')
+      const dst = path.join(syncDir, 'dst')
+      await fs.ensureDir(path.join(src, 'htmlcov'))
+      await fs.ensureDir(path.join(src, 'artifacts'))
+      await fs.ensureDir(dst)
+      await fs.writeFile(path.join(src, 'htmlcov', 'index.html'), 'coverage')
+      await fs.writeFile(path.join(src, 'artifacts', 'cache.bin'), 'artifact')
+
+      const result = await rsyncHelper.rsync(
+        src,
+        dst,
+        { ...config, exclude: ['htmlcov/'] },
+        { filesFrom: ['htmlcov/index.html', 'artifacts/cache.bin'] }
+      )
+
+      expect(result.success).toBe(true)
+      expect(await fs.pathExists(path.join(dst, 'artifacts', 'cache.bin'))).toBe(true)
+      expect(await fs.pathExists(path.join(dst, 'htmlcov', 'index.html'))).toBe(false)
+    })
+
+    it('handles file names with spaces and special characters', async () => {
+      if (!(await rsyncHelper.isInstalled())) return
+
+      const src = path.join(syncDir, 'src')
+      const dst = path.join(syncDir, 'dst')
+      await fs.ensureDir(src)
+      await fs.ensureDir(dst)
+      const trickyName = 'my file (v2).txt'
+      await fs.writeFile(path.join(src, trickyName), 'tricky')
+
+      const result = await rsyncHelper.rsync(src, dst, config, { filesFrom: [trickyName] })
+
+      expect(result.success).toBe(true)
+      expect(await fs.pathExists(path.join(dst, trickyName))).toBe(true)
+    })
+  })
+
+  describe('filterExcludedPaths', () => {
+    it('excludes directory patterns (trailing slash) at any depth', () => {
+      const result = RsyncHelper.filterExcludedPaths(
+        ['htmlcov/index.html', 'sub/htmlcov/x.html', 'src/app.py'],
+        ['htmlcov/']
+      )
+      expect(result).toEqual(['src/app.py'])
+    })
+
+    it('excludes glob patterns against basenames at any depth', () => {
+      const result = RsyncHelper.filterExcludedPaths(
+        ['debug.log', 'logs/app.log', 'src/app.py'],
+        ['*.log']
+      )
+      expect(result).toEqual(['src/app.py'])
+    })
+
+    it('anchors leading-slash patterns to the transfer root', () => {
+      const result = RsyncHelper.filterExcludedPaths(
+        ['dist/bundle.js', 'packages/lib/dist/bundle.js'],
+        ['/dist/']
+      )
+      expect(result).toEqual(['packages/lib/dist/bundle.js'])
+    })
+
+    it('matches dotfiles', () => {
+      const result = RsyncHelper.filterExcludedPaths(['.git/config', '.env'], ['.git'])
+      expect(result).toEqual(['.env'])
+    })
+
+    it('returns all files when there are no patterns', () => {
+      const result = RsyncHelper.filterExcludedPaths(['a.txt'], [])
+      expect(result).toEqual(['a.txt'])
+    })
+  })
+
   describe('buildArgs', () => {
     it('should build correct args array with flags', () => {
       const args = rsyncHelper.buildArgs('/source', '/dest', {
@@ -1215,6 +1339,29 @@ describe('SymlinkHelper', () => {
     it('should create SymlinkHelper', () => {
       const helper = createSymlinkHelper(transaction)
       expect(helper).toBeInstanceOf(SymlinkHelper)
+    })
+  })
+
+  describe('createSymlinks with precomputed items', () => {
+    it('symlinks exactly the given items instead of re-matching patterns', async () => {
+      const sourceDir = path.join(testDir, 'source')
+      const targetDir = path.join(testDir, 'target')
+      await fs.ensureDir(sourceDir)
+      await fs.ensureDir(targetDir)
+      await fs.writeFile(path.join(sourceDir, '.env'), 'secret')
+      await fs.writeFile(path.join(sourceDir, 'CLAUDE.md'), 'tracked')
+
+      const result = await symlinkHelper.createSymlinks(
+        sourceDir,
+        targetDir,
+        { patterns: ['.env', 'CLAUDE.md'], relative: true, beforeRsync: true },
+        { items: ['.env'] }
+      )
+
+      expect(result.created).toBe(1)
+      const envStat = await fs.lstat(path.join(targetDir, '.env'))
+      expect(envStat.isSymbolicLink()).toBe(true)
+      expect(await fs.pathExists(path.join(targetDir, 'CLAUDE.md'))).toBe(false)
     })
   })
 

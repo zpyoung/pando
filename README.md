@@ -98,7 +98,11 @@ Create a new git worktree (supports both creating new branches and checking out 
 
 **Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
 
-**Rsync Behavior**: Rsync runs only when it is safe for the new worktree's checkout. If the source worktree is on a different commit than the newly created worktree (for example, `--commit main` while the source checkout is on a feature branch), pando skips rsync and reports a warning so tracked files from the source branch do not dirty the new checkout. Use `--skip-rsync` to disable rsync explicitly.
+**Rsync Behavior**: By default (`rsync.onlyUntracked = true`), rsync carries over only files that git ignores in the source worktree — build artifacts like `.venv/`, `node_modules/`, and caches. Tracked files always come from the new worktree's own checkout, so rsync can never dirty the tree, and artifact syncing works even when the new worktree is on a different branch or commit. Non-ignored untracked files (work in progress) are deliberately not copied. With `rsync.onlyUntracked = false`, pando mirrors the full source tree instead, but only when the source and new worktree are on the same commit — otherwise rsync is skipped with a warning so tracked files from the source branch do not dirty the new checkout. Use `--skip-rsync` to disable rsync explicitly.
+
+**Clean-tree check**: After setup, pando runs `git status` in the new worktree. If anything unexpected shows up (beyond the symlinks pando itself created), a warning lists the offending paths, and JSON output reports `setup.cleanTree: false` so automation can detect it.
+
+**Symlinking tracked paths**: When a symlink pattern matches a git-tracked path (`package.json`, a lockfile), replacing the checked-out file with a symlink would make `git status` report deletions/modifications — so pando hides those entries via `git update-index --skip-worktree`. Untracked/gitignored patterns need no hiding and are filtered from the skip-worktree step automatically. Skip-worktree is local, per-clone state that git can silently drop; the clean-tree check surfaces any drift. Set `symlink.allowTracked = false` for strict mode: tracked patterns are then skipped with a warning, and only gitignored paths get symlinked.
 
 **Examples:**
 
@@ -508,12 +512,16 @@ Pando uses TOML format for configuration:
 enabled = true
 flags = ["--archive"]         # .git is always excluded automatically (do not add it here)
 exclude = ["dist/", "node_modules/"]
+onlyUntracked = true          # Sync only gitignored artifacts (default). false = mirror the
+                              # full tree, but only when source/target share the same commit.
 
 # Symlink Configuration
 [symlink]
 patterns = ["package.json", ".env*"]
 relative = true
 beforeRsync = true
+allowTracked = true           # Symlink git-tracked paths, hidden via skip-worktree (default).
+                              # false = strict mode: skip tracked patterns with a warning.
 
 # Worktree Configuration
 [worktree]
@@ -674,9 +682,11 @@ Environment variables override file-based configuration but are overridden by ex
 | `PANDO_RSYNC_ENABLED`                    | `rsync.enabled`                | boolean |
 | `PANDO_RSYNC_FLAGS`                      | `rsync.flags`                  | array   |
 | `PANDO_RSYNC_EXCLUDE`                    | `rsync.exclude`                | array   |
+| `PANDO_RSYNC_ONLY_UNTRACKED`             | `rsync.onlyUntracked`          | boolean |
 | `PANDO_SYMLINK_PATTERNS`                 | `symlink.patterns`             | array   |
 | `PANDO_SYMLINK_RELATIVE`                 | `symlink.relative`             | boolean |
 | `PANDO_SYMLINK_BEFORE_RSYNC`             | `symlink.beforeRsync`          | boolean |
+| `PANDO_SYMLINK_ALLOW_TRACKED`            | `symlink.allowTracked`         | boolean |
 | `PANDO_WORKTREE_DEFAULT_PATH`            | `worktree.defaultPath`         | string  |
 | `PANDO_WORKTREE_REBASE_ON_ADD`           | `worktree.rebaseOnAdd`         | boolean |
 | `PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE` | `worktree.deleteBranchOnRemove`| string  |

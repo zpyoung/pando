@@ -698,8 +698,15 @@ export class GitHelper {
    * When files are replaced with symlinks, git sees a mode change (100644 -> 120000)
    * and reports them as modified. This method tells git to ignore these changes.
    *
+   * Only paths present in the index can be marked: `git update-index --skip-worktree`
+   * dies on any untracked path (e.g. a gitignored `.env` symlink), which would
+   * otherwise abort the whole batch. Untracked/ignored paths never show in
+   * `git status`, so they are silently filtered out rather than treated as errors.
+   * Directory paths (a symlinked `.claude/`) are expanded to the tracked files
+   * beneath them, since update-index cannot mark a directory.
+   *
    * @param worktreePath - Path to the worktree where files reside
-   * @param files - Array of relative file paths to mark as skip-worktree
+   * @param files - Array of relative file/directory paths to mark as skip-worktree
    * @returns Object with success status, optional error message, and count of files marked
    */
   async setSkipWorktree(
@@ -710,14 +717,118 @@ export class GitHelper {
       return { success: true, filesMarked: 0 }
     }
 
+    const gitInWorktree = simpleGit(worktreePath)
+
+    // `:(literal)` prevents glob interpretation of file names containing *?[]
+    let trackedFiles: string[]
     try {
-      const gitInWorktree = simpleGit(worktreePath)
-      await gitInWorktree.raw(['update-index', '--skip-worktree', ...files])
-      return { success: true, filesMarked: files.length }
+      const pathspecs = files.map((file) => `:(literal)${file}`)
+      const output = await gitInWorktree.raw(['ls-files', '-z', '--', ...pathspecs])
+      trackedFiles = output.split('\0').filter((file) => file.length > 0)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       return { success: false, error: errorMsg, filesMarked: 0 }
     }
+
+    if (trackedFiles.length === 0) {
+      return { success: true, filesMarked: 0 }
+    }
+
+    let filesMarked = 0
+    const failedFiles: string[] = []
+    // Chunk to stay clear of OS argv limits when a large directory was symlinked
+    const chunkSize = 500
+    for (let i = 0; i < trackedFiles.length; i += chunkSize) {
+      const chunk = trackedFiles.slice(i, i + chunkSize)
+      try {
+        await gitInWorktree.raw(['update-index', '--skip-worktree', ...chunk])
+        filesMarked += chunk.length
+      } catch {
+        // Batch failed - retry per file so one bad path cannot abort the rest
+        for (const file of chunk) {
+          try {
+            await gitInWorktree.raw(['update-index', '--skip-worktree', file])
+            filesMarked++
+          } catch {
+            failedFiles.push(file)
+          }
+        }
+      }
+    }
+
+    if (failedFiles.length > 0) {
+      const shown = failedFiles.slice(0, 5).join(', ')
+      const more = failedFiles.length > 5 ? ` (+${failedFiles.length - 5} more)` : ''
+      return {
+        success: false,
+        error: `Failed to mark ${failedFiles.length} file(s) as skip-worktree: ${shown}${more}`,
+        filesMarked,
+      }
+    }
+
+    return { success: true, filesMarked }
+  }
+
+  /**
+   * List untracked files in a worktree that are gitignored.
+   *
+   * This is the safe rsync set for new worktrees: gitignored artifacts (.venv,
+   * node_modules, build caches) are expensive to rebuild and never show in
+   * `git status`. Tracked files come from git checkout, and non-ignored
+   * untracked files (WIP) are deliberately excluded so the new worktree's
+   * status stays clean.
+   *
+   * @param worktreePath - Path to the worktree to scan
+   * @returns Relative paths of all gitignored untracked files
+   */
+  async listIgnoredFiles(worktreePath: string): Promise<string[]> {
+    const gitInWorktree = simpleGit(worktreePath)
+    const output = await gitInWorktree.raw([
+      'ls-files',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '-z',
+    ])
+    return output.split('\0').filter((file) => file.length > 0)
+  }
+
+  /**
+   * Return the subset of the given relative paths that are git-tracked in the
+   * worktree. A directory counts as tracked when any tracked file lives under it.
+   *
+   * @param worktreePath - Path to the worktree whose index is consulted
+   * @param paths - Relative file or directory paths to check
+   * @returns The tracked subset, in input order
+   */
+  async filterTrackedPaths(worktreePath: string, paths: string[]): Promise<string[]> {
+    if (paths.length === 0) {
+      return []
+    }
+
+    const gitInWorktree = simpleGit(worktreePath)
+    // `:(literal)` prevents glob interpretation of file names containing *?[]
+    const pathspecs = paths.map((p) => `:(literal)${p}`)
+    const output = await gitInWorktree.raw(['ls-files', '-z', '--', ...pathspecs])
+    const trackedEntries = output.split('\0').filter((file) => file.length > 0)
+
+    return paths.filter((p) =>
+      trackedEntries.some((entry) => entry === p || entry.startsWith(`${p}/`))
+    )
+  }
+
+  /**
+   * List paths that show up in `git status` for a worktree (modified, deleted,
+   * type-changed, or untracked). Files marked skip-worktree are hidden by git
+   * itself, so they never appear here.
+   *
+   * @param worktreePath - Path to the worktree to check
+   * @returns Relative paths of dirty entries; empty for a clean tree
+   */
+  async getDirtyPaths(worktreePath: string): Promise<string[]> {
+    const gitInWorktree = simpleGit(worktreePath)
+    const status = await gitInWorktree.status()
+    return status.files.map((file) => file.path)
   }
 
   /**

@@ -22,7 +22,12 @@ describe('pando add (E2E)', () => {
       files: [
         { path: 'package.json', content: '{"name": "test"}' },
         { path: 'src/index.ts', content: 'export const main = () => {}' },
+        // .gitignore is written before `git add .`, so node_modules and .venv
+        // stay untracked - the artifact set that default rsync
+        // (onlyUntracked) carries into new worktrees
+        { path: '.gitignore', content: 'node_modules/\n.venv/' },
         { path: 'node_modules/.bin/test', content: 'binary' },
+        { path: '.venv/cache.bin', content: 'artifact' },
       ],
       branches: ['existing-branch'],
     })
@@ -96,7 +101,7 @@ describe('pando add (E2E)', () => {
   })
 
   describe('rsync integration', () => {
-    it('should sync files with rsync enabled', async () => {
+    it('should sync ignored artifacts with rsync enabled', async () => {
       const result = await pandoAdd(container, repoPath, [
         '--branch',
         'rsync-test',
@@ -108,6 +113,16 @@ describe('pando add (E2E)', () => {
       // rsync result should be present (not null/undefined)
       expect(result.json?.setup?.rsync).toBeDefined()
       expect(result.json?.setup?.rsync).not.toBeNull()
+      // The clean-tree invariant: setup must not dirty the new checkout
+      expect(result.json?.setup?.cleanTree).toBe(true)
+
+      // Gitignored artifacts arrive in the new worktree
+      const artifactCheck = await container.exec([
+        'sh',
+        '-c',
+        `cat ${repoPath}/../worktrees/rsync-test/.venv/cache.bin`,
+      ])
+      expect(artifactCheck.stdout.trim()).toBe('artifact')
     })
 
     it('should skip rsync when --skip-rsync is set', async () => {
