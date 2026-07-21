@@ -22,7 +22,12 @@ describe('pando add (E2E)', () => {
       files: [
         { path: 'package.json', content: '{"name": "test"}' },
         { path: 'src/index.ts', content: 'export const main = () => {}' },
+        // .gitignore is written before `git add .`, so node_modules and .venv
+        // stay untracked - the artifact set that default rsync
+        // (onlyUntracked) carries into new worktrees
+        { path: '.gitignore', content: 'node_modules/\n.venv/' },
         { path: 'node_modules/.bin/test', content: 'binary' },
+        { path: '.venv/cache.bin', content: 'artifact' },
       ],
       branches: ['existing-branch'],
     })
@@ -96,7 +101,7 @@ describe('pando add (E2E)', () => {
   })
 
   describe('rsync integration', () => {
-    it('should sync files with rsync enabled', async () => {
+    it('should sync ignored artifacts with rsync enabled', async () => {
       const result = await pandoAdd(container, repoPath, [
         '--branch',
         'rsync-test',
@@ -108,6 +113,16 @@ describe('pando add (E2E)', () => {
       // rsync result should be present (not null/undefined)
       expect(result.json?.setup?.rsync).toBeDefined()
       expect(result.json?.setup?.rsync).not.toBeNull()
+      // The clean-tree invariant: setup must not dirty the new checkout
+      expect(result.json?.setup?.cleanTree).toBe(true)
+
+      // Gitignored artifacts arrive in the new worktree
+      const artifactCheck = await container.exec([
+        'sh',
+        '-c',
+        `cat ${repoPath}/../worktrees/rsync-test/.venv/cache.bin`,
+      ])
+      expect(artifactCheck.stdout.trim()).toBe('artifact')
     })
 
     it('should skip rsync when --skip-rsync is set', async () => {
@@ -411,11 +426,13 @@ describe('pando add (E2E)', () => {
     })
 
     it('should show valid MB value greater than 0 for rsync operations', async () => {
-      // Create a file larger than 1MB to ensure measurable rsync output
+      // Create a file larger than 1MB inside the gitignored .venv/ directory:
+      // with the default rsync.onlyUntracked, only gitignored artifacts are
+      // synced, so a plain untracked file at the repo root would not be.
       await container.exec([
         'sh',
         '-c',
-        `dd if=/dev/zero of=${repoPath}/large-file.bin bs=1M count=2 2>/dev/null`,
+        `mkdir -p ${repoPath}/.venv && dd if=/dev/zero of=${repoPath}/.venv/large-file.bin bs=1M count=2 2>/dev/null`,
       ])
 
       // Run pando add with human-readable output
@@ -431,7 +448,7 @@ describe('pando add (E2E)', () => {
 
       // Verify the file was actually synced to the new worktree
       const worktreePath = `${repoPath}/../worktrees/rsync-mb-test`
-      const fileCheck = await container.exec(['ls', '-la', `${worktreePath}/large-file.bin`])
+      const fileCheck = await container.exec(['ls', '-la', `${worktreePath}/.venv/large-file.bin`])
       expect(fileCheck.exitCode, `Large file should have been synced to worktree`).toBe(0)
 
       // Extract MB value from "Files synced: X files (Y MB)" pattern
@@ -625,7 +642,7 @@ describe('pando add (E2E)', () => {
       expect(actualHeadResult.stdout.trim()).toBe(baseCommit)
     })
 
-    it('skips rsync and leaves the target clean when source and target commits differ', async () => {
+    it('leaves the target clean when source and target commits differ (default onlyUntracked)', async () => {
       const commitRepo = await setupGitRepo(container, {
         name: 'commit-clean-rsync-repo',
         files: [{ path: 'tracked.txt', content: 'base' }],
@@ -649,6 +666,63 @@ describe('pando add (E2E)', () => {
         '../worktrees/commit-clean-target',
         '--branch',
         'commit-clean-target',
+        '--commit',
+        baseCommit,
+      ])
+
+      expectJsonSuccess(result)
+      expect(result.json?.setup).toBeDefined()
+      // No gitignored files exist in this repo, so onlyUntracked rsync has
+      // nothing to sync - unrelated to the commit mismatch
+      expect((result.json?.setup as { rsync: unknown }).rsync).toBeNull()
+      expect((result.json?.setup as { cleanTree: boolean }).cleanTree).toBe(true)
+
+      const worktreePath = (result.json?.worktree as { path: string }).path
+      const statusResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && git status --short`,
+      ])
+      expect(statusResult.stdout.trim()).toBe('')
+
+      const contentResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${worktreePath} && cat tracked.txt`,
+      ])
+      expect(contentResult.stdout.trim()).toBe('base')
+    })
+
+    it('skips rsync with a warning on commit mismatch when onlyUntracked=false (legacy mirror mode)', async () => {
+      const commitRepo = await setupGitRepo(container, {
+        name: 'commit-clean-rsync-legacy-repo',
+        files: [{ path: 'tracked.txt', content: 'base' }],
+      })
+
+      await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitRepo} && printf '[rsync]\\nonlyUntracked = false\\n' > .pando.toml && git add .pando.toml && git commit -m "add config"`,
+      ])
+
+      const baseCommitResult = await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitRepo} && git rev-parse HEAD`,
+      ])
+      const baseCommit = baseCommitResult.stdout.trim()
+
+      await container.exec([
+        'sh',
+        '-c',
+        `cd ${commitRepo} && git checkout -b source-dirtying-feature-legacy && echo feature > tracked.txt && git add tracked.txt && git commit -m feature`,
+      ])
+
+      const result = await pandoAdd(container, commitRepo, [
+        '--path',
+        '../worktrees/commit-clean-target-legacy',
+        '--branch',
+        'commit-clean-target-legacy',
         '--commit',
         baseCommit,
       ])
