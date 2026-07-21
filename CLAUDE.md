@@ -185,14 +185,19 @@ if (flags['skip-rsync'] && (flags['rsync-flags'] || flags['rsync-exclude'])) {
 
 ### Rsync/Symlink Coordination
 ```typescript
-// CRITICAL: Match symlink patterns BEFORE rsync to exclude them
-if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
-  const filesToSymlink = await this.symlinkHelper.matchPatterns(sourceTreePath, symlinkConfig.patterns)
-  excludePatterns.push(...filesToSymlink)
-}
-rsyncResult = await this.rsyncHelper.rsync(source, dest, config, { excludePatterns })
+// CRITICAL: The symlink plan (matched items, minus tracked paths in strict
+// mode) is computed ONCE up front and consumed by every phase, so the symlink
+// phases, rsync exclusions, and clean-tree check all agree on what is symlinked
+const symlinkItems = /* matchPatterns + allowTracked filtering */
+excludePatterns.push(...symlinkItems.map(formatAsAnchoredPattern))
+// Default rsync is untracked-only: sync exactly the source's gitignored files
+const filesFrom = await this.gitHelper.listIgnoredFiles(sourceTreePath)
+rsyncResult = await this.rsyncHelper.rsync(source, dest, config, { excludePatterns, filesFrom })
 ```
-**Location**: `src/utils/worktreeSetup.ts` (Phase 4)
+**Location**: `src/utils/worktreeSetup.ts` (Phase 1 plan, Phase 4 rsync)
+**Invariant**: after setup, `git status` in the new worktree is empty aside from
+pando-created symlinks (`SetupResult.cleanTree`); tracked files are NEVER
+copied by rsync (tracked symlinks are hidden via skip-worktree instead)
 
 ### Transactional Rollback
 ```typescript

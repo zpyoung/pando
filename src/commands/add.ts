@@ -818,6 +818,9 @@ export default class AddWorktree extends Command {
                     success: setupResult.skipWorktreeResult.success,
                   }
                 : null,
+              // null = the status check could not run; automation should treat
+              // false as "worktree needs inspection" (details in warnings)
+              cleanTree: setupResult.cleanTree ?? null,
             },
             postCommands: postCommandResults,
             duration,
@@ -937,6 +940,11 @@ export default class AddWorktree extends Command {
         } else {
           output.push(chalk.gray('  Symlinks: not run'))
         }
+      }
+
+      // Clean-tree check (details are in the warnings section)
+      if (setupResult.cleanTree === false) {
+        output.push(chalk.yellow('⚠ git status is not clean in the new worktree'))
       }
 
       // Warnings

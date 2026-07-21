@@ -38,6 +38,15 @@ exclude = [
   "tmp/",
 ]
 
+# Sync only gitignored artifacts (.venv, node_modules, build caches)
+# true (default): only files git ignores are copied. Tracked files come from
+#   git checkout, so nothing tracked can be clobbered - safe for any branch,
+#   including existing branches on different commits.
+# false: mirror the full source tree. Runs only when source and target are on
+#   the same commit (a guard against copying tracked files across branches);
+#   carries uncommitted tracked changes from the source worktree.
+onlyUntracked = true
+
 # ============================================================================
 # Symlink Configuration
 # ============================================================================
@@ -75,6 +84,16 @@ relative = true
 # After: Rsync copies files, then they're replaced with symlinks
 # Default: true (before rsync)
 beforeRsync = true
+
+# Allow symlinking paths that are git-tracked in the new worktree
+# A tracked path replaced by a symlink (package.json, lockfiles) would show as
+# deleted/modified in git status, so pando hides it via skip-worktree. That is
+# local per-clone state git can silently drop - the post-setup clean-tree
+# check surfaces any drift.
+# true (default): tracked patterns are symlinked and marked skip-worktree
+# false (strict): tracked patterns are skipped with a warning; only
+#   gitignored paths get symlinked
+allowTracked = true
 
 # ============================================================================
 # Worktree Configuration
@@ -187,9 +206,11 @@ deleteBranchOnRemove = "local"
 #   PANDO_RSYNC_ENABLED=false
 #   PANDO_RSYNC_FLAGS=--archive
 #   PANDO_RSYNC_EXCLUDE=*.log,tmp/
+#   PANDO_RSYNC_ONLY_UNTRACKED=false
 #   PANDO_SYMLINK_PATTERNS=package.json,pnpm-lock.yaml
 #   PANDO_SYMLINK_RELATIVE=false
 #   PANDO_SYMLINK_BEFORE_RSYNC=true
+#   PANDO_SYMLINK_ALLOW_TRACKED=true
 #   PANDO_WORKTREE_DEFAULT_PATH=../worktrees
 #   PANDO_WORKTREE_REBASE_ON_ADD=false
 #   PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE=local

@@ -76,6 +76,12 @@ export interface SetupResult {
   rsyncResult?: RsyncResult
   symlinkResult?: SymlinkResult
   skipWorktreeResult?: { filesMarked: number; success: boolean }
+  /**
+   * Whether `git status` in the new worktree is empty after setup (files marked
+   * skip-worktree are hidden by git itself). Undefined when the check could not
+   * run (e.g. on the error path, after rollback).
+   */
+  cleanTree?: boolean
   duration: number
   warnings: string[]
   rolledBack: boolean
@@ -173,41 +179,59 @@ export class WorktreeSetupOrchestrator {
       this.reportProgress(options.onProgress, SetupPhase.CHECKPOINT, 'Creating checkpoint')
 
       // Create transaction checkpoint
-      // Snapshot worktree state for potential rollback
+      // Snapshot worktree state for potential rollback. This MUST happen
+      // before any operation that can throw (including symlink planning
+      // below) - otherwise a failure there leaves rollback() with no
+      // 'worktree' checkpoint, and the already-created git worktree is never
+      // cleaned up.
       this.transaction.createCheckpoint('worktree', { path: worktreePath })
+
+      // Plan symlinks once: matched items minus (in strict mode) git-tracked
+      // paths. The symlink phases and rsync exclusions all consume this plan so
+      // every phase agrees on what will be symlinked. Tracked items that ARE
+      // symlinked (allowTracked, the default) get hidden from git status via
+      // skip-worktree in Phase 5.5.
+      let symlinkItems: string[] = []
+      if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
+        const matches = await this.symlinkHelper.matchPatterns(
+          sourceTreePath,
+          symlinkConfig.patterns
+        )
+
+        if (symlinkConfig.allowTracked ?? true) {
+          symlinkItems = matches
+        } else {
+          const trackedItems = await this.gitHelper.filterTrackedPaths(worktreePath, matches)
+          if (trackedItems.length === 0) {
+            symlinkItems = matches
+          } else {
+            const trackedSet = new Set(trackedItems)
+            symlinkItems = matches.filter((item) => !trackedSet.has(item))
+            warnings.push(
+              `Skipped symlinking git-tracked path(s): ${trackedItems.join(', ')}. ` +
+                `Symlinking tracked paths makes git status show them as deleted or modified. ` +
+                `Add them to .gitignore (and remove them from the index), or set ` +
+                `symlink.allowTracked = true to symlink them anyway.`
+            )
+          }
+        }
+      }
 
       // ============================================================
       // Phase 3: Symlinks (Before Rsync)
       // ============================================================
-      if (!options.skipSymlink && this.config.symlink.beforeRsync) {
+      if (!options.skipSymlink && symlinkConfig.beforeRsync) {
         this.reportProgress(
           options.onProgress,
           SetupPhase.SYMLINK_BEFORE,
           'Creating symlinks (before rsync)'
         )
 
-        // Remove git-checked-out files that will be symlinked
-        // Git automatically checks out tracked files when creating worktrees
-        const filesToSymlink = await this.symlinkHelper.matchPatterns(
-          sourceTreePath,
-          symlinkConfig.patterns
-        )
-        for (const file of filesToSymlink) {
-          const targetPath = await import('path').then((p) => p.default.join(worktreePath, file))
-          if (await fs.pathExists(targetPath)) {
-            await fs.remove(targetPath)
-          }
-        }
-
-        // Create symlinks before rsync
-        symlinkResult = await this.symlinkHelper.createSymlinks(
+        symlinkResult = await this.createPlannedSymlinks(
           sourceTreePath,
           worktreePath,
           symlinkConfig,
-          {
-            replaceExisting: true,
-            skipConflicts: true,
-          }
+          symlinkItems
         )
 
         // Add warnings for skipped conflicts
@@ -219,22 +243,49 @@ export class WorktreeSetupOrchestrator {
       // ============================================================
       // Phase 4: Rsync
       // ============================================================
-      if (!options.skipRsync && this.config.rsync.enabled) {
+      if (!options.skipRsync && rsyncConfig.enabled) {
         this.reportProgress(options.onProgress, SetupPhase.RSYNC, 'Syncing files with rsync...')
 
-        const sourceCommit = await this.gitHelper.getWorktreeCommit(sourceTreePath)
-        const targetCommit = await this.gitHelper.getWorktreeCommit(worktreePath)
+        // Which files may cross worktrees depends on the mode:
+        // - onlyUntracked (default): sync only gitignored artifacts (.venv,
+        //   node_modules, caches). Tracked files come from the target's own
+        //   checkout, so nothing tracked can be clobbered regardless of which
+        //   commits the two worktrees are on.
+        // - full mirror (onlyUntracked=false): copy the whole source tree, but
+        //   only when both worktrees are on the same commit - otherwise the
+        //   source branch's tracked files would dirty the target.
+        const onlyUntracked = rsyncConfig.onlyUntracked ?? true
+        let filesFrom: string[] | undefined
+        let runRsync = true
 
-        if (sourceCommit !== targetCommit) {
-          warnings.push(
-            `Skipped rsync because source worktree (${sourceCommit.slice(0, 7)}) differs from target worktree (${targetCommit.slice(0, 7)}). This prevents tracked files from being copied across different commits.`
-          )
-          this.reportProgress(
-            options.onProgress,
-            SetupPhase.RSYNC,
-            'Skipped rsync due to commit mismatch'
-          )
+        if (onlyUntracked) {
+          filesFrom = await this.gitHelper.listIgnoredFiles(sourceTreePath)
+          if (filesFrom.length === 0) {
+            runRsync = false
+            this.reportProgress(
+              options.onProgress,
+              SetupPhase.RSYNC,
+              'Skipped rsync - no ignored files to sync'
+            )
+          }
         } else {
+          const sourceCommit = await this.gitHelper.getWorktreeCommit(sourceTreePath)
+          const targetCommit = await this.gitHelper.getWorktreeCommit(worktreePath)
+
+          if (sourceCommit !== targetCommit) {
+            runRsync = false
+            warnings.push(
+              `Skipped rsync because source worktree (${sourceCommit.slice(0, 7)}) differs from target worktree (${targetCommit.slice(0, 7)}). This prevents tracked files from being copied across different commits.`
+            )
+            this.reportProgress(
+              options.onProgress,
+              SetupPhase.RSYNC,
+              'Skipped rsync due to commit mismatch'
+            )
+          }
+        }
+
+        if (runRsync) {
           // Check rsync is installed
           const { RsyncNotInstalledError } = await import('./fileOps.js')
           if (!(await this.rsyncHelper.isInstalled())) {
@@ -249,41 +300,33 @@ export class WorktreeSetupOrchestrator {
 
           // ALWAYS exclude files/directories that will be symlinked (regardless of beforeRsync setting)
           // This prevents rsync from copying items that should be symlinks
-          if (!options.skipSymlink && symlinkConfig.patterns.length > 0) {
-            // Match symlink patterns against source directory to find items that will be symlinked
-            const itemsToSymlink = await this.symlinkHelper.matchPatterns(
-              sourceTreePath,
-              symlinkConfig.patterns
-            )
-
-            // Generate rsync exclude patterns with proper format for files vs directories
-            // Directories need trailing '/' to exclude the directory and all contents
-            const pathModule = await import('path')
-            for (const item of itemsToSymlink) {
-              const fullPath = pathModule.default.join(sourceTreePath, item)
-              try {
-                const stats = await fs.stat(fullPath)
-                if (stats.isDirectory()) {
-                  // For directories: use trailing slash to exclude directory and contents
-                  excludePatterns.push(`/${item}/`)
-                } else {
-                  // For files: exclude the specific file
-                  excludePatterns.push(`/${item}`)
-                }
-              } catch (statError) {
-                // Default to file pattern if stat fails, but warn about potential issues
-                const errMsg = statError instanceof Error ? statError.message : String(statError)
-                warnings.push(
-                  `Could not stat '${item}' for rsync exclusion (using file pattern): ${errMsg}`
-                )
+          // Directories need trailing '/' to exclude the directory and all contents
+          const pathModule = await import('path')
+          for (const item of symlinkItems) {
+            const fullPath = pathModule.default.join(sourceTreePath, item)
+            try {
+              const stats = await fs.stat(fullPath)
+              if (stats.isDirectory()) {
+                // For directories: use trailing slash to exclude directory and contents
+                excludePatterns.push(`/${item}/`)
+              } else {
+                // For files: exclude the specific file
                 excludePatterns.push(`/${item}`)
               }
+            } catch (statError) {
+              // Default to file pattern if stat fails, but warn about potential issues
+              const errMsg = statError instanceof Error ? statError.message : String(statError)
+              warnings.push(
+                `Could not stat '${item}' for rsync exclusion (using file pattern): ${errMsg}`
+              )
+              excludePatterns.push(`/${item}`)
             }
           }
 
           // Execute rsync with progress callback
           rsyncResult = await this.rsyncHelper.rsync(sourceTreePath, worktreePath, rsyncConfig, {
             excludePatterns,
+            filesFrom,
             onProgress: options.onProgress
               ? (progress: RsyncProgressData): void => {
                   const message = `Synced: ${progress.filesTransferred} files`
@@ -297,37 +340,19 @@ export class WorktreeSetupOrchestrator {
       // ============================================================
       // Phase 5: Symlinks (After Rsync)
       // ============================================================
-      if (!options.skipSymlink && !this.config.symlink.beforeRsync) {
+      if (!options.skipSymlink && !symlinkConfig.beforeRsync) {
         this.reportProgress(
           options.onProgress,
           SetupPhase.SYMLINK_AFTER,
           'Creating symlinks (after rsync)'
         )
 
-        // Remove git-checked-out files that will be symlinked
-        // Git automatically checks out tracked files when creating worktrees
-        const filesToSymlink = await this.symlinkHelper.matchPatterns(
-          sourceTreePath,
-          symlinkConfig.patterns
-        )
-        const path = await import('path')
-        for (const file of filesToSymlink) {
-          const targetPath = path.default.join(worktreePath, file)
-          if (await fs.pathExists(targetPath)) {
-            await fs.remove(targetPath)
-          }
-        }
-
-        // Create symlinks after rsync
         // Rsync already excluded these files, so no conflicts expected
-        symlinkResult = await this.symlinkHelper.createSymlinks(
+        symlinkResult = await this.createPlannedSymlinks(
           sourceTreePath,
           worktreePath,
           symlinkConfig,
-          {
-            replaceExisting: true,
-            skipConflicts: true,
-          }
+          symlinkItems
         )
 
         // Add warnings for any conflicts (shouldn't happen since rsync excluded them)
@@ -401,6 +426,33 @@ export class WorktreeSetupOrchestrator {
         warnings.push('Rsync reported unsuccessful completion')
       }
 
+      // Clean-tree invariant: after setup, `git status` in the new worktree
+      // must be empty (skip-worktree'd files are hidden by git itself). A dirty
+      // tree here means setup polluted the checkout - surface it immediately
+      // instead of letting the user discover it downstream. The symlinks pando
+      // itself created are intentional state, not pollution: a symlink over a
+      // tracked directory shows as untracked even when its files are hidden.
+      let cleanTree: boolean | undefined
+      try {
+        const symlinkItemSet = new Set(symlinkItems)
+        const dirtyPaths = (await this.gitHelper.getDirtyPaths(worktreePath)).filter(
+          (dirtyPath) => !symlinkItemSet.has(dirtyPath)
+        )
+        cleanTree = dirtyPaths.length === 0
+        if (!cleanTree) {
+          const shown = dirtyPaths.slice(0, 10).join(', ')
+          const more = dirtyPaths.length > 10 ? ` (+${dirtyPaths.length - 10} more)` : ''
+          warnings.push(
+            `Worktree is not clean after setup (${dirtyPaths.length} path(s)): ${shown}${more}. ` +
+              `Likely cause: symlinked tracked files that could not be hidden via skip-worktree, ` +
+              `or rsync copying tracked files (rsync.onlyUntracked = false).`
+          )
+        }
+      } catch {
+        // Status check is best-effort; setup itself succeeded
+        cleanTree = undefined
+      }
+
       // ============================================================
       // Phase 7: Complete
       // ============================================================
@@ -413,6 +465,7 @@ export class WorktreeSetupOrchestrator {
         rsyncResult,
         symlinkResult,
         skipWorktreeResult,
+        cleanTree,
         duration,
         warnings,
         rolledBack: false,
@@ -517,6 +570,41 @@ export class WorktreeSetupOrchestrator {
       warnings.push(`Rollback failed: ${errorMsg}. Manual cleanup may be required.`)
       return { rolledBack: false, warnings }
     }
+  }
+
+  /**
+   * Remove the checked-out copies of the planned items and symlink them to the
+   * source tree. Shared by the before-rsync and after-rsync symlink phases.
+   *
+   * @param sourceTreePath - Main worktree the symlinks point into
+   * @param worktreePath - New worktree receiving the symlinks
+   * @param symlinkConfig - Merged symlink configuration
+   * @param symlinkItems - Precomputed relative paths to symlink (the plan)
+   * @returns Result of the symlink operations
+   */
+  private async createPlannedSymlinks(
+    sourceTreePath: string,
+    worktreePath: string,
+    symlinkConfig: SymlinkConfig,
+    symlinkItems: string[]
+  ): Promise<SymlinkResult> {
+    const fs = (await import('fs-extra')).default
+    const path = await import('path')
+
+    // Remove git-checked-out files that will be symlinked
+    // Git automatically checks out tracked files when creating worktrees
+    for (const item of symlinkItems) {
+      const targetPath = path.default.join(worktreePath, item)
+      if (await fs.pathExists(targetPath)) {
+        await fs.remove(targetPath)
+      }
+    }
+
+    return this.symlinkHelper.createSymlinks(sourceTreePath, worktreePath, symlinkConfig, {
+      replaceExisting: true,
+      skipConflicts: true,
+      items: symlinkItems,
+    })
   }
 
   /**

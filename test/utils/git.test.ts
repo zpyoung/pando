@@ -531,8 +531,24 @@ branch refs/heads/main
   })
 
   describe('setSkipWorktree', () => {
-    it('should mark files as skip-worktree', async () => {
-      mockWorktreeGit.raw.mockResolvedValue('')
+    /** Route the two-step flow: `ls-files` resolves tracked paths, `update-index` marks them */
+    const mockGitCalls = (options: {
+      trackedOutput: string
+      updateIndex?: (args: string[]) => Promise<string>
+    }) => {
+      mockWorktreeGit.raw.mockImplementation((args: string[]) => {
+        if (args[0] === 'ls-files') {
+          return Promise.resolve(options.trackedOutput)
+        }
+        if (args[0] === 'update-index') {
+          return options.updateIndex ? options.updateIndex(args) : Promise.resolve('')
+        }
+        return Promise.reject(new Error(`unexpected git call: ${args.join(' ')}`))
+      })
+    }
+
+    it('should mark tracked files as skip-worktree', async () => {
+      mockGitCalls({ trackedOutput: 'package.json\0pnpm-lock.yaml\0' })
 
       const result = await gitHelper.setSkipWorktree('/path/to/worktree', [
         'package.json',
@@ -543,10 +559,35 @@ branch refs/heads/main
       expect(result.filesMarked).toBe(2)
       expect(result.error).toBeUndefined()
       expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'ls-files',
+        '-z',
+        '--',
+        ':(literal)package.json',
+        ':(literal)pnpm-lock.yaml',
+      ])
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
         'update-index',
         '--skip-worktree',
+        '--',
         'package.json',
         'pnpm-lock.yaml',
+      ])
+    })
+
+    it('should mark a tracked path that starts with a dash', async () => {
+      // Without a `--` separator before the path list, `-weird.txt` is parsed
+      // as a short-option cluster by git and update-index fails outright.
+      mockGitCalls({ trackedOutput: '-weird.txt\0' })
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['-weird.txt'])
+
+      expect(result.success).toBe(true)
+      expect(result.filesMarked).toBe(1)
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'update-index',
+        '--skip-worktree',
+        '--',
+        '-weird.txt',
       ])
     })
 
@@ -559,28 +600,162 @@ branch refs/heads/main
       expect(mockWorktreeGit.raw).not.toHaveBeenCalled()
     })
 
-    it('should handle errors gracefully', async () => {
-      mockWorktreeGit.raw.mockRejectedValue(new Error('fatal: Unable to mark file'))
+    it('should skip untracked paths and only mark tracked ones', async () => {
+      // .env is gitignored (not in index); CLAUDE.md is tracked.
+      // Previously the untracked path aborted the whole batch with
+      // "fatal: Unable to mark file .env" and NOTHING got marked.
+      mockGitCalls({ trackedOutput: 'CLAUDE.md\0' })
 
-      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['invalid-file'])
-
-      expect(result.success).toBe(false)
-      expect(result.error).toContain('Unable to mark file')
-      expect(result.filesMarked).toBe(0)
-    })
-
-    it('should handle single file', async () => {
-      mockWorktreeGit.raw.mockResolvedValue('')
-
-      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['node_modules'])
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['.env', 'CLAUDE.md'])
 
       expect(result.success).toBe(true)
       expect(result.filesMarked).toBe(1)
+      expect(result.error).toBeUndefined()
       expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
         'update-index',
         '--skip-worktree',
-        'node_modules',
+        '--',
+        'CLAUDE.md',
       ])
+    })
+
+    it('should succeed with 0 marked when no requested path is tracked', async () => {
+      mockGitCalls({ trackedOutput: '' })
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['.env', '.vscode'])
+
+      expect(result.success).toBe(true)
+      expect(result.filesMarked).toBe(0)
+      expect(result.error).toBeUndefined()
+      expect(mockWorktreeGit.raw).not.toHaveBeenCalledWith(expect.arrayContaining(['update-index']))
+    })
+
+    it('should expand a symlinked directory to its tracked entries', async () => {
+      // update-index cannot mark a directory; ls-files expands `.claude` to
+      // the tracked files beneath it.
+      mockGitCalls({ trackedOutput: '.claude/settings.json\0.claude/rules/beads.md\0' })
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['.claude'])
+
+      expect(result.success).toBe(true)
+      expect(result.filesMarked).toBe(2)
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'update-index',
+        '--skip-worktree',
+        '--',
+        '.claude/settings.json',
+        '.claude/rules/beads.md',
+      ])
+    })
+
+    it('should mark files independently when the batch fails', async () => {
+      mockGitCalls({
+        trackedOutput: 'a.txt\0b.txt\0',
+        updateIndex: (args) => {
+          // Batch call (both files) fails; per-file fallback fails only for b.txt
+          if (args.includes('b.txt')) {
+            return Promise.reject(new Error('fatal: Unable to mark file b.txt'))
+          }
+          return Promise.resolve('')
+        },
+      })
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['a.txt', 'b.txt'])
+
+      expect(result.success).toBe(false)
+      expect(result.filesMarked).toBe(1)
+      expect(result.error).toContain('b.txt')
+    })
+
+    it('should report failure when ls-files itself fails', async () => {
+      mockWorktreeGit.raw.mockRejectedValue(new Error('fatal: not a git repository'))
+
+      const result = await gitHelper.setSkipWorktree('/path/to/worktree', ['CLAUDE.md'])
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('not a git repository')
+      expect(result.filesMarked).toBe(0)
+    })
+  })
+
+  describe('listIgnoredFiles', () => {
+    it('should list gitignored untracked files (artifacts), not plain untracked ones', async () => {
+      mockWorktreeGit.raw.mockResolvedValue('.venv/bin/python\0node_modules/pkg/index.js\0.env\0')
+
+      const result = await gitHelper.listIgnoredFiles('/path/to/worktree')
+
+      expect(result).toEqual(['.venv/bin/python', 'node_modules/pkg/index.js', '.env'])
+      // --others --ignored --exclude-standard = only gitignored files, which is
+      // exactly the artifact set worktree setup wants to carry over. Plain
+      // untracked WIP files stay put so the new worktree's status stays clean.
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'ls-files',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '-z',
+      ])
+    })
+
+    it('should return empty array when there are no ignored files', async () => {
+      mockWorktreeGit.raw.mockResolvedValue('')
+
+      const result = await gitHelper.listIgnoredFiles('/path/to/worktree')
+
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('filterTrackedPaths', () => {
+    it('should return only paths that are tracked (files or dirs with tracked entries)', async () => {
+      // .claude is a directory containing tracked files; CLAUDE.md is a tracked
+      // file; .env and .vscode are untracked/ignored
+      mockWorktreeGit.raw.mockResolvedValue('.claude/settings.json\0CLAUDE.md\0')
+
+      const result = await gitHelper.filterTrackedPaths('/path/to/worktree', [
+        '.claude',
+        'CLAUDE.md',
+        '.env',
+        '.vscode',
+      ])
+
+      expect(result).toEqual(['.claude', 'CLAUDE.md'])
+      expect(mockWorktreeGit.raw).toHaveBeenCalledWith([
+        'ls-files',
+        '-z',
+        '--',
+        ':(literal).claude',
+        ':(literal)CLAUDE.md',
+        ':(literal).env',
+        ':(literal).vscode',
+      ])
+    })
+
+    it('should return empty array for empty input without calling git', async () => {
+      const result = await gitHelper.filterTrackedPaths('/path/to/worktree', [])
+
+      expect(result).toEqual([])
+      expect(mockWorktreeGit.raw).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('getDirtyPaths', () => {
+    it('should return paths from git status', async () => {
+      mockWorktreeGit.status.mockResolvedValue({
+        files: [{ path: 'CLAUDE.md' }, { path: 'src/new-file.ts' }],
+      })
+
+      const result = await gitHelper.getDirtyPaths('/path/to/worktree')
+
+      expect(result).toEqual(['CLAUDE.md', 'src/new-file.ts'])
+    })
+
+    it('should return empty array for a clean worktree', async () => {
+      mockWorktreeGit.status.mockResolvedValue({ files: [] })
+
+      const result = await gitHelper.getDirtyPaths('/path/to/worktree')
+
+      expect(result).toEqual([])
     })
   })
 

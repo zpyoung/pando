@@ -181,6 +181,13 @@ describe('parseEnvValue', () => {
     expect(parseEnvValue('PANDO_WORKTREE_USE_PROJECT_SUBFOLDER', 'false')).toBe(false)
   })
 
+  it('should parse TRACKED variants as boolean', () => {
+    expect(parseEnvValue('PANDO_RSYNC_ONLY_UNTRACKED', 'true')).toBe(true)
+    expect(parseEnvValue('PANDO_RSYNC_ONLY_UNTRACKED', 'false')).toBe(false)
+    expect(parseEnvValue('PANDO_SYMLINK_ALLOW_TRACKED', 'yes')).toBe(true)
+    expect(parseEnvValue('PANDO_SYMLINK_ALLOW_TRACKED', 'no')).toBe(false)
+  })
+
   it('should return string for unknown keys', () => {
     expect(parseEnvValue('PANDO_UNKNOWN_KEY', 'value')).toBe('value')
   })
@@ -229,6 +236,17 @@ describe('parseEnvVars', () => {
         relative: true,
         beforeRsync: false,
       },
+    })
+  })
+
+  it('should parse safety-mode variables', () => {
+    const env = {
+      PANDO_RSYNC_ONLY_UNTRACKED: 'false',
+      PANDO_SYMLINK_ALLOW_TRACKED: 'true',
+    }
+    expect(parseEnvVars(env)).toEqual({
+      rsync: { onlyUntracked: false },
+      symlink: { allowTracked: true },
     })
   })
 
