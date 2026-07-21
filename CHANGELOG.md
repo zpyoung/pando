@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Minimum supported Node.js is now 20** (was 18). Node 18 reached end-of-life
+  in April 2025; the `engines` field, CI test matrix, and Docker E2E runner have
+  been updated accordingly. This unblocks dependencies that require Node >= 20.
 - Default rsync flags are now `["--archive"]`. `.git` is always excluded
   automatically by Pando (in `fileOps.buildArgs`) and must no longer be listed
   in the flags.

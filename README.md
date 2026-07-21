@@ -739,7 +739,7 @@ pando/
 
 ## Requirements
 
-- Node.js >= 18.0.0 (development targets Node 20, pinned in `.node-version`)
+- Node.js >= 20.0.0 (development targets Node 20, pinned in `.node-version`)
 - Git >= 2.5.0 (for worktree support)
 
 ## Troubleshooting
