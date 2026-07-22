@@ -12,6 +12,8 @@ export interface PostCommandContext {
   worktreePath: string
   branch: string | null
   commit: string
+  kind?: 'ephemeral' | 'long-lived'
+  ttl?: string
 }
 
 export interface PostCommandResult {
@@ -88,6 +90,8 @@ async function runPostCommandScript(
         PANDO_WORKTREE_PATH: context.worktreePath,
         PANDO_BRANCH: context.branch ?? '',
         PANDO_COMMIT: context.commit,
+        ...(context.kind ? { PANDO_KIND: context.kind } : {}),
+        ...(context.ttl !== undefined ? { PANDO_TTL: context.ttl } : {}),
       },
     })
 

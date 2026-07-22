@@ -85,6 +85,11 @@ Create a new git worktree (supports both creating new branches and checking out 
 - `-c, --commit`: Commit hash to base the new branch on
 - `-f, --force`: Force create branch even if it exists (uses git worktree add -B)
 - `--no-rebase`: Skip automatic rebase of existing branch onto source branch
+- `--ephemeral`: Mark the worktree as ephemeral (mutually exclusive with `--long-lived`)
+- `--long-lived`: Mark the worktree as long-lived (mutually exclusive with `--ephemeral`)
+- `--ttl <duration>`: Set a per-worktree TTL override (for example, `30m` or `2d`)
+- `--owner <id>`: Record an owner or agent session id
+- `--ports`: Force-enable port allocation for this run (allocation support is forthcoming)
 - `--skip-rsync`: Skip the rsync copy step (ignores rsync config)
 - `--rsync-flags`: Override rsync flags (comma-separated; repeatable)
 - `--rsync-exclude`: Additional rsync exclude patterns (comma-separated; repeatable)
@@ -95,6 +100,8 @@ Create a new git worktree (supports both creating new branches and checking out 
 - `-j, --json`: Output in JSON format
 
 > When `--skip-rsync` is combined with `--rsync-flags` or `--rsync-exclude`, the rsync flags are ignored and a warning is shown.
+
+**Lifecycle metadata**: `pando add` stores the worktree kind, creation time, source branch, and optional owner/TTL in Git's per-worktree config. Flags override `worktree.defaultKind`; `auto` treats Claude worktree paths, active agent-session environments, and boolean `PANDO_EPHEMERAL=true|1|yes` signals as ephemeral, and other worktrees as long-lived. Worktrees created during an active `CLAUDE_SESSION_ID` or `PANDO_SESSION` are automatically Git-locked when `worktree.autoLockActive` is enabled; passing `--owner` alone does not trigger auto-locking.
 
 **Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
 
@@ -143,8 +150,11 @@ List all git worktrees
 
 ```bash
 pando list
+pando list --verbose
 pando list --json
 ```
+
+Verbose human output includes compact kind, owner, age, and lock details. JSON output always includes `kind`, `createdAt`, `owner`, `ttl`, `ageMs`, and `locked` for every worktree (nullable metadata fields are `null`).
 
 ### `pando health`
 
@@ -162,6 +172,8 @@ Show health status of all worktrees
 - `gone`: Remote tracking branch was deleted
 - `detached`: Worktree is in detached-HEAD state (no branch)
 - `error`: Cannot check status (directory missing, git error, or remote check failed)
+
+Each human report entry also shows lifecycle kind and lock state. JSON worktree entries include `kind`, `ageMs`, `ttl`, `locked`, and `owner` alongside the health fields.
 
 **Examples:**
 
@@ -530,6 +542,9 @@ rebaseOnAdd = true                # Rebase existing branches when adding worktre
 deleteBranchOnRemove = "local"    # Delete branch on worktree remove: "none", "local", "remote" (default: "local")
 useProjectSubfolder = false       # Nest worktrees as defaultPath/projectName/branchName (default: false)
 targetBranch = "main"             # Target branch for merge checks (used by clean command)
+defaultKind = "auto"              # auto, ephemeral, or long-lived
+ephemeralTtl = "4h"               # Default TTL exposed to ephemeral setup hooks
+autoLockActive = true              # Git-lock worktrees owned by active sessions
 
 # Clean Configuration
 [clean]
@@ -556,6 +571,8 @@ Scripts configured for `add` run **after** the worktree has been created and rsy
 - `PANDO_WORKTREE_PATH` — absolute path to the created worktree
 - `PANDO_BRANCH` — branch name, or empty in detached HEAD mode
 - `PANDO_COMMIT` — created worktree commit
+- `PANDO_KIND` — resolved lifecycle kind (`ephemeral` or `long-lived`)
+- `PANDO_TTL` — effective TTL when defined (explicit `--ttl`, otherwise the ephemeral default)
 
 Human-readable output shows each script, its working directory, exit status, stdout, and stderr. JSON output includes a stable `postCommands` array with `name`, `command`, `cwd`, `exitCode`, `signal`, `stdout`, `stderr`, `success`, and `duration` fields. A non-zero exit code stops later scripts and returns the existing JSON error shape with `success: false`, `error`, `postCommands`, and `failedPostCommand`.
 

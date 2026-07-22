@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import ListWorktree from '../../src/commands/list'
 import * as gitUtils from '../../src/utils/git'
 import type { WorktreeInfo } from '../../src/utils/git'
+import { readMetadata } from '../../src/utils/worktreeMetadata'
+
+vi.mock('../../src/utils/worktreeMetadata', () => ({
+  readMetadata: vi.fn(),
+}))
 
 /**
  * Tests for list command
@@ -55,6 +60,8 @@ describe('list', () => {
     // Reset all mocks before each test
     vi.restoreAllMocks()
 
+    vi.mocked(readMetadata).mockResolvedValue({})
+
     // Create command instance
     command = new ListWorktree([], {} as any)
 
@@ -77,6 +84,7 @@ describe('list', () => {
     vi.spyOn(gitUtils, 'createGitHelper').mockReturnValue({
       isRepository: vi.fn().mockResolvedValue(true),
       listWorktrees: vi.fn().mockResolvedValue(mockWorktrees),
+      getWorktreeAgeMs: vi.fn().mockResolvedValue(60_000),
     } as any)
 
     // Mock parse to return empty flags
@@ -94,13 +102,27 @@ describe('list', () => {
     const calls = logSpy.mock.calls
     const outputs = calls.map((call: any) => call[0]).join('\n')
     expect(outputs).toContain('Found 3 worktree(s)')
+    expect(outputs).not.toContain('Lifecycle:')
   })
 
   it('should output JSON format when --json flag is used', async () => {
+    vi.mocked(readMetadata).mockResolvedValue({
+      kind: 'ephemeral',
+      createdAt: '2026-07-22T11:00:00.000Z',
+      owner: 'agent-7',
+      ttl: '4h',
+    })
     // Mock the GitHelper
     vi.spyOn(gitUtils, 'createGitHelper').mockReturnValue({
       isRepository: vi.fn().mockResolvedValue(true),
-      listWorktrees: vi.fn().mockResolvedValue(mockWorktrees),
+      listWorktrees: vi
+        .fn()
+        .mockResolvedValue([
+          mockWorktrees[0],
+          { ...mockWorktrees[1], isLocked: true },
+          mockWorktrees[2],
+        ]),
+      getWorktreeAgeMs: vi.fn().mockResolvedValue(3_600_000),
     } as any)
 
     // Mock parse to return json flag
@@ -117,13 +139,23 @@ describe('list', () => {
     const jsonOutput = logSpy.mock.calls[0][0]
     const parsed = JSON.parse(jsonOutput)
     expect(parsed.worktrees).toHaveLength(3)
+    expect(parsed.worktrees[1]).toMatchObject({
+      kind: 'ephemeral',
+      createdAt: '2026-07-22T11:00:00.000Z',
+      owner: 'agent-7',
+      ttl: '4h',
+      ageMs: 3_600_000,
+      locked: true,
+    })
   })
 
   it('should show verbose information when --verbose flag is set', async () => {
+    vi.mocked(readMetadata).mockResolvedValue({ kind: 'long-lived', owner: 'developer' })
     // Mock the GitHelper
     vi.spyOn(gitUtils, 'createGitHelper').mockReturnValue({
       isRepository: vi.fn().mockResolvedValue(true),
       listWorktrees: vi.fn().mockResolvedValue(mockWorktrees),
+      getWorktreeAgeMs: vi.fn().mockResolvedValue(3_600_000),
     } as any)
 
     // Mock parse to return verbose flag
@@ -138,6 +170,7 @@ describe('list', () => {
     const calls = logSpy.mock.calls
     const outputs = calls.map((call: any) => call[0]).join('\n')
     expect(outputs).toContain('Commit: abc123def456')
+    expect(outputs).toContain('Lifecycle: kind long-lived, owner developer, age 1h, unlocked')
   })
 
   it('should handle empty worktree list', async () => {
@@ -187,6 +220,7 @@ describe('list', () => {
     vi.spyOn(gitUtils, 'createGitHelper').mockReturnValue({
       isRepository: vi.fn().mockResolvedValue(true),
       listWorktrees: vi.fn().mockResolvedValue(mockPrunableWorktrees),
+      getWorktreeAgeMs: vi.fn().mockResolvedValue(60_000),
     } as any)
 
     // Mock parse to return empty flags
@@ -208,6 +242,7 @@ describe('list', () => {
     vi.spyOn(gitUtils, 'createGitHelper').mockReturnValue({
       isRepository: vi.fn().mockResolvedValue(true),
       listWorktrees: vi.fn().mockResolvedValue(mockPrunableWorktrees),
+      getWorktreeAgeMs: vi.fn().mockResolvedValue(60_000),
     } as any)
 
     // Mock parse to return verbose flag

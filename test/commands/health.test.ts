@@ -2,10 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import Health from '../../src/commands/health'
 import { createGitHelper } from '../../src/utils/git'
 import { ErrorHelper } from '../../src/utils/errors'
+import { readMetadata } from '../../src/utils/worktreeMetadata'
 
 // Mock the dependencies
 vi.mock('../../src/utils/git')
 vi.mock('../../src/utils/errors')
+vi.mock('../../src/utils/worktreeMetadata', () => ({
+  readMetadata: vi.fn(),
+}))
 vi.mock('chalk', () => ({
   default: {
     bold: (str: string) => `**${str}**`,
@@ -30,6 +34,7 @@ type MockGitHelper = {
   getTrackingBranch: MockFn
   remoteBranchExists: MockFn
   countCommitsBetween: MockFn
+  getWorktreeAgeMs: MockFn
 }
 
 describe('Health Command', () => {
@@ -62,7 +67,9 @@ describe('Health Command', () => {
       getTrackingBranch: vi.fn().mockResolvedValue(null),
       remoteBranchExists: vi.fn(),
       countCommitsBetween: vi.fn(),
+      getWorktreeAgeMs: vi.fn().mockResolvedValue(60_000),
     }
+    vi.mocked(readMetadata).mockResolvedValue({})
 
     mockErrorHelper = {
       validation: vi.fn(),
@@ -104,12 +111,14 @@ describe('Health Command', () => {
   })
 
   it('should detect uncommitted changes in worktrees', async () => {
+    vi.mocked(readMetadata).mockResolvedValue({ kind: 'ephemeral' })
     mockGitHelper.listWorktrees.mockResolvedValue([
       {
         path: '/worktree1',
         branch: 'feature/auth',
         commit: 'abc123',
         isPrunable: false,
+        isLocked: true,
       },
     ])
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(true)
@@ -122,6 +131,9 @@ describe('Health Command', () => {
     expect(mockGitHelper.hasUncommittedChanges).toHaveBeenCalledWith('/worktree1')
     expect(mockGitHelper.getUncommittedFileCount).toHaveBeenCalledWith('/worktree1')
     expect(command.log).toHaveBeenCalledWith(expect.stringContaining('2 files modified'))
+    expect(command.log).toHaveBeenCalledWith(
+      expect.stringContaining('Lifecycle: ephemeral, locked')
+    )
   })
 
   it('should detect branches behind upstream', async () => {
@@ -291,12 +303,19 @@ describe('Health Command', () => {
   })
 
   it('should output JSON format when --json flag is used', async () => {
+    vi.mocked(readMetadata).mockResolvedValue({
+      kind: 'ephemeral',
+      owner: 'agent-7',
+      ttl: '4h',
+    })
+    mockGitHelper.getWorktreeAgeMs.mockResolvedValue(3_600_000)
     mockGitHelper.listWorktrees.mockResolvedValue([
       {
         path: '/worktree1',
         branch: 'feature/auth',
         commit: 'abc123',
         isPrunable: false,
+        isLocked: true,
       },
     ])
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
@@ -319,7 +338,14 @@ describe('Health Command', () => {
       gone: 0,
       errors: 0,
     })
-    expect(report.worktrees[0].status).toBe('clean')
+    expect(report.worktrees[0]).toMatchObject({
+      status: 'clean',
+      kind: 'ephemeral',
+      ageMs: 3_600_000,
+      ttl: '4h',
+      locked: true,
+      owner: 'agent-7',
+    })
   })
 
   it('should handle errors gracefully', async () => {

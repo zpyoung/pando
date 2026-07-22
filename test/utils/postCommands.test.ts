@@ -56,20 +56,29 @@ describe('postCommands', () => {
     tempDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-')))
 
     const results = await runPostCommandScripts(
-      [{ name: 'write-marker', command: 'pwd && printf "$PANDO_BRANCH" > branch.txt' }],
+      [
+        {
+          name: 'write-marker',
+          command:
+            'pwd && printf "$PANDO_BRANCH" > branch.txt && printf "$PANDO_KIND:$PANDO_TTL" > lifecycle.txt',
+        },
+      ],
       {
         commandName: 'add',
         cwd: tempDir,
         worktreePath: tempDir,
         branch: 'feature/post-command',
         commit: 'abc123',
+        kind: 'ephemeral',
+        ttl: '4h',
       }
     )
 
     expect(results).toHaveLength(1)
     expect(results[0]).toMatchObject({
       name: 'write-marker',
-      command: 'pwd && printf "$PANDO_BRANCH" > branch.txt',
+      command:
+        'pwd && printf "$PANDO_BRANCH" > branch.txt && printf "$PANDO_KIND:$PANDO_TTL" > lifecycle.txt',
       cwd: tempDir,
       exitCode: 0,
       signal: null,
@@ -78,6 +87,9 @@ describe('postCommands', () => {
     expect(results[0]?.stdout.trim()).toBe(tempDir)
     await expect(fs.readFile(path.join(tempDir, 'branch.txt'), 'utf8')).resolves.toBe(
       'feature/post-command'
+    )
+    await expect(fs.readFile(path.join(tempDir, 'lifecycle.txt'), 'utf8')).resolves.toBe(
+      'ephemeral:4h'
     )
   })
 

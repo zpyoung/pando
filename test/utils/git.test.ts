@@ -248,6 +248,7 @@ branch refs/heads/main
 worktree /path/to/feature
 HEAD def789abc012
 branch refs/heads/feature-branch
+locked pando: active session agent-7
 
 worktree /path/to/detached
 HEAD 111222333444
@@ -274,6 +275,7 @@ prunable
         branch: 'feature-branch',
         commit: 'def789abc012',
         isPrunable: false,
+        isLocked: true,
       })
       expect(result[2]).toEqual({
         path: '/path/to/detached',

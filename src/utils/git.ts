@@ -16,6 +16,7 @@ export interface WorktreeInfo {
   commit: string
   isPrunable: boolean
   isExistingBranch?: boolean
+  isLocked?: boolean
 }
 
 export interface BranchInfo {
@@ -200,6 +201,8 @@ export class GitHelper {
         currentWorktree.branch = null
       } else if (line.startsWith('prunable')) {
         currentWorktree.isPrunable = true
+      } else if (line === 'locked' || line.startsWith('locked ')) {
+        currentWorktree.isLocked = true
       } else if (line === '' && currentWorktree.path) {
         // Empty line marks end of worktree entry
         worktrees.push({
@@ -207,6 +210,7 @@ export class GitHelper {
           branch: currentWorktree.branch || null,
           commit: currentWorktree.commit || '',
           isPrunable: currentWorktree.isPrunable || false,
+          ...(currentWorktree.isLocked ? { isLocked: true } : {}),
         })
         currentWorktree = {}
       }
@@ -219,6 +223,7 @@ export class GitHelper {
         branch: currentWorktree.branch || null,
         commit: currentWorktree.commit || '',
         isPrunable: currentWorktree.isPrunable || false,
+        ...(currentWorktree.isLocked ? { isLocked: true } : {}),
       })
     }
 
