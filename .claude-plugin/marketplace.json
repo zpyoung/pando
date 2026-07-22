@@ -1,0 +1,13 @@
+{
+  "name": "pando",
+  "owner": {
+    "name": "zpyoung"
+  },
+  "plugins": [
+    {
+      "name": "pando",
+      "source": "./plugin",
+      "description": "Claude Code worktree lifecycle management powered by pando"
+    }
+  ]
+}

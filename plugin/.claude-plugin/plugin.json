@@ -1,0 +1,27 @@
+{
+  "name": "pando",
+  "description": "Manage Claude Code worktrees with pando lifecycle metadata, locking, and reaping",
+  "author": {
+    "name": "zpyoung",
+    "url": "https://github.com/zpyoung"
+  },
+  "homepage": "https://github.com/zpyoung/pando",
+  "repository": "https://github.com/zpyoung/pando",
+  "license": "MIT",
+  "keywords": ["git", "worktrees", "parallel-agents", "automation"],
+  "hooks": "./hooks/hooks.json",
+  "userConfig": {
+    "delegateCreation": {
+      "type": "boolean",
+      "title": "Delegate worktree creation to pando",
+      "default": true,
+      "description": "Use pando for Claude Code worktree creation; disable to use plain git worktree add."
+    },
+    "reapOnSessionEnd": {
+      "type": "boolean",
+      "title": "Reap worktrees when sessions end",
+      "default": true,
+      "description": "Unlock and reap eligible ephemeral worktrees owned by the ending Claude Code session."
+    }
+  }
+}
