@@ -1,4 +1,5 @@
 import { Args, Command, Flags } from '@oclif/core'
+import { basename } from 'node:path'
 import { createGitHelper } from '../utils/git.js'
 import { loadConfig } from '../config/loader.js'
 import { parseBoolean } from '../config/env.js'
@@ -52,6 +53,7 @@ interface LifecycleOptions {
   mainRepoPath: string
   resolvedPath: string
   sourceBranch?: string
+  worktreeBranch: string | null
   env?: NodeJS.ProcessEnv
   createdAt?: string
 }
@@ -158,7 +160,8 @@ export async function setupLifecycleMetadata(
         }
 
         if (portsConfig.dbStrategy === 'named') {
-          const dbName = deriveDbName(portsConfig.dbBaseName, sourceBranch)
+          const databaseBranch = options.worktreeBranch ?? basename(resolvedPath)
+          const dbName = deriveDbName(portsConfig.dbBaseName, databaseBranch)
           result.dbName = dbName
           await dependencies.writeMetadata(resolvedPath, { dbName })
         }
@@ -384,6 +387,7 @@ export default class AddWorktree extends Command {
         spinner,
         outputContext.warnings
       )
+      gitHelper.setRetryConfig(config.concurrency.retry)
 
       // Get git root for path resolution
       const gitRoot = await gitHelper.getRepositoryRoot()
@@ -429,6 +433,7 @@ export default class AddWorktree extends Command {
         mainRepoPath,
         resolvedPath,
         sourceBranch: worktreeInfo.sourceBranch,
+        worktreeBranch: worktreeInfo.branch,
       })
       outputContext.lifecycle = lifecycle
       if (!flags.json) {

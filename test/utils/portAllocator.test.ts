@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockEnumerateAll, mockWriteMetadata } = vi.hoisted(() => ({
+const { mockEnumerateAll, mockUnsetPort, mockWriteMetadata } = vi.hoisted(() => ({
   mockEnumerateAll: vi.fn(),
+  mockUnsetPort: vi.fn(),
   mockWriteMetadata: vi.fn(),
 }))
 
 vi.mock('../../src/utils/worktreeMetadata.js', () => ({
   enumerateAll: mockEnumerateAll,
+  unsetPort: mockUnsetPort,
   writeMetadata: mockWriteMetadata,
 }))
 
@@ -16,6 +18,7 @@ describe('portAllocator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockEnumerateAll.mockResolvedValue([])
+    mockUnsetPort.mockResolvedValue(undefined)
     mockWriteMetadata.mockResolvedValue(undefined)
   })
 
@@ -138,6 +141,8 @@ describe('portAllocator', () => {
         })
       ).resolves.toEqual({})
 
+      expect(mockUnsetPort).toHaveBeenCalledOnce()
+      expect(mockUnsetPort).toHaveBeenCalledWith('/repo/worktree', 'api')
       expect(mockWriteMetadata.mock.calls).toEqual([
         ['/repo/worktree', { ports: { api: 3100 } }],
         ['/repo/worktree', { ports: {} }],

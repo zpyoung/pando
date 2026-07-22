@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import { simpleGit, type SimpleGit } from 'simple-git'
-import { withGitRetry } from './gitRetry.js'
+import { withGitRetry, type GitRetryOptions } from './gitRetry.js'
 import { readMetadata } from './worktreeMetadata.js'
 
 /**
@@ -63,9 +63,15 @@ export interface StaleWorktreeInfo extends WorktreeInfo {
 
 export class GitHelper {
   private git: SimpleGit
+  private retryConfig: GitRetryOptions | undefined
 
-  constructor(baseDir?: string) {
+  constructor(baseDir?: string, retryConfig?: GitRetryOptions) {
     this.git = simpleGit(baseDir)
+    this.retryConfig = retryConfig
+  }
+
+  setRetryConfig(cfg?: GitRetryOptions): void {
+    this.retryConfig = cfg
   }
 
   /**
@@ -161,7 +167,7 @@ export class GitHelper {
     }
 
     // Execute worktree add command
-    await withGitRetry(() => this.git.raw(args))
+    await withGitRetry(() => this.git.raw(args), this.retryConfig)
 
     // Get the commit hash for the new worktree, not the source checkout.
     const commitHash = await this.getWorktreeCommit(path)
@@ -274,7 +280,7 @@ export class GitHelper {
 
     args.push(path)
 
-    await withGitRetry(() => this.git.raw(args))
+    await withGitRetry(() => this.git.raw(args), this.retryConfig)
   }
 
   /**
@@ -296,7 +302,7 @@ export class GitHelper {
         if (/is already locked\b/i.test(message)) return
         throw error
       }
-    })
+    }, this.retryConfig)
   }
 
   /**
@@ -312,7 +318,7 @@ export class GitHelper {
         if (/is not locked\b/i.test(message)) return
         throw error
       }
-    })
+    }, this.retryConfig)
   }
 
   /**
@@ -399,7 +405,7 @@ export class GitHelper {
       args.push(startPoint)
     }
 
-    await withGitRetry(() => this.git.raw(args))
+    await withGitRetry(() => this.git.raw(args), this.retryConfig)
 
     // Get commit hash for the new branch
     const commit = await this.git.raw(['rev-parse', name])
@@ -419,7 +425,7 @@ export class GitHelper {
     const args = ['branch', force ? '-D' : '-d', name]
 
     try {
-      await withGitRetry(() => this.git.raw(args))
+      await withGitRetry(() => this.git.raw(args), this.retryConfig)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
 
@@ -634,7 +640,7 @@ export class GitHelper {
    */
   async forceUpdateBranch(branch: string, commit: string): Promise<void> {
     try {
-      await withGitRetry(() => this.git.raw(['branch', '-f', branch, commit]))
+      await withGitRetry(() => this.git.raw(['branch', '-f', branch, commit]), this.retryConfig)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`Failed to update branch '${branch}': ${errorMessage}`)
@@ -648,7 +654,7 @@ export class GitHelper {
    */
   async resetHard(commit: string): Promise<void> {
     try {
-      await withGitRetry(() => this.git.raw(['reset', '--hard', commit]))
+      await withGitRetry(() => this.git.raw(['reset', '--hard', commit]), this.retryConfig)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`Failed to reset to '${commit}': ${errorMessage}`)
@@ -955,7 +961,7 @@ export class GitHelper {
    * @param remote - Remote name (default: 'origin')
    */
   async fetchWithPrune(remote: string = 'origin'): Promise<void> {
-    await withGitRetry(() => this.git.fetch([remote, '--prune']))
+    await withGitRetry(() => this.git.fetch([remote, '--prune']), this.retryConfig)
   }
 
   /**
@@ -1171,6 +1177,6 @@ export class GitHelper {
 /**
  * Create a new GitHelper instance
  */
-export function createGitHelper(baseDir?: string): GitHelper {
-  return new GitHelper(baseDir)
+export function createGitHelper(baseDir?: string, retryConfig?: GitRetryOptions): GitHelper {
+  return new GitHelper(baseDir, retryConfig)
 }

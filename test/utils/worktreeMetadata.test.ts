@@ -20,6 +20,7 @@ import {
   ensureWorktreeConfigEnabled,
   enumerateAll,
   readMetadata,
+  unsetPort,
   writeMetadata,
 } from '../../src/utils/worktreeMetadata'
 
@@ -58,6 +59,23 @@ describe('worktreeMetadata', () => {
       mockRaw.mockRejectedValue(new Error('no matching keys'))
 
       await expect(readMetadata('/not/a/repo')).resolves.toEqual({})
+    })
+  })
+
+  describe('unsetPort', () => {
+    it('unsets the named port from worktree config', async () => {
+      mockRaw.mockResolvedValue('')
+
+      await expect(unsetPort('/repo/worktree', 'api')).resolves.toBeUndefined()
+
+      expect(mockSimpleGit).toHaveBeenCalledWith('/repo/worktree')
+      expect(mockRaw).toHaveBeenCalledWith(['config', '--worktree', '--unset', 'pando.port.api'])
+    })
+
+    it('does not fail when the port key is absent', async () => {
+      mockRaw.mockRejectedValue(new Error('key not found'))
+
+      await expect(unsetPort('/repo/worktree', 'api')).resolves.toBeUndefined()
     })
   })
 

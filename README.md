@@ -101,7 +101,7 @@ Create a new git worktree (supports both creating new branches and checking out 
 
 > When `--skip-rsync` is combined with `--rsync-flags` or `--rsync-exclude`, the rsync flags are ignored and a warning is shown.
 
-**Lifecycle metadata**: `pando add` stores the worktree kind, creation time, source branch, and optional owner/TTL in Git's per-worktree config. Flags override `worktree.defaultKind`; `auto` treats Claude worktree paths, active agent-session environments, and boolean `PANDO_EPHEMERAL=true|1|yes` signals as ephemeral, and other worktrees as long-lived. Worktrees created during an active `CLAUDE_SESSION_ID` or `PANDO_SESSION` are automatically Git-locked when `worktree.autoLockActive` is enabled; passing `--owner` alone does not trigger auto-locking. When `[ports].enabled` or `--ports` is set, requested service ports and a branch-derived database name are also stored. Exhausted ports produce a warning without failing worktree creation.
+**Lifecycle metadata**: `pando add` stores the worktree kind, creation time, source branch, and optional owner/TTL in Git's per-worktree config. Flags override `worktree.defaultKind`; `auto` treats Claude worktree paths, active agent-session environments, and boolean `PANDO_EPHEMERAL=true|1|yes` signals as ephemeral, and other worktrees as long-lived. Worktrees created during an active `CLAUDE_SESSION_ID` or `PANDO_SESSION` are automatically Git-locked when `worktree.autoLockActive` is enabled; passing `--owner` alone does not trigger auto-locking. When `[ports].enabled` or `--ports` is set, requested service ports and a database name derived from each worktree's own branch are also stored. Exhausted ports produce a warning without failing worktree creation.
 
 **Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
 
@@ -587,7 +587,7 @@ enabled = false                    # Or opt in for one add with --ports
 range = "3100-3199"
 names = ["web"]
 dbStrategy = "named"
-dbBaseName = "dev"
+dbBaseName = "dev"              # Prefix for a name derived from each worktree's own branch
 
 # Clean Configuration
 [clean]

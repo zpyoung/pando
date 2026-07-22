@@ -218,7 +218,7 @@ names = ["web"]
 # Default: "named"
 dbStrategy = "named"
 
-# Base name used to derive each worktree's database name
+# Base name used with each worktree's own branch to derive its database name
 # Default: "dev"
 dbBaseName = "dev"
 

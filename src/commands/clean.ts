@@ -294,6 +294,7 @@ export default class CleanWorktree extends Command {
       // 2. Load config
       const gitRoot = await gitHelper.getRepositoryRoot()
       const config = await loadConfig({ gitRoot })
+      gitHelper.setRetryConfig(config.concurrency.retry)
 
       // Apply config with flag precedence (flag > config > default)
       const shouldFetch = flags.fetch || config.clean.fetch

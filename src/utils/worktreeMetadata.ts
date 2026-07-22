@@ -104,6 +104,14 @@ export async function readMetadata(worktreePath: string): Promise<WorktreeMetada
   }
 }
 
+export async function unsetPort(worktreePath: string, name: string): Promise<void> {
+  try {
+    await simpleGit(worktreePath).raw(['config', '--worktree', '--unset', `pando.port.${name}`])
+  } catch {
+    // An absent port key is already in the desired state.
+  }
+}
+
 export async function writeMetadata(
   worktreePath: string,
   patch: Partial<WorktreeMetadata>

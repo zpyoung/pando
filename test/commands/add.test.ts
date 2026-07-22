@@ -19,6 +19,7 @@ import type { PandoConfig } from '../../src/config/schema'
 // ---------------------------------------------------------------------------
 
 const mockGitHelper = {
+  setRetryConfig: vi.fn(),
   isRepository: vi.fn(),
   getRepositoryRoot: vi.fn(),
   getCurrentBranch: vi.fn(),
@@ -120,6 +121,7 @@ function baseConfig(overrides: Partial<PandoConfig> = {}): PandoConfig {
       autoLockActive: true,
     },
     clean: { fetch: false },
+    concurrency: { retry: { maxAttempts: 5, baseMs: 100, capMs: 2000 } },
     ports: {
       enabled: false,
       range: '3100-3199',
@@ -272,6 +274,7 @@ describe('add: lifecycle metadata setup', () => {
         mainRepoPath: '/repo',
         resolvedPath: '/repo/wt',
         sourceBranch: 'develop',
+        worktreeBranch: 'feature',
         env: {},
         createdAt: '2026-07-22T12:00:00.000Z',
       },
@@ -304,6 +307,7 @@ describe('add: lifecycle metadata setup', () => {
         mainRepoPath: '/repo',
         resolvedPath: '/repo/wt',
         sourceBranch: 'develop',
+        worktreeBranch: 'feature',
         env: { CLAUDE_SESSION_ID: '' },
       },
       dependencies()
@@ -335,7 +339,8 @@ describe('add: lifecycle metadata setup', () => {
         gitRoot: '/repo',
         mainRepoPath: '/repo/main',
         resolvedPath: '/repo/wt',
-        sourceBranch: 'Feature/Ports',
+        sourceBranch: 'main',
+        worktreeBranch: 'Feature/Ports',
         env: {},
       },
       deps
@@ -356,6 +361,35 @@ describe('add: lifecycle metadata setup', () => {
     })
   })
 
+  it('uses the path basename for a detached worktree database name', async () => {
+    const deps = dependencies()
+
+    const result = await setupLifecycleMetadata(
+      {
+        flags: {},
+        worktreeConfig,
+        portsConfig: { ...portsConfig, enabled: true },
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree: vi.fn(),
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo/main',
+        resolvedPath: '/repo/worktrees/detached-preview',
+        sourceBranch: 'develop',
+        worktreeBranch: null,
+        env: {},
+      },
+      deps
+    )
+
+    expect(result.dbName).toBe('dev_detached_preview')
+    expect(deps.writeMetadata).toHaveBeenLastCalledWith('/repo/worktrees/detached-preview', {
+      dbName: 'dev_detached_preview',
+    })
+  })
+
   it('does not allocate ports when allocation is disabled', async () => {
     const deps = dependencies()
 
@@ -373,6 +407,7 @@ describe('add: lifecycle metadata setup', () => {
         mainRepoPath: '/repo/main',
         resolvedPath: '/repo/wt',
         sourceBranch: 'main',
+        worktreeBranch: 'feature',
         env: {},
       },
       deps
@@ -402,6 +437,7 @@ describe('add: lifecycle metadata setup', () => {
       mainRepoPath: '/repo/main',
       resolvedPath: '/repo/wt',
       sourceBranch: 'main',
+      worktreeBranch: 'main',
       env: {},
     }
 
@@ -433,6 +469,7 @@ describe('add: lifecycle metadata setup', () => {
           mainRepoPath: '/repo',
           resolvedPath: '/repo/wt',
           sourceBranch: 'develop',
+          worktreeBranch: 'feature',
           env: { PANDO_SESSION: 'session-7' },
         },
         dependencies()
@@ -526,6 +563,7 @@ describe('add: lifecycle metadata setup', () => {
           mainRepoPath: '/repo',
           resolvedPath: '/repo/wt',
           sourceBranch: 'develop',
+          worktreeBranch: 'feature',
           env: {},
         },
         deps
@@ -709,7 +747,7 @@ describe('add: JSON document consistency', () => {
       ttl: '30m',
       effectiveTtl: '30m',
       ports: { web: 3100 },
-      dbName: 'dev_main',
+      dbName: 'dev_feature',
       locked: false,
     })
     expect(output.warnings).toEqual(['setup warning', 'lifecycle notice'])

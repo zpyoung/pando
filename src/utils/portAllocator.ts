@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:net'
-import { enumerateAll, writeMetadata } from './worktreeMetadata.js'
+import { enumerateAll, unsetPort, writeMetadata } from './worktreeMetadata.js'
 
 type PortProbe = (port: number) => Promise<boolean>
 type AddressProbeResult = 'free' | 'taken' | 'unsupported'
@@ -147,6 +147,7 @@ export async function allocate(
         const replacement = await findFreePort(start, end, taken, isPortFree)
         if (replacement === undefined) {
           delete ports[name]
+          await unsetPort(worktreePath, name)
           continue
         }
 

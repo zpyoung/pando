@@ -249,6 +249,7 @@ export default class RemoveWorktree extends Command {
       // 2. Load config for branch deletion settings
       const gitRoot = await gitHelper.getRepositoryRoot()
       const config = await loadConfig({ gitRoot })
+      gitHelper.setRetryConfig(config.concurrency.retry)
 
       // Determine delete-branch option (--keep-branch takes precedence, then flag, then config)
       const deleteBranchOption: DeleteBranchOption = flags['keep-branch']

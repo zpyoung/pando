@@ -9,6 +9,7 @@ import ReapWorktree, {
 
 const { mockGitHelper, mockEnumerateAll, mockStatus } = vi.hoisted(() => ({
   mockGitHelper: {
+    setRetryConfig: vi.fn(),
     isRepository: vi.fn(),
     getRepositoryRoot: vi.fn(),
     getMainWorktreePath: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('../../src/config/loader.js', () => ({
   loadConfig: vi.fn().mockResolvedValue({
     worktree: { ephemeralTtl: '4h', targetBranch: 'main' },
     reap: { requireMerged: true },
+    concurrency: { retry: { maxAttempts: 5, baseMs: 100, capMs: 2000 } },
   }),
 }))
 

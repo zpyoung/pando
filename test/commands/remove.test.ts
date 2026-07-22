@@ -13,6 +13,7 @@ import { readMetadata } from '../../src/utils/worktreeMetadata.js'
 // Mock the git module
 vi.mock('../../src/utils/git.js', () => {
   const mockGitHelper = {
+    setRetryConfig: vi.fn(),
     isRepository: vi.fn(),
     getRepositoryRoot: vi.fn(),
     listWorktrees: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('../../src/config/loader.js', () => ({
     rsync: { enabled: true, flags: ['--archive'], exclude: [] },
     symlink: { patterns: [], relative: true, beforeRsync: true },
     worktree: { rebaseOnAdd: true, deleteBranchOnRemove: 'local' },
+    concurrency: { retry: { maxAttempts: 5, baseMs: 100, capMs: 2000 } },
   }),
 }))
 

@@ -312,6 +312,7 @@ export default class ReapWorktree extends Command {
       const gitRoot = await gitHelper.getRepositoryRoot()
       const mainWorktreePath = await gitHelper.getMainWorktreePath()
       const config = await loadConfig({ gitRoot })
+      gitHelper.setRetryConfig(config.concurrency.retry)
       const [metadataEntries, listedWorktrees] = await Promise.all([
         enumerateAll(mainWorktreePath),
         gitHelper.listWorktrees(),

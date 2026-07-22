@@ -384,6 +384,21 @@ prunable
       expect(mockGit.raw).toHaveBeenNthCalledWith(2, ['worktree', 'remove', '/path/to/worktree'])
     })
 
+    it('should honor a custom retry attempt limit for mutating operations', async () => {
+      const transientError = Object.assign(
+        new Error(
+          "fatal: cannot lock ref 'refs/heads/feature': Unable to create '/repo/.git/refs/heads/feature.lock': File exists"
+        ),
+        { exitCode: 128 }
+      )
+      mockGit.raw = vi.fn().mockRejectedValue(transientError)
+      gitHelper.setRetryConfig({ maxAttempts: 2, baseMs: 0, capMs: 1 })
+
+      await expect(gitHelper.removeWorktree('/path/to/worktree')).rejects.toBe(transientError)
+
+      expect(mockGit.raw).toHaveBeenCalledTimes(2)
+    })
+
     it('should find worktree by exact branch name', async () => {
       const _mockWorktrees: WorktreeInfo[] = [
         { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
