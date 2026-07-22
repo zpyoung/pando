@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isTransientLockError, withGitRetry } from '../../src/utils/gitRetry'
 
+const REAL_SIMPLE_GIT_LOCK_MESSAGE =
+  "fatal: cannot lock ref 'refs/heads/feat': Unable to create '/.../feat.lock': File exists.\n\nAnother git process seems to be running ..."
+
 function lockError(message = "fatal: Unable to create '.git/index.lock': File exists."): Error {
   return Object.assign(new Error(message), { exitCode: 128 })
+}
+
+function realSimpleGitLockError(): Error {
+  return Object.assign(new Error(REAL_SIMPLE_GIT_LOCK_MESSAGE), { task: {} })
 }
 
 describe('isTransientLockError', () => {
@@ -36,14 +43,45 @@ describe('isTransientLockError', () => {
     expect(isTransientLockError(error)).toBe(false)
   })
 
-  it('rejects lock errors without exit code 128', () => {
+  it('distinguishes a ref D/F conflict from real lock-file contention without an exit code', () => {
+    const refConflict = new Error(
+      "cannot lock ref 'refs/heads/foo/bar': 'refs/heads/foo' exists; cannot create 'refs/heads/foo/bar'"
+    )
+    const lockContention = new Error(
+      "cannot lock ref 'refs/heads/foo': Unable to create '/repo/.git/refs/heads/foo.lock': File exists"
+    )
+
+    expect(isTransientLockError(refConflict)).toBe(false)
+    expect(isTransientLockError(lockContention)).toBe(true)
+  })
+
+  it('does not retry a ref D/F conflict even when it carries exit code 128', () => {
+    const refConflict = Object.assign(
+      new Error(
+        "cannot lock ref 'refs/heads/foo/bar': 'refs/heads/foo' exists; cannot create 'refs/heads/foo/bar'"
+      ),
+      { exitCode: 128 }
+    )
+
+    expect(isTransientLockError(refConflict)).toBe(false)
+  })
+
+  it('rejects a non-definitive lock mention without exit code 128', () => {
     const error = Object.assign(new Error('fatal: index.lock already exists'), { exitCode: 1 })
 
     expect(isTransientLockError(error)).toBe(false)
   })
 
+  it('rejects a bare unable-to-create message even with exit code 128', () => {
+    const error = Object.assign(new Error('fatal: unable to create temporary output'), {
+      exitCode: 128,
+    })
+
+    expect(isTransientLockError(error)).toBe(false)
+  })
+
   it('does not treat a numeric count as an exit code', () => {
-    const error = new Error('migration exited with 128 commits remaining; cannot lock ref')
+    const error = new Error('migration exited with 128 commits remaining; stale index.lock found')
 
     expect(isTransientLockError(error)).toBe(false)
   })
@@ -72,6 +110,21 @@ describe('withGitRetry', () => {
     const operation = vi.fn().mockRejectedValueOnce(lockError()).mockResolvedValueOnce('success')
 
     const result = withGitRetry(operation, { baseMs: 100 })
+    await vi.runAllTimersAsync()
+
+    await expect(result).resolves.toBe('success')
+    expect(operation).toHaveBeenCalledTimes(2)
+  })
+
+  it('recognizes and retries the real simple-git lock error without an exit code', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const error = realSimpleGitLockError()
+    const operation = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce('success')
+
+    expect('exitCode' in error).toBe(false)
+    expect(isTransientLockError(error)).toBe(true)
+
+    const result = withGitRetry(operation)
     await vi.runAllTimersAsync()
 
     await expect(result).resolves.toBe('success')

@@ -1,4 +1,7 @@
+import { stat } from 'node:fs/promises'
 import { simpleGit, type SimpleGit } from 'simple-git'
+import { withGitRetry } from './gitRetry.js'
+import { readMetadata } from './worktreeMetadata.js'
 
 /**
  * Git utility wrapper for worktree and branch operations
@@ -157,7 +160,7 @@ export class GitHelper {
     }
 
     // Execute worktree add command
-    await this.git.raw(args)
+    await withGitRetry(() => this.git.raw(args))
 
     // Get the commit hash for the new worktree, not the source checkout.
     const commitHash = await this.getWorktreeCommit(path)
@@ -266,7 +269,99 @@ export class GitHelper {
 
     args.push(path)
 
-    await this.git.raw(args)
+    await withGitRetry(() => this.git.raw(args))
+  }
+
+  /**
+   * Lock a worktree so Git will not prune or move it
+   */
+  async lockWorktree(worktreePath: string, reason?: string): Promise<void> {
+    const args = ['worktree', 'lock']
+    if (reason !== undefined) {
+      args.push('--reason', reason)
+    }
+    args.push(worktreePath)
+
+    await withGitRetry(async () => {
+      try {
+        await this.git.raw(args)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        // Lifecycle cleanup may replay a completed lock operation after interruption.
+        if (/is already locked\b/i.test(message)) return
+        throw error
+      }
+    })
+  }
+
+  /**
+   * Unlock a worktree
+   */
+  async unlockWorktree(worktreePath: string): Promise<void> {
+    await withGitRetry(async () => {
+      try {
+        await this.git.raw(['worktree', 'unlock', worktreePath])
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        // Lifecycle cleanup may replay a completed unlock operation after interruption.
+        if (/is not locked\b/i.test(message)) return
+        throw error
+      }
+    })
+  }
+
+  /**
+   * Get the age of a worktree, preferring its lifecycle metadata
+   */
+  async getWorktreeAgeMs(worktreePath: string): Promise<number> {
+    try {
+      const { createdAt } = await readMetadata(worktreePath)
+      if (createdAt !== undefined) {
+        const createdAtMs = Date.parse(createdAt)
+        const ageMs = Date.now() - createdAtMs
+        if (Number.isFinite(ageMs)) return Math.max(0, ageMs)
+      }
+    } catch {
+      // Older or partially-created worktrees may not have readable metadata.
+    }
+
+    try {
+      const worktreeStat = await stat(worktreePath)
+      const ageMs = Date.now() - worktreeStat.mtimeMs
+      return Number.isFinite(ageMs) ? Math.max(0, ageMs) : 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Check whether a worktree can be reaped without losing work or commits
+   */
+  async isReapClean(worktreePath: string, targetBranch: string): Promise<boolean> {
+    try {
+      const mergeTarget = targetBranch.trim()
+      if (!mergeTarget) return false
+
+      const status = await simpleGit(worktreePath).status()
+      if (!status.isClean()) return false
+
+      await this.git.raw(['show-ref', '--verify', '--quiet', `refs/heads/${mergeTarget}`])
+
+      const worktree = (await this.listWorktrees()).find(({ path }) => path === worktreePath)
+      if (!worktree?.branch) return false
+
+      return await this.isBranchMerged(worktree.branch, `refs/heads/${mergeTarget}`)
+    } catch {
+      // Reaping must never proceed when repository state cannot be established.
+      return false
+    }
+  }
+
+  /**
+   * Infer the agent session that owns a worktree
+   */
+  inferOwner(): string {
+    return process.env.CLAUDE_SESSION_ID ?? process.env.PANDO_SESSION ?? ''
   }
 
   /**
@@ -299,7 +394,7 @@ export class GitHelper {
       args.push(startPoint)
     }
 
-    await this.git.raw(args)
+    await withGitRetry(() => this.git.raw(args))
 
     // Get commit hash for the new branch
     const commit = await this.git.raw(['rev-parse', name])
@@ -319,7 +414,7 @@ export class GitHelper {
     const args = ['branch', force ? '-D' : '-d', name]
 
     try {
-      await this.git.raw(args)
+      await withGitRetry(() => this.git.raw(args))
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
 
@@ -373,7 +468,7 @@ export class GitHelper {
       const output = await this.git.raw(['branch', '--merged', target])
       const mergedBranches = output
         .split('\n')
-        .map((line) => line.trim().replace(/^\*\s*/, ''))
+        .map((line) => line.replace(/^[*+]?\s*/, '').trim())
         .filter(Boolean)
 
       return mergedBranches.includes(name)
@@ -534,7 +629,7 @@ export class GitHelper {
    */
   async forceUpdateBranch(branch: string, commit: string): Promise<void> {
     try {
-      await this.git.raw(['branch', '-f', branch, commit])
+      await withGitRetry(() => this.git.raw(['branch', '-f', branch, commit]))
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`Failed to update branch '${branch}': ${errorMessage}`)
@@ -548,7 +643,7 @@ export class GitHelper {
    */
   async resetHard(commit: string): Promise<void> {
     try {
-      await this.git.raw(['reset', '--hard', commit])
+      await withGitRetry(() => this.git.raw(['reset', '--hard', commit]))
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`Failed to reset to '${commit}': ${errorMessage}`)
@@ -855,7 +950,7 @@ export class GitHelper {
    * @param remote - Remote name (default: 'origin')
    */
   async fetchWithPrune(remote: string = 'origin'): Promise<void> {
-    await this.git.fetch([remote, '--prune'])
+    await withGitRetry(() => this.git.fetch([remote, '--prune']))
   }
 
   /**

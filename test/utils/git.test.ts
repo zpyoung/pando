@@ -1,6 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { GitHelper, WorktreeInfo } from '../../src/utils/git'
 
+const { mockReadMetadata, mockStat } = vi.hoisted(() => ({
+  mockReadMetadata: vi.fn(),
+  mockStat: vi.fn(),
+}))
+
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  return { ...actual, stat: mockStat }
+})
+
+vi.mock('../../src/utils/worktreeMetadata', () => ({
+  readMetadata: mockReadMetadata,
+}))
+
 // Mock simpleGit for worktree-specific operations
 const mockWorktreeGit = {
   raw: vi.fn(),
@@ -36,6 +50,7 @@ describe('GitHelper', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockReadMetadata.mockResolvedValue({})
     mockWorktreeGit.revparse.mockResolvedValue('abc123def456\n')
     gitHelper = new GitHelper()
     // Access private git instance through type assertion for testing
@@ -295,6 +310,78 @@ prunable
       ])
     })
 
+    it('should lock a worktree with a reason', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('')
+
+      await gitHelper.lockWorktree('/path/to/worktree', 'agent is active')
+
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'worktree',
+        'lock',
+        '--reason',
+        'agent is active',
+        '/path/to/worktree',
+      ])
+    })
+
+    it('should treat an already locked worktree as success', async () => {
+      mockGit.raw = vi
+        .fn()
+        .mockRejectedValue(new Error("fatal: '/path/to/worktree' is already locked"))
+
+      await expect(gitHelper.lockWorktree('/path/to/worktree')).resolves.toBeUndefined()
+      expect(mockGit.raw).toHaveBeenCalledWith(['worktree', 'lock', '/path/to/worktree'])
+    })
+
+    it('should not swallow an unrelated lock error containing an already-locked path', async () => {
+      const error = new Error("fatal: '/tmp/already locked' is not a working tree")
+      mockGit.raw = vi.fn().mockRejectedValue(error)
+
+      await expect(gitHelper.lockWorktree('/tmp/already locked')).rejects.toBe(error)
+    })
+
+    it('should unlock a worktree', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue('')
+
+      await gitHelper.unlockWorktree('/path/to/worktree')
+
+      expect(mockGit.raw).toHaveBeenCalledWith(['worktree', 'unlock', '/path/to/worktree'])
+    })
+
+    it('should treat a worktree that is not locked as successfully unlocked', async () => {
+      mockGit.raw = vi.fn().mockRejectedValue(new Error("fatal: '/path/to/worktree' is not locked"))
+
+      await expect(gitHelper.unlockWorktree('/path/to/worktree')).resolves.toBeUndefined()
+    })
+
+    it('should not swallow an unrelated unlock error containing a not-locked path', async () => {
+      const error = new Error("fatal: '/tmp/not locked' is not a working tree")
+      mockGit.raw = vi.fn().mockRejectedValue(error)
+
+      await expect(gitHelper.unlockWorktree('/tmp/not locked')).rejects.toBe(error)
+    })
+
+    it('should retry a mutating operation after transient ref lock contention', async () => {
+      const transientError = Object.assign(
+        new Error(
+          "fatal: cannot lock ref 'refs/heads/feature': Unable to create '/repo/.git/refs/heads/feature.lock': File exists"
+        ),
+        { exitCode: 128 }
+      )
+      mockGit.raw = vi.fn().mockRejectedValueOnce(transientError).mockResolvedValueOnce('')
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+
+      try {
+        await gitHelper.removeWorktree('/path/to/worktree')
+      } finally {
+        randomSpy.mockRestore()
+      }
+
+      expect(mockGit.raw).toHaveBeenCalledTimes(2)
+      expect(mockGit.raw).toHaveBeenNthCalledWith(1, ['worktree', 'remove', '/path/to/worktree'])
+      expect(mockGit.raw).toHaveBeenNthCalledWith(2, ['worktree', 'remove', '/path/to/worktree'])
+    })
+
     it('should find worktree by exact branch name', async () => {
       const _mockWorktrees: WorktreeInfo[] = [
         { path: '/path/to/main', branch: 'main', commit: 'abc123', isPrunable: false },
@@ -350,6 +437,146 @@ branch refs/heads/main
       const result = await gitHelper.findWorktreeByBranch('nonexistent')
 
       expect(result).toBeNull()
+    })
+  })
+
+  describe('worktree lifecycle', () => {
+    it('should calculate worktree age from metadata createdAt', async () => {
+      const now = Date.parse('2026-07-22T12:00:00.000Z')
+      mockReadMetadata.mockResolvedValue({ createdAt: '2026-07-22T11:00:00.000Z' })
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now)
+
+      try {
+        await expect(gitHelper.getWorktreeAgeMs('/path/to/worktree')).resolves.toBe(3_600_000)
+      } finally {
+        nowSpy.mockRestore()
+      }
+
+      expect(mockStat).not.toHaveBeenCalled()
+    })
+
+    it('should fall back to directory mtime when metadata createdAt is invalid', async () => {
+      const now = Date.parse('2026-07-22T12:00:00.000Z')
+      mockReadMetadata.mockResolvedValue({ createdAt: 'not-a-date' })
+      mockStat.mockResolvedValue({ mtimeMs: now - 60_000 })
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(now)
+
+      try {
+        await expect(gitHelper.getWorktreeAgeMs('/path/to/worktree')).resolves.toBe(60_000)
+      } finally {
+        nowSpy.mockRestore()
+      }
+
+      expect(mockStat).toHaveBeenCalledWith('/path/to/worktree')
+    })
+
+    it('should return zero when worktree age sources are unavailable', async () => {
+      mockReadMetadata.mockRejectedValue(new Error('metadata unavailable'))
+      mockStat.mockRejectedValue(new Error('worktree missing'))
+
+      await expect(gitHelper.getWorktreeAgeMs('/path/to/worktree')).resolves.toBe(0)
+    })
+
+    it('should report a clean merged worktree as reap clean', async () => {
+      mockWorktreeGit.status.mockResolvedValue({ isClean: () => true })
+      mockGit.raw = vi.fn().mockResolvedValue('')
+      vi.spyOn(gitHelper, 'listWorktrees').mockResolvedValue([
+        {
+          path: '/path/to/worktree',
+          branch: 'feature',
+          commit: 'abc123',
+          isPrunable: false,
+        },
+      ])
+      const mergedSpy = vi.spyOn(gitHelper, 'isBranchMerged').mockResolvedValue(true)
+
+      await expect(gitHelper.isReapClean('/path/to/worktree', 'main')).resolves.toBe(true)
+      expect(mockWorktreeGit.status).toHaveBeenCalledOnce()
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'show-ref',
+        '--verify',
+        '--quiet',
+        'refs/heads/main',
+      ])
+      expect(mergedSpy).toHaveBeenCalledWith('feature', 'refs/heads/main')
+    })
+
+    it('should not report a dirty worktree as reap clean', async () => {
+      mockWorktreeGit.status.mockResolvedValue({ isClean: () => false })
+      const listSpy = vi.spyOn(gitHelper, 'listWorktrees')
+
+      await expect(gitHelper.isReapClean('/path/to/worktree', 'main')).resolves.toBe(false)
+      expect(listSpy).not.toHaveBeenCalled()
+    })
+
+    it('should not report an unmerged worktree as reap clean', async () => {
+      mockWorktreeGit.status.mockResolvedValue({ isClean: () => true })
+      mockGit.raw = vi.fn().mockResolvedValue('')
+      vi.spyOn(gitHelper, 'listWorktrees').mockResolvedValue([
+        {
+          path: '/path/to/worktree',
+          branch: 'feature',
+          commit: 'abc123',
+          isPrunable: false,
+        },
+      ])
+      vi.spyOn(gitHelper, 'isBranchMerged').mockResolvedValue(false)
+
+      await expect(gitHelper.isReapClean('/path/to/worktree', 'main')).resolves.toBe(false)
+    })
+
+    it('should fail closed when the direct worktree status check throws', async () => {
+      const swallowedCheckSpy = vi.spyOn(gitHelper, 'hasUncommittedChanges')
+      mockWorktreeGit.status.mockRejectedValue(new Error('status failed'))
+
+      await expect(gitHelper.isReapClean('/path/to/worktree', 'main')).resolves.toBe(false)
+      expect(swallowedCheckSpy).not.toHaveBeenCalled()
+    })
+
+    it('should reject an empty target branch', async () => {
+      await expect(gitHelper.isReapClean('/path/to/worktree', '   ')).resolves.toBe(false)
+      expect(mockWorktreeGit.status).not.toHaveBeenCalled()
+    })
+
+    it('should reject a revision expression as a local branch target', async () => {
+      mockWorktreeGit.status.mockResolvedValue({ isClean: () => true })
+      mockGit.raw = vi.fn().mockRejectedValue(new Error('exact local branch not found'))
+      const listSpy = vi.spyOn(gitHelper, 'listWorktrees')
+
+      await expect(gitHelper.isReapClean('/path/to/worktree', 'main~1')).resolves.toBe(false)
+      expect(mockGit.raw).toHaveBeenCalledWith([
+        'show-ref',
+        '--verify',
+        '--quiet',
+        'refs/heads/main~1',
+      ])
+      expect(listSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('owner inference', () => {
+    it('should prefer CLAUDE_SESSION_ID over PANDO_SESSION', () => {
+      vi.stubEnv('CLAUDE_SESSION_ID', 'claude-session')
+      vi.stubEnv('PANDO_SESSION', 'pando-session')
+
+      try {
+        expect(gitHelper.inferOwner()).toBe('claude-session')
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    })
+
+    it('should fall back to PANDO_SESSION and then an empty string', () => {
+      vi.stubEnv('CLAUDE_SESSION_ID', undefined)
+      vi.stubEnv('PANDO_SESSION', 'pando-session')
+
+      try {
+        expect(gitHelper.inferOwner()).toBe('pando-session')
+        vi.stubEnv('PANDO_SESSION', undefined)
+        expect(gitHelper.inferOwner()).toBe('')
+      } finally {
+        vi.unstubAllEnvs()
+      }
     })
   })
 
@@ -482,8 +709,8 @@ branch refs/heads/main
       expect(mockGit.raw).toHaveBeenCalledWith(['branch', '--merged', 'HEAD'])
     })
 
-    it('should check if branch is merged into target', async () => {
-      const mockOutput = `  feature-1
+    it('should detect a merged branch checked out in another worktree', async () => {
+      const mockOutput = `+ feature-1
 `
       mockGit.raw = vi.fn().mockResolvedValue(mockOutput)
 
@@ -1049,6 +1276,24 @@ branch refs/heads/main
       await gitHelper.fetchWithPrune('upstream')
 
       expect(mockGit.fetch).toHaveBeenCalledWith(['upstream', '--prune'])
+    })
+
+    it('should retry fetch after transient ref-lock contention', async () => {
+      const transientError = new Error(
+        "fatal: cannot lock ref 'refs/remotes/origin/main': Unable to create '/repo/.git/refs/remotes/origin/main.lock': File exists"
+      )
+      mockGit.fetch = vi.fn().mockRejectedValueOnce(transientError).mockResolvedValueOnce({})
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+
+      try {
+        await gitHelper.fetchWithPrune()
+      } finally {
+        randomSpy.mockRestore()
+      }
+
+      expect(mockGit.fetch).toHaveBeenCalledTimes(2)
+      expect(mockGit.fetch).toHaveBeenNthCalledWith(1, ['origin', '--prune'])
+      expect(mockGit.fetch).toHaveBeenNthCalledWith(2, ['origin', '--prune'])
     })
   })
 
