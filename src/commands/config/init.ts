@@ -279,6 +279,9 @@ export default class ConfigInit extends Command {
       symlink: { ...DEFAULT_CONFIG.symlink },
       worktree: { ...DEFAULT_CONFIG.worktree },
       clean: { ...DEFAULT_CONFIG.clean },
+      reap: { ...DEFAULT_CONFIG.reap },
+      concurrency: { retry: { ...DEFAULT_CONFIG.concurrency.retry } },
+      ports: { ...DEFAULT_CONFIG.ports },
       postCommands: { ...DEFAULT_CONFIG.postCommands },
     }
 
@@ -380,6 +383,33 @@ export default class ConfigInit extends Command {
           value: DEFAULT_CONFIG.worktree.targetBranch,
         })
       }
+
+      if (existing.worktree.defaultKind !== undefined) {
+        merged.worktree.defaultKind = existing.worktree.defaultKind
+      } else {
+        added.push({
+          path: 'worktree.defaultKind',
+          value: DEFAULT_CONFIG.worktree.defaultKind,
+        })
+      }
+
+      if (existing.worktree.ephemeralTtl !== undefined) {
+        merged.worktree.ephemeralTtl = existing.worktree.ephemeralTtl
+      } else {
+        added.push({
+          path: 'worktree.ephemeralTtl',
+          value: DEFAULT_CONFIG.worktree.ephemeralTtl,
+        })
+      }
+
+      if (existing.worktree.autoLockActive !== undefined) {
+        merged.worktree.autoLockActive = existing.worktree.autoLockActive
+      } else {
+        added.push({
+          path: 'worktree.autoLockActive',
+          value: DEFAULT_CONFIG.worktree.autoLockActive,
+        })
+      }
     } else {
       added.push({ path: 'worktree', value: DEFAULT_CONFIG.worktree })
     }
@@ -393,6 +423,88 @@ export default class ConfigInit extends Command {
       }
     } else {
       added.push({ path: 'clean', value: DEFAULT_CONFIG.clean })
+    }
+
+    // Merge reap section
+    if (existing.reap) {
+      if (existing.reap.requireMerged !== undefined) {
+        merged.reap.requireMerged = existing.reap.requireMerged
+      } else {
+        added.push({ path: 'reap.requireMerged', value: DEFAULT_CONFIG.reap.requireMerged })
+      }
+    } else {
+      added.push({ path: 'reap', value: DEFAULT_CONFIG.reap })
+    }
+
+    // Merge concurrency section
+    if (existing.concurrency) {
+      if (existing.concurrency.retry) {
+        if (existing.concurrency.retry.maxAttempts !== undefined) {
+          merged.concurrency.retry.maxAttempts = existing.concurrency.retry.maxAttempts
+        } else {
+          added.push({
+            path: 'concurrency.retry.maxAttempts',
+            value: DEFAULT_CONFIG.concurrency.retry.maxAttempts,
+          })
+        }
+
+        if (existing.concurrency.retry.baseMs !== undefined) {
+          merged.concurrency.retry.baseMs = existing.concurrency.retry.baseMs
+        } else {
+          added.push({
+            path: 'concurrency.retry.baseMs',
+            value: DEFAULT_CONFIG.concurrency.retry.baseMs,
+          })
+        }
+
+        if (existing.concurrency.retry.capMs !== undefined) {
+          merged.concurrency.retry.capMs = existing.concurrency.retry.capMs
+        } else {
+          added.push({
+            path: 'concurrency.retry.capMs',
+            value: DEFAULT_CONFIG.concurrency.retry.capMs,
+          })
+        }
+      } else {
+        added.push({ path: 'concurrency.retry', value: DEFAULT_CONFIG.concurrency.retry })
+      }
+    } else {
+      added.push({ path: 'concurrency', value: DEFAULT_CONFIG.concurrency })
+    }
+
+    // Merge ports section
+    if (existing.ports) {
+      if (existing.ports.enabled !== undefined) {
+        merged.ports.enabled = existing.ports.enabled
+      } else {
+        added.push({ path: 'ports.enabled', value: DEFAULT_CONFIG.ports.enabled })
+      }
+
+      if (existing.ports.range !== undefined) {
+        merged.ports.range = existing.ports.range
+      } else {
+        added.push({ path: 'ports.range', value: DEFAULT_CONFIG.ports.range })
+      }
+
+      if (existing.ports.names !== undefined) {
+        merged.ports.names = existing.ports.names
+      } else {
+        added.push({ path: 'ports.names', value: DEFAULT_CONFIG.ports.names })
+      }
+
+      if (existing.ports.dbStrategy !== undefined) {
+        merged.ports.dbStrategy = existing.ports.dbStrategy
+      } else {
+        added.push({ path: 'ports.dbStrategy', value: DEFAULT_CONFIG.ports.dbStrategy })
+      }
+
+      if (existing.ports.dbBaseName !== undefined) {
+        merged.ports.dbBaseName = existing.ports.dbBaseName
+      } else {
+        added.push({ path: 'ports.dbBaseName', value: DEFAULT_CONFIG.ports.dbBaseName })
+      }
+    } else {
+      added.push({ path: 'ports', value: DEFAULT_CONFIG.ports })
     }
 
     if (existing.postCommands) {
@@ -456,6 +568,12 @@ export default class ConfigInit extends Command {
       '#   remote: Delete both local and remote branches',
       '# targetBranch - Target branch for merge checks (used by clean command)',
       '#   Default: "main"',
+      '# defaultKind - Lifecycle kind for new worktrees: auto, ephemeral, or long-lived',
+      '#   Default: "auto"',
+      '# ephemeralTtl - Time-to-live assigned to ephemeral worktrees',
+      '#   Default: "4h"',
+      '# autoLockActive - Automatically lock active worktrees against reaping',
+      '#   Default: true',
       '',
     ].join('\n')
 
@@ -465,6 +583,37 @@ export default class ConfigInit extends Command {
       '# Controls behavior of the clean command',
       '# fetch - Run git fetch --prune before detection',
       '#   Set to true to automatically update remote tracking state',
+      '',
+    ].join('\n')
+
+    const reapComment = [
+      '',
+      '# Reap Configuration',
+      '# Controls safeguards applied while reaping worktrees',
+      '# requireMerged - Require a worktree branch to be merged before reaping it',
+      '#   Default: true',
+      '',
+    ].join('\n')
+
+    const concurrencyRetryComment = [
+      '',
+      '# Concurrency Retry Configuration',
+      '# Controls retry backoff for concurrent lifecycle operations',
+      '# maxAttempts - Maximum number of attempts before failing (default: 5)',
+      '# baseMs - Initial retry delay in milliseconds (default: 100)',
+      '# capMs - Maximum retry delay in milliseconds (default: 2000)',
+      '',
+    ].join('\n')
+
+    const portsComment = [
+      '',
+      '# Port Allocation Configuration',
+      '# Controls deterministic port and database allocation for worktrees',
+      '# enabled - Enable port allocation (default: false)',
+      '# range - Inclusive port range available for allocation (default: "3100-3199")',
+      '# names - Logical service names that receive allocated ports (default: ["web"])',
+      '# dbStrategy - Database naming strategy (default: "named")',
+      '# dbBaseName - Base name used to derive worktree database names (default: "dev")',
       '',
     ].join('\n')
 
@@ -484,6 +633,9 @@ export default class ConfigInit extends Command {
     result = result.replace('[symlink]', symlinkComment + '[symlink]')
     result = result.replace('[worktree]', worktreeComment + '[worktree]')
     result = result.replace('[clean]', cleanComment + '[clean]')
+    result = result.replace('[reap]', reapComment + '[reap]')
+    result = result.replace('[concurrency.retry]', concurrencyRetryComment + '[concurrency.retry]')
+    result = result.replace('[ports]', portsComment + '[ports]')
     result = result.replace('[postCommands]', postCommandsComment + '[postCommands]')
     return result
   }

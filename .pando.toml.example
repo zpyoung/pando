@@ -140,6 +140,20 @@ deleteBranchOnRemove = "local"
 # Default: "main"
 # targetBranch = "main"
 
+# Default lifecycle kind for newly created worktrees
+# "auto" lets Pando choose; explicit options are "ephemeral" and "long-lived"
+# Default: "auto"
+defaultKind = "auto"
+
+# Time-to-live assigned to ephemeral worktrees
+# Use a duration such as "30m", "4h", or "2d"
+# Default: "4h"
+ephemeralTtl = "4h"
+
+# Automatically lock worktrees that are currently active against reaping
+# Default: true
+autoLockActive = true
+
 # ============================================================================
 # Clean Configuration
 # ============================================================================
@@ -152,6 +166,61 @@ deleteBranchOnRemove = "local"
 # before checking for stale worktrees
 # Default: false
 # fetch = true
+
+# ============================================================================
+# Reap Configuration
+# ============================================================================
+# Controls safety checks when reaping ephemeral worktrees
+
+[reap]
+# Require the worktree branch to be merged before it can be reaped
+# Default: true
+requireMerged = true
+
+# ============================================================================
+# Concurrency Configuration
+# ============================================================================
+# Controls retry behavior when lifecycle operations encounter concurrent updates
+
+[concurrency.retry]
+# Maximum number of attempts before failing
+# Default: 5
+maxAttempts = 5
+
+# Initial retry delay in milliseconds
+# Default: 100
+baseMs = 100
+
+# Maximum retry delay in milliseconds
+# Default: 2000
+capMs = 2000
+
+# ============================================================================
+# Port Allocation Configuration
+# ============================================================================
+# Controls deterministic service ports and database names for worktrees
+
+[ports]
+# Enable port and database allocation
+# Default: false
+enabled = false
+
+# Inclusive port range available for allocation
+# Default: "3100-3199"
+range = "3100-3199"
+
+# Logical service names that receive allocated ports
+# Default: ["web"]
+names = ["web"]
+
+# Database naming strategy
+# Options: "named"
+# Default: "named"
+dbStrategy = "named"
+
+# Base name used to derive each worktree's database name
+# Default: "dev"
+dbBaseName = "dev"
 
 # ============================================================================
 # Post-command Scripts
@@ -216,7 +285,19 @@ deleteBranchOnRemove = "local"
 #   PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE=local
 #   PANDO_WORKTREE_USE_PROJECT_SUBFOLDER=true
 #   PANDO_WORKTREE_TARGET_BRANCH=main
+#   PANDO_WORKTREE_DEFAULT_KIND=ephemeral
+#   PANDO_WORKTREE_EPHEMERAL_TTL=4h
+#   PANDO_WORKTREE_AUTO_LOCK_ACTIVE=false
 #   PANDO_CLEAN_FETCH=true
+#   PANDO_REAP_REQUIRE_MERGED=true
+#   PANDO_CONCURRENCY_RETRY_MAX_ATTEMPTS=9
+#   PANDO_CONCURRENCY_RETRY_BASE_MS=100
+#   PANDO_CONCURRENCY_RETRY_CAP_MS=2000
+#   PANDO_PORTS_ENABLED=true
+#   PANDO_PORTS_RANGE=3100-3199
+#   PANDO_PORTS_NAMES=web,api
+#   PANDO_PORTS_DB_STRATEGY=named
+#   PANDO_PORTS_DB_BASE_NAME=dev
 
 # ============================================================================
 # CLI Flag Overrides

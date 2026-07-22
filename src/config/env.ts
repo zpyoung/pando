@@ -12,6 +12,7 @@ import type { PartialPandoConfig } from './schema.js'
  *
  * Supports:
  * - Boolean values: true/false, 1/0, yes/no
+ * - Number values: decimal numeric strings
  * - String arrays: comma-separated values
  * - Nested properties: PANDO_SECTION_KEY
  */
@@ -43,9 +44,27 @@ const ENV_VAR_MAP: Record<string, string> = {
   PANDO_WORKTREE_DELETE_BRANCH_ON_REMOVE: 'worktree.deleteBranchOnRemove',
   PANDO_WORKTREE_USE_PROJECT_SUBFOLDER: 'worktree.useProjectSubfolder',
   PANDO_WORKTREE_TARGET_BRANCH: 'worktree.targetBranch',
+  PANDO_WORKTREE_DEFAULT_KIND: 'worktree.defaultKind',
+  PANDO_WORKTREE_EPHEMERAL_TTL: 'worktree.ephemeralTtl',
+  PANDO_WORKTREE_AUTO_LOCK_ACTIVE: 'worktree.autoLockActive',
 
   // Clean settings
   PANDO_CLEAN_FETCH: 'clean.fetch',
+
+  // Reap settings
+  PANDO_REAP_REQUIRE_MERGED: 'reap.requireMerged',
+
+  // Concurrency retry settings
+  PANDO_CONCURRENCY_RETRY_MAX_ATTEMPTS: 'concurrency.retry.maxAttempts',
+  PANDO_CONCURRENCY_RETRY_BASE_MS: 'concurrency.retry.baseMs',
+  PANDO_CONCURRENCY_RETRY_CAP_MS: 'concurrency.retry.capMs',
+
+  // Port allocation settings
+  PANDO_PORTS_ENABLED: 'ports.enabled',
+  PANDO_PORTS_RANGE: 'ports.range',
+  PANDO_PORTS_NAMES: 'ports.names',
+  PANDO_PORTS_DB_STRATEGY: 'ports.dbStrategy',
+  PANDO_PORTS_DB_BASE_NAME: 'ports.dbBaseName',
 }
 
 /**
@@ -107,6 +126,7 @@ export function setNestedProperty(
  * Determines the type and parses accordingly:
  * - Arrays: comma-separated strings
  * - Booleans: true/false/1/0/yes/no
+ * - Numbers: decimal numeric strings
  * - Strings: as-is
  *
  * @param key - Environment variable key
@@ -115,11 +135,16 @@ export function setNestedProperty(
  */
 export function parseEnvValue(key: string, value: string): unknown {
   // Array fields
-  if (key.includes('FLAGS') || key.includes('EXCLUDE') || key.includes('PATTERNS')) {
+  if (
+    key.includes('FLAGS') ||
+    key.includes('EXCLUDE') ||
+    key.includes('PATTERNS') ||
+    key.includes('NAMES')
+  ) {
     return parseArray(value)
   }
 
-  // Boolean fields ('TRACKED' covers ONLY_UNTRACKED and ALLOW_TRACKED)
+  // 'TRACKED' covers ONLY_UNTRACKED and ALLOW_TRACKED.
   if (
     key.includes('ENABLED') ||
     key.includes('RELATIVE') ||
@@ -127,9 +152,17 @@ export function parseEnvValue(key: string, value: string): unknown {
     key.includes('REBASE') ||
     key.includes('USE_') ||
     key.includes('TRACKED') ||
+    key.includes('ACTIVE') ||
+    key.includes('REQUIRE_MERGED') ||
     key.endsWith('_FETCH')
   ) {
     return parseBoolean(value)
+  }
+
+  if (key.includes('MAX_ATTEMPTS') || key.endsWith('_MS')) {
+    const parsed = Number(value)
+    // Preserving malformed input lets schema validation report the configured field.
+    return Number.isNaN(parsed) ? value : parsed
   }
 
   // String fields
@@ -193,7 +226,12 @@ export function listSupportedEnvVars(): Array<{ name: string; path: string; type
     // Determine type based on key patterns
     let type = 'string'
 
-    if (name.includes('FLAGS') || name.includes('EXCLUDE') || name.includes('PATTERNS')) {
+    if (
+      name.includes('FLAGS') ||
+      name.includes('EXCLUDE') ||
+      name.includes('PATTERNS') ||
+      name.includes('NAMES')
+    ) {
       type = 'array'
     } else if (
       name.includes('ENABLED') ||
@@ -201,9 +239,14 @@ export function listSupportedEnvVars(): Array<{ name: string; path: string; type
       name.includes('BEFORE') ||
       name.includes('REBASE') ||
       name.includes('USE_') ||
+      name.includes('TRACKED') ||
+      name.includes('ACTIVE') ||
+      name.includes('REQUIRE_MERGED') ||
       name.endsWith('_FETCH')
     ) {
       type = 'boolean'
+    } else if (name.includes('MAX_ATTEMPTS') || name.endsWith('_MS')) {
+      type = 'number'
     }
 
     return { name, path, type }
