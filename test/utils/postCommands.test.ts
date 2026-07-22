@@ -93,6 +93,65 @@ describe('postCommands', () => {
     )
   })
 
+  it('injects allocated ports with env-safe names and the database name', async () => {
+    tempDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-')))
+
+    await runPostCommandScripts(
+      [
+        {
+          command: 'printf "$PANDO_PORT_WEB_API:$PANDO_PORT_WORKER:$PANDO_DB_NAME" > resources.txt',
+        },
+      ],
+      {
+        commandName: 'add',
+        cwd: tempDir,
+        worktreePath: tempDir,
+        branch: 'feature/ports',
+        commit: 'abc123',
+        ports: { 'web-api': 4310, worker: 4311 },
+        dbName: 'dev_feature_ports',
+      }
+    )
+
+    await expect(fs.readFile(path.join(tempDir, 'resources.txt'), 'utf8')).resolves.toBe(
+      '4310:4311:dev_feature_ports'
+    )
+  })
+
+  it('does not add port or database variables without allocation context', async () => {
+    tempDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-')))
+    const previousPort = process.env.PANDO_PORT_WEB_API
+    const previousDbName = process.env.PANDO_DB_NAME
+    delete process.env.PANDO_PORT_WEB_API
+    delete process.env.PANDO_DB_NAME
+
+    try {
+      await runPostCommandScripts(
+        [
+          {
+            command: 'printf "${PANDO_PORT_WEB_API-unset}:${PANDO_DB_NAME-unset}" > resources.txt',
+          },
+        ],
+        {
+          commandName: 'add',
+          cwd: tempDir,
+          worktreePath: tempDir,
+          branch: 'feature/no-ports',
+          commit: 'abc123',
+        }
+      )
+    } finally {
+      if (previousPort === undefined) delete process.env.PANDO_PORT_WEB_API
+      else process.env.PANDO_PORT_WEB_API = previousPort
+      if (previousDbName === undefined) delete process.env.PANDO_DB_NAME
+      else process.env.PANDO_DB_NAME = previousDbName
+    }
+
+    await expect(fs.readFile(path.join(tempDir, 'resources.txt'), 'utf8')).resolves.toBe(
+      'unset:unset'
+    )
+  })
+
   it('throws with captured result when a script exits non-zero', async () => {
     tempDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'pando-post-command-')))
 

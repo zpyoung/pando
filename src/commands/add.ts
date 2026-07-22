@@ -9,6 +9,7 @@ import {
   writeMetadata,
   type WorktreeMetadata,
 } from '../utils/worktreeMetadata.js'
+import { allocate, deriveDbName } from '../utils/portAllocator.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
 import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
@@ -39,13 +40,16 @@ interface LifecycleDependencies {
   assertGitVersion: () => Promise<void>
   ensureWorktreeConfigEnabled: typeof ensureWorktreeConfigEnabled
   writeMetadata: typeof writeMetadata
+  allocate: typeof allocate
 }
 
 interface LifecycleOptions {
   flags: Record<string, unknown>
   worktreeConfig: PandoConfig['worktree']
+  portsConfig: PandoConfig['ports']
   gitHelper: LifecycleGitHelper
   gitRoot: string
+  mainRepoPath: string
   resolvedPath: string
   sourceBranch?: string
   env?: NodeJS.ProcessEnv
@@ -57,6 +61,8 @@ export interface AddLifecycleResult {
   owner?: string
   ttl?: string
   effectiveTtl?: string
+  ports?: Record<string, number>
+  dbName?: string
   locked: boolean
   notice?: string
   warnings: string[]
@@ -66,6 +72,7 @@ const lifecycleDependencies: LifecycleDependencies = {
   assertGitVersion,
   ensureWorktreeConfigEnabled,
   writeMetadata,
+  allocate,
 }
 
 /** Resolve lifecycle kind without coupling precedence rules to command I/O. */
@@ -96,7 +103,8 @@ export async function setupLifecycleMetadata(
   options: LifecycleOptions,
   dependencies: LifecycleDependencies = lifecycleDependencies
 ): Promise<AddLifecycleResult> {
-  const { flags, worktreeConfig, gitHelper, gitRoot, resolvedPath } = options
+  const { flags, worktreeConfig, portsConfig, gitHelper, gitRoot, mainRepoPath, resolvedPath } =
+    options
   const env = options.env ?? process.env
   const kind = resolveWorktreeKind(flags, worktreeConfig.defaultKind, resolvedPath, env)
   const owner = (flags.owner as string | undefined) ?? gitHelper.inferOwner()
@@ -130,6 +138,36 @@ export async function setupLifecycleMetadata(
       await gitHelper.lockWorktree(resolvedPath, `pando: active session ${owner}`)
       result.locked = true
     }
+
+    if (portsConfig.enabled) {
+      try {
+        const allocatedPorts = await dependencies.allocate(resolvedPath, {
+          range: portsConfig.range,
+          names: portsConfig.names,
+          mainRepoPath,
+        })
+        result.ports = allocatedPorts
+
+        const skippedNames = portsConfig.names.filter(
+          (name) => !Object.hasOwn(allocatedPorts, name)
+        )
+        if (skippedNames.length > 0) {
+          result.warnings.push(
+            `Could not allocate requested port(s) for ${skippedNames.join(', ')} in range ${portsConfig.range}`
+          )
+        }
+
+        if (portsConfig.dbStrategy === 'named') {
+          const dbName = deriveDbName(portsConfig.dbBaseName, sourceBranch)
+          result.dbName = dbName
+          await dependencies.writeMetadata(resolvedPath, { dbName })
+        }
+      } catch (error) {
+        // Resource setup cannot invalidate a worktree that was already created successfully.
+        const reason = error instanceof Error ? error.message : String(error)
+        result.warnings.push(`Could not allocate worktree ports or database name: ${reason}`)
+      }
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     result.warnings.push(`Could not fully initialize worktree lifecycle metadata: ${reason}`)
@@ -157,6 +195,8 @@ interface AddWorktreeOutput {
   owner?: string
   ttl?: string
   effectiveTtl?: string
+  ports?: Record<string, number>
+  dbName?: string
   locked: boolean
 }
 
@@ -181,6 +221,8 @@ function buildWorktreeOutput(
     ...(lifecycle.owner ? { owner: lifecycle.owner } : {}),
     ...(lifecycle.ttl ? { ttl: lifecycle.ttl } : {}),
     ...(lifecycle.effectiveTtl ? { effectiveTtl: lifecycle.effectiveTtl } : {}),
+    ...(lifecycle.ports ? { ports: lifecycle.ports } : {}),
+    ...(lifecycle.dbName ? { dbName: lifecycle.dbName } : {}),
     locked: lifecycle.locked,
   }
 }
@@ -374,11 +416,17 @@ export default class AddWorktree extends Command {
       )
       outputContext.setupWarnings = setupResult.warnings
 
+      // A linked worktree root can still enumerate peers if discovering the main path fails.
+      const mainRepoPath = config.ports.enabled
+        ? await gitHelper.getMainWorktreePath().catch(() => gitRoot)
+        : gitRoot
       const lifecycle = await setupLifecycleMetadata({
         flags: flags as Record<string, unknown>,
         worktreeConfig: config.worktree,
+        portsConfig: config.ports,
         gitHelper,
         gitRoot,
+        mainRepoPath,
         resolvedPath,
         sourceBranch: worktreeInfo.sourceBranch,
       })
@@ -395,6 +443,8 @@ export default class AddWorktree extends Command {
         spinner,
         lifecycle.kind,
         lifecycle.effectiveTtl,
+        lifecycle.ports,
+        lifecycle.dbName,
         outputContext.warnings
       )
       this.formatOutput(
@@ -862,6 +912,8 @@ export default class AddWorktree extends Command {
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
     kind: WorktreeKind,
     ttl?: string,
+    ports?: Record<string, number>,
+    dbName?: string,
     warnings: string[] = []
   ): Promise<PostCommandResult[]> {
     const scripts = normalizePostCommandScripts(config, 'add')
@@ -900,6 +952,8 @@ export default class AddWorktree extends Command {
       commit: worktreeInfo.commit,
       kind,
       ttl,
+      ...(ports ? { ports } : {}),
+      ...(dbName ? { dbName } : {}),
     })
   }
 
@@ -1105,6 +1159,13 @@ export default class AddWorktree extends Command {
           `  Kind: ${lifecycle.kind}${lifecycleStatus.length > 0 ? ` (${lifecycleStatus.join(', ')})` : ''}`
         )
       )
+      const resourceStatus = [
+        ...Object.entries(lifecycle.ports ?? {}).map(([name, port]) => `${name}=${port}`),
+        ...(lifecycle.dbName ? [`db=${lifecycle.dbName}`] : []),
+      ]
+      if (resourceStatus.length > 0) {
+        output.push(chalk.gray(`  Resources: ${resourceStatus.join(', ')}`))
+      }
       output.push('')
 
       // Rsync results

@@ -22,6 +22,7 @@ const mockGitHelper = {
   isRepository: vi.fn(),
   getRepositoryRoot: vi.fn(),
   getCurrentBranch: vi.fn(),
+  getMainWorktreePath: vi.fn(),
   branchExists: vi.fn(),
   addWorktree: vi.fn(),
   rebaseBranchInWorktree: vi.fn(),
@@ -44,6 +45,13 @@ vi.mock('../../src/utils/worktreeMetadata.js', () => ({
   ensureWorktreeConfigEnabled: vi.fn(),
   writeMetadata: vi.fn(),
 }))
+
+vi.mock('../../src/utils/portAllocator.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/utils/portAllocator.js')>(
+    '../../src/utils/portAllocator.js'
+  )
+  return { ...actual, allocate: vi.fn() }
+})
 
 vi.mock('../../src/utils/configTrust.js', () => ({
   computeConfigHash: vi.fn(),
@@ -92,6 +100,7 @@ import {
   ensureWorktreeConfigEnabled,
   writeMetadata,
 } from '../../src/utils/worktreeMetadata.js'
+import { allocate } from '../../src/utils/portAllocator.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -111,6 +120,13 @@ function baseConfig(overrides: Partial<PandoConfig> = {}): PandoConfig {
       autoLockActive: true,
     },
     clean: { fetch: false },
+    ports: {
+      enabled: false,
+      range: '3100-3199',
+      names: ['web'],
+      dbStrategy: 'named',
+      dbBaseName: 'dev',
+    },
     ...overrides,
   } as PandoConfig
 }
@@ -155,6 +171,8 @@ beforeEach(() => {
   vi.mocked(assertGitVersion).mockResolvedValue(undefined)
   vi.mocked(ensureWorktreeConfigEnabled).mockResolvedValue({ enabled: true, migrated: [] })
   vi.mocked(writeMetadata).mockResolvedValue(undefined)
+  vi.mocked(allocate).mockResolvedValue({})
+  mockGitHelper.getMainWorktreePath.mockResolvedValue('/repo')
 })
 
 // ---------------------------------------------------------------------------
@@ -221,12 +239,20 @@ describe('add: lifecycle metadata setup', () => {
     assertGitVersion: vi.fn().mockResolvedValue(undefined),
     ensureWorktreeConfigEnabled: vi.fn().mockResolvedValue({ enabled: true, migrated: [] }),
     writeMetadata: vi.fn().mockResolvedValue(undefined),
+    allocate: vi.fn().mockResolvedValue({}),
   })
 
   const worktreeConfig = {
     defaultKind: 'auto' as const,
     ephemeralTtl: '4h',
     autoLockActive: true,
+  }
+  const portsConfig = {
+    enabled: false,
+    range: '3100-3199',
+    names: ['web'],
+    dbStrategy: 'named' as const,
+    dbBaseName: 'dev',
   }
 
   it('does not auto-lock for an explicit owner without an active session', async () => {
@@ -236,12 +262,14 @@ describe('add: lifecycle metadata setup', () => {
       {
         flags: { owner: 'manual-owner' },
         worktreeConfig,
+        portsConfig,
         gitHelper: {
           inferOwner: vi.fn().mockReturnValue(''),
           getMainBranch: vi.fn().mockResolvedValue('main'),
           lockWorktree,
         },
         gitRoot: '/repo',
+        mainRepoPath: '/repo',
         resolvedPath: '/repo/wt',
         sourceBranch: 'develop',
         env: {},
@@ -266,12 +294,14 @@ describe('add: lifecycle metadata setup', () => {
       {
         flags: { owner: 'agent-7' },
         worktreeConfig,
+        portsConfig,
         gitHelper: {
           inferOwner: vi.fn().mockReturnValue('agent-7'),
           getMainBranch: vi.fn().mockResolvedValue('main'),
           lockWorktree,
         },
         gitRoot: '/repo',
+        mainRepoPath: '/repo',
         resolvedPath: '/repo/wt',
         sourceBranch: 'develop',
         env: { CLAUDE_SESSION_ID: '' },
@@ -283,6 +313,109 @@ describe('add: lifecycle metadata setup', () => {
     expect(lockWorktree).toHaveBeenCalledWith('/repo/wt', 'pando: active session agent-7')
   })
 
+  it('allocates ports, derives a database name, and writes both when enabled', async () => {
+    const deps = dependencies()
+    deps.allocate.mockResolvedValue({ web: 3100, api: 3101 })
+
+    const result = await setupLifecycleMetadata(
+      {
+        flags: {},
+        worktreeConfig,
+        portsConfig: {
+          ...portsConfig,
+          enabled: true,
+          names: ['web', 'api'],
+          dbBaseName: 'pando',
+        },
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree: vi.fn(),
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo/main',
+        resolvedPath: '/repo/wt',
+        sourceBranch: 'Feature/Ports',
+        env: {},
+      },
+      deps
+    )
+
+    expect(deps.allocate).toHaveBeenCalledWith('/repo/wt', {
+      range: '3100-3199',
+      names: ['web', 'api'],
+      mainRepoPath: '/repo/main',
+    })
+    expect(deps.writeMetadata).toHaveBeenLastCalledWith('/repo/wt', {
+      dbName: 'pando_feature_ports',
+    })
+    expect(result).toMatchObject({
+      ports: { web: 3100, api: 3101 },
+      dbName: 'pando_feature_ports',
+      warnings: [],
+    })
+  })
+
+  it('does not allocate ports when allocation is disabled', async () => {
+    const deps = dependencies()
+
+    const result = await setupLifecycleMetadata(
+      {
+        flags: {},
+        worktreeConfig,
+        portsConfig,
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree: vi.fn(),
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo/main',
+        resolvedPath: '/repo/wt',
+        sourceBranch: 'main',
+        env: {},
+      },
+      deps
+    )
+
+    expect(deps.allocate).not.toHaveBeenCalled()
+    expect(result).not.toHaveProperty('ports')
+    expect(result).not.toHaveProperty('dbName')
+  })
+
+  it('keeps allocation failures non-fatal and warns about skipped names', async () => {
+    const failedDeps = dependencies()
+    failedDeps.allocate.mockRejectedValue(new Error('port metadata denied'))
+    const exhaustedDeps = dependencies()
+    exhaustedDeps.allocate.mockResolvedValue({ web: 3100 })
+    const enabledPorts = { ...portsConfig, enabled: true, names: ['web', 'api'] }
+    const options = {
+      flags: {},
+      worktreeConfig,
+      portsConfig: enabledPorts,
+      gitHelper: {
+        inferOwner: vi.fn().mockReturnValue(''),
+        getMainBranch: vi.fn().mockResolvedValue('main'),
+        lockWorktree: vi.fn(),
+      },
+      gitRoot: '/repo',
+      mainRepoPath: '/repo/main',
+      resolvedPath: '/repo/wt',
+      sourceBranch: 'main',
+      env: {},
+    }
+
+    await expect(setupLifecycleMetadata(options, failedDeps)).resolves.toMatchObject({
+      locked: false,
+      warnings: [expect.stringContaining('port metadata denied')],
+    })
+    await expect(setupLifecycleMetadata(options, exhaustedDeps)).resolves.toMatchObject({
+      ports: { web: 3100 },
+      dbName: 'dev_main',
+      warnings: [expect.stringContaining('api')],
+    })
+  })
+
   it('keeps lock failures non-fatal and reports the actual unlocked state', async () => {
     const lockWorktree = vi.fn().mockRejectedValue(new Error('lock denied'))
     await expect(
@@ -290,12 +423,14 @@ describe('add: lifecycle metadata setup', () => {
         {
           flags: { owner: 'agent-7' },
           worktreeConfig,
+          portsConfig,
           gitHelper: {
             inferOwner: vi.fn().mockReturnValue('agent-7'),
             getMainBranch: vi.fn().mockResolvedValue('main'),
             lockWorktree,
           },
           gitRoot: '/repo',
+          mainRepoPath: '/repo',
           resolvedPath: '/repo/wt',
           sourceBranch: 'develop',
           env: { PANDO_SESSION: 'session-7' },
@@ -341,6 +476,8 @@ describe('add: lifecycle metadata setup', () => {
         owner: 'agent-7',
         ttl: '30m',
         effectiveTtl: '30m',
+        ports: { web: 3100 },
+        dbName: 'dev_feature',
         locked: true,
         notice: 'Enabled extensions.worktreeConfig (migrated: none)',
         warnings: ['metadata warning'],
@@ -358,6 +495,8 @@ describe('add: lifecycle metadata setup', () => {
       owner: 'agent-7',
       ttl: '30m',
       effectiveTtl: '30m',
+      ports: { web: 3100 },
+      dbName: 'dev_feature',
       locked: true,
     })
     expect(output.warnings).toEqual([
@@ -377,12 +516,14 @@ describe('add: lifecycle metadata setup', () => {
         {
           flags: { ephemeral: true, ttl: '30m' },
           worktreeConfig,
+          portsConfig,
           gitHelper: {
             inferOwner: vi.fn().mockReturnValue('agent-7'),
             getMainBranch: vi.fn().mockResolvedValue('main'),
             lockWorktree,
           },
           gitRoot: '/repo',
+          mainRepoPath: '/repo',
           resolvedPath: '/repo/wt',
           sourceBranch: 'develop',
           env: {},
@@ -485,6 +626,29 @@ describe('add: JSON document consistency', () => {
     )
   })
 
+  it('keeps --ports allocation failures non-fatal in the command result', async () => {
+    const { command, logSpy, warnSpy } = createCommand()
+    stubParse(command, {
+      path: '/repo/wt',
+      branch: 'feature',
+      ports: true,
+      json: true,
+    })
+    prepareRun(command, baseConfig())
+    vi.mocked(allocate).mockRejectedValue(new Error('allocator unavailable'))
+    vi.mocked(normalizePostCommandScripts).mockReturnValue([])
+
+    await command.run()
+
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(mockGitHelper.getMainWorktreePath).toHaveBeenCalledTimes(1)
+    const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string)
+    expect(output.success).toBe(true)
+    expect(output.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('allocator unavailable')])
+    )
+  })
+
   it('retains lifecycle fields and warnings when a post-command fails', async () => {
     const { command, logSpy, warnSpy } = createCommand()
     stubParse(command, {
@@ -495,7 +659,19 @@ describe('add: JSON document consistency', () => {
       ttl: '30m',
       json: true,
     })
-    prepareRun(command, baseConfig())
+    prepareRun(
+      command,
+      baseConfig({
+        ports: {
+          enabled: true,
+          range: '3100-3199',
+          names: ['web'],
+          dbStrategy: 'named',
+          dbBaseName: 'dev',
+        },
+      })
+    )
+    vi.mocked(allocate).mockResolvedValue({ web: 3100 })
     vi.mocked(ensureWorktreeConfigEnabled).mockResolvedValue({
       enabled: true,
       migrated: [],
@@ -532,6 +708,8 @@ describe('add: JSON document consistency', () => {
       owner: 'agent-7',
       ttl: '30m',
       effectiveTtl: '30m',
+      ports: { web: 3100 },
+      dbName: 'dev_main',
       locked: false,
     })
     expect(output.warnings).toEqual(['setup warning', 'lifecycle notice'])
@@ -776,7 +954,8 @@ describe('add: post-command trust gate wiring', () => {
   function callRunPostCommands(
     command: AddWorktree,
     config: PandoConfig,
-    flags: Record<string, unknown>
+    flags: Record<string, unknown>,
+    resources: { ports?: Record<string, number>; dbName?: string } = {}
   ): Promise<unknown> {
     return (
       command as unknown as {
@@ -787,10 +966,22 @@ describe('add: post-command trust gate wiring', () => {
           p: string,
           s: null,
           k: 'ephemeral' | 'long-lived',
-          t?: string
+          t?: string,
+          ports?: Record<string, number>,
+          dbName?: string
         ) => Promise<unknown>
       }
-    ).runPostCommands(flags, config, worktreeInfo, '/wt', null, 'ephemeral', '4h')
+    ).runPostCommands(
+      flags,
+      config,
+      worktreeInfo,
+      '/wt',
+      null,
+      'ephemeral',
+      '4h',
+      resources.ports,
+      resources.dbName
+    )
   }
 
   it('runs post-commands when the trust decision is "run"', async () => {
@@ -815,7 +1006,12 @@ describe('add: post-command trust gate wiring', () => {
     const config = baseConfig({
       postCommandsSourcePath: '/repo/.pando.toml',
     } as Partial<PandoConfig>)
-    const result = await callRunPostCommands(command, config, { json: false })
+    const result = await callRunPostCommands(
+      command,
+      config,
+      { json: false },
+      { ports: { web: 3100 }, dbName: 'dev_feature' }
+    )
 
     expect(decidePostCommandTrust).toHaveBeenCalledTimes(1)
     expect(runPostCommandScripts).toHaveBeenCalledTimes(1)
@@ -827,6 +1023,8 @@ describe('add: post-command trust gate wiring', () => {
       commit: 'abc1234',
       kind: 'ephemeral',
       ttl: '4h',
+      ports: { web: 3100 },
+      dbName: 'dev_feature',
     })
     expect(result).toHaveLength(1)
   })

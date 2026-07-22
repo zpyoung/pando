@@ -89,7 +89,7 @@ Create a new git worktree (supports both creating new branches and checking out 
 - `--long-lived`: Mark the worktree as long-lived (mutually exclusive with `--ephemeral`)
 - `--ttl <duration>`: Set a per-worktree TTL override (for example, `30m` or `2d`)
 - `--owner <id>`: Record an owner or agent session id
-- `--ports`: Force-enable port allocation for this run (allocation support is forthcoming)
+- `--ports`: Force-enable configured port and database-name allocation for this run
 - `--skip-rsync`: Skip the rsync copy step (ignores rsync config)
 - `--rsync-flags`: Override rsync flags (comma-separated; repeatable)
 - `--rsync-exclude`: Additional rsync exclude patterns (comma-separated; repeatable)
@@ -101,7 +101,7 @@ Create a new git worktree (supports both creating new branches and checking out 
 
 > When `--skip-rsync` is combined with `--rsync-flags` or `--rsync-exclude`, the rsync flags are ignored and a warning is shown.
 
-**Lifecycle metadata**: `pando add` stores the worktree kind, creation time, source branch, and optional owner/TTL in Git's per-worktree config. Flags override `worktree.defaultKind`; `auto` treats Claude worktree paths, active agent-session environments, and boolean `PANDO_EPHEMERAL=true|1|yes` signals as ephemeral, and other worktrees as long-lived. Worktrees created during an active `CLAUDE_SESSION_ID` or `PANDO_SESSION` are automatically Git-locked when `worktree.autoLockActive` is enabled; passing `--owner` alone does not trigger auto-locking.
+**Lifecycle metadata**: `pando add` stores the worktree kind, creation time, source branch, and optional owner/TTL in Git's per-worktree config. Flags override `worktree.defaultKind`; `auto` treats Claude worktree paths, active agent-session environments, and boolean `PANDO_EPHEMERAL=true|1|yes` signals as ephemeral, and other worktrees as long-lived. Worktrees created during an active `CLAUDE_SESSION_ID` or `PANDO_SESSION` are automatically Git-locked when `worktree.autoLockActive` is enabled; passing `--owner` alone does not trigger auto-locking. When `[ports].enabled` or `--ports` is set, requested service ports and a branch-derived database name are also stored. Exhausted ports produce a warning without failing worktree creation.
 
 **Automatic Rebase**: When checking out an existing branch, pando automatically rebases it onto the current branch. This keeps your feature branches up-to-date. If the rebase fails (e.g., conflicts), a warning is shown but the worktree is still created. Use `--no-rebase` to skip this behavior, or set `worktree.rebaseOnAdd = false` in config.
 
@@ -238,6 +238,7 @@ Remove a git worktree
 - Before deleting, checks if branch is merged (use `--force` to skip this check)
 - Remote branch deletion requires confirmation unless `--force` is used
 - Use `worktree.deleteBranchOnRemove` in config to change default behavior
+- JSON results include the worktree's captured lifecycle `metadata`, including assigned ports and database name
 
 **Examples:**
 
@@ -580,6 +581,14 @@ defaultKind = "auto"              # auto, ephemeral, or long-lived
 ephemeralTtl = "4h"               # Default TTL exposed to ephemeral setup hooks
 autoLockActive = true              # Git-lock worktrees owned by active sessions
 
+# Optional per-worktree resources
+[ports]
+enabled = false                    # Or opt in for one add with --ports
+range = "3100-3199"
+names = ["web"]
+dbStrategy = "named"
+dbBaseName = "dev"
+
 # Clean Configuration
 [clean]
 fetch = false                 # Run git fetch --prune before detection
@@ -607,6 +616,8 @@ Scripts configured for `add` run **after** the worktree has been created and rsy
 - `PANDO_COMMIT` — created worktree commit
 - `PANDO_KIND` — resolved lifecycle kind (`ephemeral` or `long-lived`)
 - `PANDO_TTL` — effective TTL when defined (explicit `--ttl`, otherwise the ephemeral default)
+- `PANDO_PORT_<NAME>` — each assigned port; service names are uppercased and hyphens become underscores (for example, `web-api` becomes `PANDO_PORT_WEB_API`)
+- `PANDO_DB_NAME` — the derived database name when port allocation is enabled
 
 Human-readable output shows each script, its working directory, exit status, stdout, and stderr. JSON output includes a stable `postCommands` array with `name`, `command`, `cwd`, `exitCode`, `signal`, `stdout`, `stderr`, `success`, and `duration` fields. A non-zero exit code stops later scripts and returns the existing JSON error shape with `success: false`, `error`, `postCommands`, and `failedPostCommand`.
 

@@ -14,6 +14,8 @@ export interface PostCommandContext {
   commit: string
   kind?: 'ephemeral' | 'long-lived'
   ttl?: string
+  ports?: Record<string, number>
+  dbName?: string
 }
 
 export interface PostCommandResult {
@@ -81,6 +83,13 @@ async function runPostCommandScript(
   const startTime = Date.now()
 
   return new Promise((resolve) => {
+    // Allocator names allow hyphens, so hook variables uppercase names and map hyphens to underscores.
+    const portEnv = Object.fromEntries(
+      Object.entries(context.ports ?? {}).map(([name, port]) => [
+        `PANDO_PORT_${name.toUpperCase().replace(/-/g, '_')}`,
+        String(port),
+      ])
+    )
     const child = spawn(script.command, {
       cwd: context.cwd,
       shell: true,
@@ -92,6 +101,8 @@ async function runPostCommandScript(
         PANDO_COMMIT: context.commit,
         ...(context.kind ? { PANDO_KIND: context.kind } : {}),
         ...(context.ttl !== undefined ? { PANDO_TTL: context.ttl } : {}),
+        ...portEnv,
+        ...(context.dbName ? { PANDO_DB_NAME: context.dbName } : {}),
       },
     })
 
