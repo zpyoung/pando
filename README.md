@@ -303,6 +303,40 @@ pando clean --keep-branch
 pando clean --json
 ```
 
+### `pando reap`
+
+Reclaim expired ephemeral worktrees without touching long-lived, locked, or dirty worktrees. A worktree is eligible after its metadata TTL (or `worktree.ephemeralTtl`, default `4h`) expires. By default its branch must also be merged into `worktree.targetBranch`; set `reap.requireMerged = false` to retain unmerged branches while removing clean worktrees.
+
+**Flags:**
+
+- `--dry-run`: Show eligible and safety-skipped worktrees without removing anything
+- `--owner <session>`: Only consider worktrees owned by the specified session
+- `-f, --force`: Skip the confirmation prompt; safety checks still apply
+- `-j, --json`: Run non-interactively and emit structured results
+
+```bash
+pando reap --dry-run
+pando reap --owner session-123 --force
+pando reap --json
+```
+
+### `pando lock` / `pando unlock`
+
+Lock a worktree so Git and `pando reap` leave it alone, or remove that lock. Targets may be an absolute/relative worktree path or an exact branch name; `--path` is available as an alternative to the positional target.
+
+**Flags:**
+
+- `-p, --path <target>`: Worktree path or branch name
+- `--reason <text>`: Record a lock reason (`pando lock` only)
+- `-j, --json`: Output in JSON format
+
+```bash
+pando lock ../feature-x --reason "active work"
+pando lock feature/x --json
+pando unlock ../feature-x
+pando unlock --path feature/x --json
+```
+
 ### `pando symlink`
 
 Move a file from the current worktree to the main worktree and replace it with a symlink. Useful for keeping configuration files, dependencies, or other shared files in sync across all worktrees.
