@@ -1128,4 +1128,148 @@ describe('WorktreeSetupOrchestrator', () => {
       expect(transaction).toBe(mockTransaction)
     })
   })
+
+  // ==========================================================================
+  // Adopt mode (takeover of a pre-existing worktree)
+  // ==========================================================================
+
+  describe('adopt mode', () => {
+    it('does not create the worktree checkpoint (non-destructive rollback)', async () => {
+      await orchestrator.setupNewWorktree('/repo/feature', { adopt: true })
+
+      expect(mockTransaction.createCheckpoint).not.toHaveBeenCalledWith(
+        'worktree',
+        expect.anything()
+      )
+    })
+
+    it('on failure rolls back file ops but never removes the worktree', async () => {
+      mockRsyncHelper.rsync.mockRejectedValueOnce(new Error('boom'))
+
+      await expect(orchestrator.setupNewWorktree('/repo/feature', { adopt: true })).rejects.toThrow(
+        SetupError
+      )
+
+      expect(mockTransaction.rollback).toHaveBeenCalled()
+      expect(mockTransaction.createCheckpoint).not.toHaveBeenCalledWith(
+        'worktree',
+        expect.anything()
+      )
+      expect(mockGitHelper.removeWorktree).not.toHaveBeenCalled()
+    })
+
+    it('preserves a real file at a symlink target: skips it, never removes it', async () => {
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue(['package.json'])
+      vi.mocked(mockPathExists).mockResolvedValue(true)
+      // Not the correct symlink -> a real conflicting file
+      vi.mocked(mockSymlinkHelper.verifySymlink).mockResolvedValue(false)
+      vi.mocked(mockSymlinkHelper.createSymlinks).mockResolvedValue({
+        success: true,
+        created: 0,
+        skipped: 1,
+        conflicts: [{ source: 's', target: 'package.json', reason: 'file exists at target' }],
+      } as SymlinkResult)
+
+      await orchestrator.setupNewWorktree('/repo/feature', { adopt: true })
+
+      expect(mockRemove).not.toHaveBeenCalled()
+      expect(mockSymlinkHelper.createSymlinks).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.symlink,
+        expect.objectContaining({
+          replaceExisting: false,
+          skipConflicts: true,
+          items: ['package.json'],
+        })
+      )
+    })
+
+    it('with replaceExistingSymlinks replaces the file (add-parity: remove then link)', async () => {
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue(['package.json'])
+      vi.mocked(mockPathExists).mockResolvedValue(true)
+
+      await orchestrator.setupNewWorktree('/repo/feature', {
+        adopt: true,
+        replaceExistingSymlinks: true,
+      })
+
+      expect(mockRemove).toHaveBeenCalledWith('/repo/feature/package.json')
+      expect(mockSymlinkHelper.createSymlinks).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.symlink,
+        expect.objectContaining({
+          replaceExisting: true,
+          skipConflicts: true,
+          items: ['package.json'],
+        })
+      )
+    })
+
+    it('drops already-correct symlinks (idempotent re-apply is a no-op for them)', async () => {
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue([
+        'package.json',
+        'pnpm-lock.yaml',
+      ])
+      vi.mocked(mockPathExists).mockResolvedValue(true)
+      vi.mocked(mockSymlinkHelper.verifySymlink).mockResolvedValue(true) // both already linked
+      vi.mocked(mockSymlinkHelper.createSymlinks).mockResolvedValue({
+        success: true,
+        created: 0,
+        skipped: 0,
+        conflicts: [],
+      } as SymlinkResult)
+
+      await orchestrator.setupNewWorktree('/repo/feature', { adopt: true })
+
+      expect(mockRemove).not.toHaveBeenCalled()
+      expect(mockSymlinkHelper.createSymlinks).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        mockConfig.symlink,
+        expect.objectContaining({ items: [] })
+      )
+    })
+
+    it('excludes preexistingDirtyPaths from the clean-tree check', async () => {
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue([])
+      vi.mocked(mockGitHelper.getDirtyPaths).mockResolvedValue(['src/user-work.ts', 'notes.md'])
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature', {
+        adopt: true,
+        preexistingDirtyPaths: ['src/user-work.ts', 'notes.md'],
+      })
+
+      expect(result.cleanTree).toBe(true)
+    })
+
+    it('dryRun returns a plan and mutates nothing', async () => {
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue([
+        'package.json',
+        'pnpm-lock.yaml',
+      ])
+      // package.json target absent -> toCreate; pnpm-lock target present + correct -> alreadyLinked
+      vi.mocked(mockPathExists).mockImplementation(
+        async (p: string) => p !== '/repo/feature/package.json'
+      )
+      vi.mocked(mockSymlinkHelper.verifySymlink).mockResolvedValue(true)
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature', {
+        adopt: true,
+        dryRun: true,
+      })
+
+      expect(result.plan).toBeDefined()
+      expect(result.plan!.symlinks.toCreate).toContain('package.json')
+      expect(result.plan!.symlinks.alreadyLinked).toContain('pnpm-lock.yaml')
+      expect(result.plan!.rsyncMode).toBe('untracked')
+      expect(result.plan!.rsyncFileCount).toBe(2)
+
+      expect(mockSymlinkHelper.createSymlinks).not.toHaveBeenCalled()
+      expect(mockRsyncHelper.rsync).not.toHaveBeenCalled()
+      expect(mockRemove).not.toHaveBeenCalled()
+      expect(mockTransaction.createCheckpoint).not.toHaveBeenCalled()
+    })
+  })
 })

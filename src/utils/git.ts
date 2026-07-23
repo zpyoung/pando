@@ -1,7 +1,24 @@
-import { stat } from 'node:fs/promises'
+import { stat, realpath } from 'node:fs/promises'
+import { isAbsolute, resolve } from 'node:path'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import { withGitRetry, type GitRetryOptions } from './gitRetry.js'
 import { readMetadata, type WorktreeMetadata } from './worktreeMetadata.js'
+
+/**
+ * Canonicalize a path for worktree comparison: make it absolute (relative to
+ * cwd) and resolve symlinks via realpath. On macOS `/tmp` -> `/private/tmp` and
+ * `process.cwd()` can disagree with the absolute path git records, so a raw
+ * string compare would spuriously miss. Falls back to a plain resolve when the
+ * path does not exist on disk.
+ */
+async function canonicalizePath(target: string): Promise<string> {
+  const absolute = isAbsolute(target) ? target : resolve(process.cwd(), target)
+  try {
+    return await realpath(absolute)
+  } catch {
+    return resolve(absolute)
+  }
+}
 
 /**
  * Git utility wrapper for worktree and branch operations
@@ -234,6 +251,34 @@ export class GitHelper {
     }
 
     return worktrees
+  }
+
+  /**
+   * Find the linked worktree whose path matches `targetPath`.
+   *
+   * Paths are compared after canonicalization (realpath) so a symlinked target
+   * or a cwd-relative path still matches the absolute path git records. `isMain`
+   * is true for the main worktree, which git's porcelain output always lists
+   * first.
+   *
+   * @param targetPath - Absolute or cwd-relative path to look up
+   * @returns The matching worktree plus whether it is the main worktree, or null
+   *   when no linked worktree matches
+   */
+  async getWorktreeByPath(
+    targetPath: string
+  ): Promise<{ info: WorktreeInfo; isMain: boolean } | null> {
+    const worktrees = await this.listWorktrees()
+    const resolvedTarget = await canonicalizePath(targetPath)
+
+    for (const [index, info] of worktrees.entries()) {
+      const resolvedInfo = await canonicalizePath(info.path)
+      if (resolvedInfo === resolvedTarget) {
+        return { info, isMain: index === 0 }
+      }
+    }
+
+    return null
   }
 
   /**
