@@ -186,6 +186,23 @@ describe('FileOperationTransaction', () => {
       // Rollback should not throw without destination metadata
       await expect(transaction.rollback()).resolves.not.toThrow()
     })
+
+    it('preserves the rsync destination when skipRsyncRollback is set (adopt safety)', async () => {
+      // Adopt mode: the rsync destination is the pre-existing worktree root, so
+      // removing it on rollback would delete the user's entire worktree. This is
+      // the critical safety guarantee for `pando adopt`.
+      const worktreeRoot = path.join(testDir, 'adopted-worktree')
+      await fs.ensureDir(worktreeRoot)
+      await fs.writeFile(path.join(worktreeRoot, 'user-work.txt'), 'precious')
+
+      transaction.record(OperationType.RSYNC, '/source/path', { destination: worktreeRoot })
+
+      await transaction.rollback({ skipRsyncRollback: true })
+
+      // The worktree and the user's file must still be there.
+      expect(await fs.pathExists(worktreeRoot)).toBe(true)
+      expect(await fs.pathExists(path.join(worktreeRoot, 'user-work.txt'))).toBe(true)
+    })
   })
 
   describe('rollback - CREATE_DIR', () => {

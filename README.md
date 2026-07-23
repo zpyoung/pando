@@ -167,10 +167,10 @@ pando adopt ../feature-x --dry-run
 
 **Safety semantics:**
 
-- **Your work is never touched.** Rsync only carries gitignored artifacts (never tracked or modified files), and adopting a dirty worktree leaves every uncommitted change in place. JSON output lists them under `preexistingDirty`.
+- **Your work is never touched.** Rsync runs in a hardened mode for adopt: it only carries gitignored artifacts (never tracked or modified files), is forced to untracked-only regardless of `rsync.onlyUntracked`, and uses `--ignore-existing` so a file that already exists in the worktree (e.g. a hand-made `.env`) is never overwritten by the source's copy. Adopting a dirty worktree leaves every uncommitted change in place; JSON output lists them under `preexistingDirty`.
+- **A failed adopt never deletes your worktree.** Even after files have been synced, a mid-setup failure rolls back only pando's own newly-created symlinks — it never removes the worktree directory or the synced artifacts. Re-running `adopt` converges.
 - **Symlink conflicts are skipped by default.** If a real file or directory already sits where pando would create a symlink, pando leaves it alone and warns (reported under `setup.symlink.conflicts`). Pass `--replace-existing` to replace it instead.
-- **Failure never deletes the worktree.** If setup fails, pando rolls back only the changes it made this run; the worktree and your work survive.
-- **Idempotent.** Re-running `adopt` on an already-managed worktree re-applies setup and reports `alreadyManaged: true` — handy as a "re-sync / repair".
+- **Idempotent.** Re-running `adopt` on an already-managed worktree re-applies setup and reports `alreadyManaged: true` — handy as a "re-sync / repair". It preserves the worktree's existing lifecycle kind, creation time, and source branch unless you pass an explicit lifecycle flag.
 
 **Lifecycle metadata**: adopt defaults the kind to **long-lived** (a hand-created worktree with real work should not be auto-reaped), ignoring `worktree.defaultKind`; pass `--ephemeral`/`--ttl` to override. The recorded `sourceBranch` is your configured `worktree.targetBranch` (e.g. `main`), since an adopted worktree has no "branched-from" moment.
 

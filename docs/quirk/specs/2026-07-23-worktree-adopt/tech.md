@@ -104,11 +104,26 @@ New private helper `classifyAdoptSymlinks(sourceTreePath, worktreePath, symlinkI
 returns `{ toCreate, alreadyLinked, conflicts }` by stat/verify per item; used by
 both the dry-run plan and the preserve-existing no-op filter.
 
-**Accepted limitation (document in code):** adopt-mode rollback reverts recorded
-symlink and rsync operations but does not remove the worktree; residual synced
-gitignored artifacts, if any survive a partial rollback, are harmless (gitignored,
-not user work) and a re-run of `adopt` converges. This is consistent with the
-"never delete user work" invariant.
+**Rollback safety (critical).** Rsync records its destination — the worktree
+root — as its transaction rollback target, so the default RSYNC rollback
+`fs.remove(destination)` would delete the entire adopted worktree. Skipping the
+`worktree` checkpoint is NOT sufficient. Adopt mode therefore also passes
+`skipRsyncRollback: true` to `FileOperationTransaction.rollback()`, so on failure
+it reverts only the symlinks pando created and leaves the worktree and all synced
+artifacts in place. Residual gitignored artifacts are harmless and a re-run of
+`adopt` converges. (Found in adversarial review; covered by a real-transaction
+test.)
+
+**Rsync hardening (critical).** Adopt forces `rsyncConfig.onlyUntracked = true`
+(a config with `onlyUntracked = false` would full-mirror and clobber tracked
+files when commits match) and adds `--ignore-existing` (a path gitignored in the
+source but already present in the adopted worktree — e.g. a hand-made `.env` —
+must not be overwritten by the source copy). (Found in adversarial review.)
+
+**Idempotent re-apply preserves lifecycle facts.** When the target already has
+pando metadata and no explicit lifecycle flag is passed, adopt preserves the
+existing `kind`, `createdAt`, and `sourceBranch` (which drive reap + age) rather
+than rewriting them. (Found in adversarial review.)
 
 ### 3. `src/utils/postCommandRunner.ts` (new) — shared trust-gated runner
 

@@ -180,6 +180,16 @@ export default class AdoptWorktree extends Command {
         // Non-fatal: without a baseline the clean-tree check is just less precise.
       }
 
+      // Idempotent re-apply must not silently rewrite lifecycle facts. When the
+      // worktree is already managed and no lifecycle flag is passed, preserve its
+      // existing kind / sourceBranch / createdAt (which drive reap + age); only an
+      // explicit --ephemeral/--long-lived overrides the kind.
+      const explicitKind = Boolean(flags.ephemeral || flags['long-lived'])
+      const adoptKind: WorktreeKind = explicitKind
+        ? resolveAdoptKind(flags as Record<string, unknown>)
+        : (existing.kind ?? 'long-lived')
+      const adoptSourceBranch = existing.sourceBranch ?? config.worktree.targetBranch ?? 'main'
+
       const setupResult = await this.runSetup(
         flags as Record<string, unknown>,
         config,
@@ -196,8 +206,8 @@ export default class AdoptWorktree extends Command {
           targetPath,
           match.info,
           setupResult,
-          resolveAdoptKind(flags as Record<string, unknown>),
-          config.worktree.targetBranch ?? 'main',
+          adoptKind,
+          adoptSourceBranch,
           chalk,
           warnings
         )
@@ -215,11 +225,14 @@ export default class AdoptWorktree extends Command {
         gitRoot,
         mainRepoPath,
         resolvedPath: targetPath,
-        // Adopt has no "branched-from" moment; record the integration branch,
-        // which is what reap/stale detection compares against.
-        sourceBranch: config.worktree.targetBranch,
+        // First adopt records the integration branch (adopt has no "branched-from"
+        // moment); a re-adopt preserves whatever was already stored.
+        sourceBranch: adoptSourceBranch,
         worktreeBranch: match.info.branch,
-        kindOverride: resolveAdoptKind(flags as Record<string, unknown>),
+        kindOverride: adoptKind,
+        // Preserve the original creation time on re-adopt (undefined -> now on
+        // first adopt).
+        createdAt: existing.createdAt,
       })
       if (!isJson) {
         if (lifecycle.notice) ErrorHelper.warn(this, lifecycle.notice, false)

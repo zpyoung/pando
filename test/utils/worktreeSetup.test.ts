@@ -28,10 +28,12 @@ vi.mock('fs-extra', async () => {
       ...actual,
       pathExists: vi.fn(),
       stat: vi.fn(),
+      lstat: vi.fn(),
       remove: vi.fn(),
     },
     pathExists: vi.fn(),
     stat: vi.fn(),
+    lstat: vi.fn(),
     remove: vi.fn(),
   }
 })
@@ -59,6 +61,7 @@ describe('WorktreeSetupOrchestrator', () => {
   let mockTransaction: FileOperationTransaction
   let mockPathExists: ReturnType<typeof vi.fn>
   let mockStat: ReturnType<typeof vi.fn>
+  let mockLstat: ReturnType<typeof vi.fn>
   let mockRemove: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
@@ -66,9 +69,11 @@ describe('WorktreeSetupOrchestrator', () => {
     const fsExtra = (await import('fs-extra')).default as any
     mockPathExists = fsExtra.pathExists
     mockStat = fsExtra.stat
+    mockLstat = fsExtra.lstat
     mockRemove = fsExtra.remove
     vi.mocked(mockPathExists).mockReset()
     vi.mocked(mockStat).mockReset()
+    vi.mocked(mockLstat).mockReset()
     vi.mocked(mockRemove).mockReset()
 
     // Create mock GitHelper
@@ -143,6 +148,13 @@ describe('WorktreeSetupOrchestrator', () => {
     // Mock fs-extra default behavior
     vi.mocked(mockPathExists).mockResolvedValue(true)
     vi.mocked(mockStat).mockResolvedValue({
+      isDirectory: () => false,
+      isFile: () => true,
+    } as any)
+    // lstat resolving = "an entry exists at this path" (adopt classification +
+    // the create-time pre-removal loop use lstat, not pathExists).
+    vi.mocked(mockLstat).mockResolvedValue({
+      isSymbolicLink: () => false,
       isDirectory: () => false,
       isFile: () => true,
     } as any)
@@ -1151,6 +1163,8 @@ describe('WorktreeSetupOrchestrator', () => {
       )
 
       expect(mockTransaction.rollback).toHaveBeenCalled()
+      // Rollback must skip removing the rsync destination (the worktree root).
+      expect(mockTransaction.rollback).toHaveBeenCalledWith({ skipRsyncRollback: true })
       expect(mockTransaction.createCheckpoint).not.toHaveBeenCalledWith(
         'worktree',
         expect.anything()
@@ -1249,10 +1263,16 @@ describe('WorktreeSetupOrchestrator', () => {
         'package.json',
         'pnpm-lock.yaml',
       ])
-      // package.json target absent -> toCreate; pnpm-lock target present + correct -> alreadyLinked
-      vi.mocked(mockPathExists).mockImplementation(
-        async (p: string) => p !== '/repo/feature/package.json'
-      )
+      // package.json target absent (lstat throws) -> toCreate;
+      // pnpm-lock target present + correct symlink -> alreadyLinked
+      vi.mocked(mockLstat).mockImplementation(async (p: string) => {
+        if (p === '/repo/feature/package.json') throw new Error('ENOENT')
+        return {
+          isSymbolicLink: () => true,
+          isDirectory: () => false,
+          isFile: () => false,
+        } as never
+      })
       vi.mocked(mockSymlinkHelper.verifySymlink).mockResolvedValue(true)
 
       const result = await orchestrator.setupNewWorktree('/repo/feature', {
@@ -1270,6 +1290,43 @@ describe('WorktreeSetupOrchestrator', () => {
       expect(mockRsyncHelper.rsync).not.toHaveBeenCalled()
       expect(mockRemove).not.toHaveBeenCalled()
       expect(mockTransaction.createCheckpoint).not.toHaveBeenCalled()
+    })
+
+    it('forces onlyUntracked rsync and adds --ignore-existing to protect existing files', async () => {
+      // Even a full-mirror config must be downgraded to safe mode for adopt.
+      mockConfig.rsync.onlyUntracked = false
+      mockConfig.symlink.patterns = []
+
+      await orchestrator.setupNewWorktree('/repo/feature', { adopt: true })
+
+      // onlyUntracked forced -> the ignored-file list drives the sync (no full mirror).
+      expect(mockGitHelper.listIgnoredFiles).toHaveBeenCalledWith('/repo/main')
+      expect(mockRsyncHelper.rsync).toHaveBeenCalledWith(
+        '/repo/main',
+        '/repo/feature',
+        expect.objectContaining({ flags: expect.arrayContaining(['--ignore-existing']) }),
+        expect.any(Object)
+      )
+    })
+
+    it('classifies a dangling symlink at a target as a conflict, not toCreate', async () => {
+      vi.mocked(mockSymlinkHelper.matchPatterns).mockResolvedValue(['.env'])
+      // lstat resolves (a broken symlink entry is present) but it is not the
+      // correct link, so it must be a conflict rather than "create".
+      vi.mocked(mockLstat).mockResolvedValue({
+        isSymbolicLink: () => true,
+        isDirectory: () => false,
+        isFile: () => false,
+      } as never)
+      vi.mocked(mockSymlinkHelper.verifySymlink).mockResolvedValue(false)
+
+      const result = await orchestrator.setupNewWorktree('/repo/feature', {
+        adopt: true,
+        dryRun: true,
+      })
+
+      expect(result.plan!.symlinks.conflicts).toContain('.env')
+      expect(result.plan!.symlinks.toCreate).not.toContain('.env')
     })
   })
 })

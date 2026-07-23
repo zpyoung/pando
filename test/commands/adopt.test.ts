@@ -281,6 +281,48 @@ describe('adopt: apply', () => {
     )
   })
 
+  it('re-adopt preserves existing kind, createdAt, and sourceBranch (no silent rewrite)', async () => {
+    const { command } = createCommand()
+    stubParse(command, { json: true }, { path: '/repo/feature' })
+    mockGitHelper.getWorktreeByPath.mockResolvedValue(linkedWorktree)
+    vi.mocked(readMetadata).mockResolvedValue({
+      kind: 'ephemeral',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      sourceBranch: 'develop',
+    })
+
+    await command.run()
+
+    // An ephemeral worktree must NOT be silently rewritten to long-lived, and its
+    // age (createdAt) and sourceBranch must be preserved.
+    expect(writeMetadata).toHaveBeenCalledWith(
+      '/repo/feature',
+      expect.objectContaining({
+        kind: 'ephemeral',
+        createdAt: '2020-01-01T00:00:00.000Z',
+        sourceBranch: 'develop',
+      })
+    )
+  })
+
+  it('an explicit lifecycle flag still overrides a preserved kind on re-adopt', async () => {
+    const { command } = createCommand()
+    stubParse(command, { json: true, 'long-lived': true }, { path: '/repo/feature' })
+    mockGitHelper.getWorktreeByPath.mockResolvedValue(linkedWorktree)
+    vi.mocked(readMetadata).mockResolvedValue({
+      kind: 'ephemeral',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      sourceBranch: 'develop',
+    })
+
+    await command.run()
+
+    expect(writeMetadata).toHaveBeenCalledWith(
+      '/repo/feature',
+      expect.objectContaining({ kind: 'long-lived' })
+    )
+  })
+
   it('passes pre-existing dirty paths to setup and reports them', async () => {
     const { command, logSpy } = createCommand()
     stubParse(command, { json: true }, { path: '/repo/feature' })

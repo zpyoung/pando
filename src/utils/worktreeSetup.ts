@@ -174,6 +174,14 @@ export class WorktreeSetupOrchestrator {
    */
   private hasRolledBack = false
 
+  /**
+   * True while setting up an adopted worktree. Makes rollback non-destructive:
+   * it never removes the worktree (no 'worktree' checkpoint is created) and
+   * never removes the rsync destination (which is the pre-existing worktree
+   * root). Set per-run at the start of setupNewWorktree.
+   */
+  private adoptMode = false
+
   constructor(
     private gitHelper: GitHelper,
     private config: PandoConfig
@@ -193,6 +201,9 @@ export class WorktreeSetupOrchestrator {
    */
   async setupNewWorktree(worktreePath: string, options: SetupOptions = {}): Promise<SetupResult> {
     const startTime = Date.now()
+    // Record adopt mode for rollback() (which is also called from the SIGINT
+    // handler, without access to these options).
+    this.adoptMode = Boolean(options.adopt)
     const warnings: string[] = []
     let rsyncResult: RsyncResult | undefined
     let symlinkResult: SymlinkResult | undefined
@@ -219,6 +230,20 @@ export class WorktreeSetupOrchestrator {
           ...(this.config.symlink.patterns || []),
           ...(options.symlinkOverride?.patterns || []),
         ],
+      }
+
+      // Adopt mode: harden rsync so it can never overwrite the user's files.
+      //  (1) Force onlyUntracked — a config with onlyUntracked=false would
+      //      full-mirror and clobber tracked/modified target files when the
+      //      commits happen to match.
+      //  (2) Add --ignore-existing — a path that is gitignored in the source but
+      //      already exists in the adopted worktree (e.g. a hand-made .env) must
+      //      not be replaced by the source's copy.
+      if (options.adopt) {
+        rsyncConfig.onlyUntracked = true
+        if (!rsyncConfig.flags.includes('--ignore-existing')) {
+          rsyncConfig.flags = [...rsyncConfig.flags, '--ignore-existing']
+        }
       }
 
       // Get source tree path (main worktree)
@@ -644,8 +669,12 @@ export class WorktreeSetupOrchestrator {
       this.reportProgress(onProgress, SetupPhase.ROLLBACK, 'Rolling back file operations')
 
       // 1. Rollback file operations (symlinks, copied files)
-      // rollback() returns preserved checkpoints since it clears internal state
-      const rollbackResult = await this.transaction.rollback()
+      // rollback() returns preserved checkpoints since it clears internal state.
+      // In adopt mode, skip removing the rsync destination — it is the
+      // pre-existing worktree root, not something pando created.
+      const rollbackResult = await this.transaction.rollback({
+        skipRsyncRollback: this.adoptMode,
+      })
 
       // 2. Remove the worktree via git using preserved checkpoint
       const worktreeCheckpoint = rollbackResult.checkpoints.get('worktree')
@@ -710,11 +739,16 @@ export class WorktreeSetupOrchestrator {
     if (!options.preserveExisting) {
       // Create-time (and adopt --replace-existing): remove any checked-out copy
       // git created, then symlink in its place. Git automatically checks out
-      // tracked files when creating worktrees.
+      // tracked files when creating worktrees. Use lstat so a dangling symlink
+      // (which pathExists misses) is also cleared, letting --replace-existing
+      // replace it instead of failing with EEXIST.
       for (const item of symlinkItems) {
         const targetPath = path.default.join(worktreePath, item)
-        if (await fs.pathExists(targetPath)) {
+        try {
+          await fs.lstat(targetPath)
           await fs.remove(targetPath)
+        } catch {
+          // No entry at target; nothing to remove.
         }
       }
 
@@ -759,7 +793,16 @@ export class WorktreeSetupOrchestrator {
     for (const item of symlinkItems) {
       const target = path.default.join(worktreePath, item)
       const source = path.default.join(sourceTreePath, item)
-      if (!(await fs.pathExists(target))) {
+      // lstat (not pathExists): pathExists follows symlinks and returns false for
+      // a dangling link, which would misclassify it as `toCreate` even though a
+      // link entry is present. lstat sees the entry itself.
+      let exists = true
+      try {
+        await fs.lstat(target)
+      } catch {
+        exists = false
+      }
+      if (!exists) {
         result.toCreate.push(item)
       } else if (await this.symlinkHelper.verifySymlink(target, source)) {
         result.alreadyLinked.push(item)
