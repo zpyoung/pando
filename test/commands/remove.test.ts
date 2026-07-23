@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { Errors } from '@oclif/core'
 import { WorktreeInfo } from '../../src/utils/git.js'
 import RemoveWorktree from '../../src/commands/remove.js'
+import { readMetadata } from '../../src/utils/worktreeMetadata.js'
 
 /**
  * Tests for remove command
@@ -12,6 +13,7 @@ import RemoveWorktree from '../../src/commands/remove.js'
 // Mock the git module
 vi.mock('../../src/utils/git.js', () => {
   const mockGitHelper = {
+    setRetryConfig: vi.fn(),
     isRepository: vi.fn(),
     getRepositoryRoot: vi.fn(),
     listWorktrees: vi.fn(),
@@ -30,12 +32,17 @@ vi.mock('../../src/utils/git.js', () => {
   }
 })
 
+vi.mock('../../src/utils/worktreeMetadata.js', () => ({
+  readMetadata: vi.fn().mockResolvedValue({}),
+}))
+
 // Mock the config loader
 vi.mock('../../src/config/loader.js', () => ({
   loadConfig: vi.fn().mockResolvedValue({
     rsync: { enabled: true, flags: ['--archive'], exclude: [] },
     symlink: { patterns: [], relative: true, beforeRsync: true },
     worktree: { rebaseOnAdd: true, deleteBranchOnRemove: 'local' },
+    concurrency: { retry: { maxAttempts: 5, baseMs: 100, capMs: 2000 } },
   }),
 }))
 
@@ -94,6 +101,7 @@ describe('remove', () => {
 
     // Reset all mocks
     vi.clearAllMocks()
+    vi.mocked(readMetadata).mockResolvedValue({})
   })
 
   it('should successfully remove a worktree', async () => {
@@ -129,12 +137,31 @@ describe('remove', () => {
     mockGitHelper.listWorktrees.mockResolvedValue(mockWorktrees)
     mockGitHelper.hasUncommittedChanges.mockResolvedValue(false)
     mockGitHelper.removeWorktree.mockResolvedValue(undefined)
+    vi.mocked(readMetadata).mockResolvedValue({
+      kind: 'ephemeral',
+      owner: 'agent-7',
+      ports: { web: 3100 },
+      dbName: 'dev_feature',
+    })
 
     command.argv = ['--path', '/path/to/feature', '--json']
     await command.run()
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"success"\s*:\s*true/))
-    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/"path"\s*:\s*"\/path\/to\/feature"/))
+    expect(readMetadata).toHaveBeenCalledWith('/path/to/feature')
+    expect(vi.mocked(readMetadata).mock.invocationCallOrder[0]).toBeLessThan(
+      mockGitHelper.removeWorktree.mock.invocationCallOrder[0]
+    )
+    const payload = parseLoggedJsonObjects(logSpy.mock.calls)[0]
+    expect(payload).toMatchObject({
+      success: true,
+      path: '/path/to/feature',
+      metadata: {
+        kind: 'ephemeral',
+        owner: 'agent-7',
+        ports: { web: 3100 },
+        dbName: 'dev_feature',
+      },
+    })
   })
 
   it('should error when not in a git repository', async () => {

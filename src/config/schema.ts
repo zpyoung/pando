@@ -69,6 +69,9 @@ export const WorktreeConfigSchema = z.object({
   deleteBranchOnRemove: DeleteBranchOptionSchema.default('local'),
   useProjectSubfolder: z.boolean().default(false),
   targetBranch: z.string().default('main'),
+  defaultKind: z.enum(['auto', 'ephemeral', 'long-lived']).default('auto'),
+  ephemeralTtl: z.string().default('4h'),
+  autoLockActive: z.boolean().default(true),
 })
 
 /**
@@ -80,6 +83,9 @@ export const WorktreeConfigSchemaPartial = z.object({
   deleteBranchOnRemove: DeleteBranchOptionSchema.optional(),
   useProjectSubfolder: z.boolean().optional(),
   targetBranch: z.string().optional(),
+  defaultKind: z.enum(['auto', 'ephemeral', 'long-lived']).optional(),
+  ephemeralTtl: z.string().optional(),
+  autoLockActive: z.boolean().optional(),
 })
 
 /**
@@ -94,6 +100,74 @@ export const CleanConfigSchema = z.object({
  */
 export const CleanConfigSchemaPartial = z.object({
   fetch: z.boolean().optional(),
+})
+
+/**
+ * Reap configuration schema
+ */
+export const ReapConfigSchema = z.object({
+  requireMerged: z.boolean().default(true),
+})
+
+/**
+ * Reap configuration schema without defaults (for partial config validation)
+ */
+export const ReapConfigSchemaPartial = z.object({
+  requireMerged: z.boolean().optional(),
+})
+
+/**
+ * Retry configuration schema
+ */
+export const RetryConfigSchema = z.object({
+  maxAttempts: z.number().int().positive().default(5),
+  baseMs: z.number().int().nonnegative().default(100),
+  capMs: z.number().int().positive().default(2000),
+})
+
+/**
+ * Retry configuration schema without defaults (for partial config validation)
+ */
+export const RetryConfigSchemaPartial = z.object({
+  maxAttempts: z.number().int().positive().optional(),
+  baseMs: z.number().int().nonnegative().optional(),
+  capMs: z.number().int().positive().optional(),
+})
+
+/**
+ * Concurrency configuration schema
+ */
+export const ConcurrencyConfigSchema = z.object({
+  retry: RetryConfigSchema,
+})
+
+/**
+ * Concurrency configuration schema without defaults (for partial config validation)
+ */
+export const ConcurrencyConfigSchemaPartial = z.object({
+  retry: RetryConfigSchemaPartial.optional(),
+})
+
+/**
+ * Port allocation configuration schema
+ */
+export const PortsConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  range: z.string().default('3100-3199'),
+  names: z.array(z.string()).default(['web']),
+  dbStrategy: z.enum(['named']).default('named'),
+  dbBaseName: z.string().default('dev'),
+})
+
+/**
+ * Port allocation configuration schema without defaults (for partial config validation)
+ */
+export const PortsConfigSchemaPartial = z.object({
+  enabled: z.boolean().optional(),
+  range: z.string().optional(),
+  names: z.array(z.string()).optional(),
+  dbStrategy: z.enum(['named']).optional(),
+  dbBaseName: z.string().optional(),
 })
 
 /**
@@ -122,6 +196,9 @@ export const PandoConfigSchema = z.object({
   symlink: SymlinkConfigSchema,
   worktree: WorktreeConfigSchema,
   clean: CleanConfigSchema,
+  reap: ReapConfigSchema,
+  concurrency: ConcurrencyConfigSchema,
+  ports: PortsConfigSchema,
   postCommands: PostCommandsConfigSchema,
 })
 
@@ -133,6 +210,9 @@ export const PartialPandoConfigSchema = z.object({
   symlink: SymlinkConfigSchemaPartial.optional(),
   worktree: WorktreeConfigSchemaPartial.optional(),
   clean: CleanConfigSchemaPartial.optional(),
+  reap: ReapConfigSchemaPartial.optional(),
+  concurrency: ConcurrencyConfigSchemaPartial.optional(),
+  ports: PortsConfigSchemaPartial.optional(),
   postCommands: PostCommandsConfigSchemaPartial,
 })
 
@@ -261,6 +341,24 @@ export interface WorktreeConfig {
    * @default 'main'
    */
   targetBranch?: string
+
+  /**
+   * Default lifecycle kind assigned to new worktrees
+   * @default 'auto'
+   */
+  defaultKind?: 'auto' | 'ephemeral' | 'long-lived'
+
+  /**
+   * Time-to-live assigned to ephemeral worktrees
+   * @default '4h'
+   */
+  ephemeralTtl?: string
+
+  /**
+   * Automatically lock active worktrees against reaping
+   * @default true
+   */
+  autoLockActive?: boolean
 }
 
 /**
@@ -274,6 +372,91 @@ export interface CleanConfig {
    * @default false
    */
   fetch: boolean
+}
+
+/**
+ * Reap configuration options
+ *
+ * Controls safeguards applied while reaping worktrees
+ */
+export interface ReapConfig {
+  /**
+   * Require a worktree branch to be merged before reaping it
+   * @default true
+   */
+  requireMerged: boolean
+}
+
+/**
+ * Retry configuration options
+ *
+ * Controls retry backoff for concurrent lifecycle operations
+ */
+export interface RetryConfig {
+  /**
+   * Maximum number of attempts before failing
+   * @default 5
+   */
+  maxAttempts: number
+
+  /**
+   * Initial retry delay in milliseconds
+   * @default 100
+   */
+  baseMs: number
+
+  /**
+   * Maximum retry delay in milliseconds
+   * @default 2000
+   */
+  capMs: number
+}
+
+/**
+ * Concurrency configuration options
+ */
+export interface ConcurrencyConfig {
+  /**
+   * Retry behavior for concurrent lifecycle operations
+   */
+  retry: RetryConfig
+}
+
+/**
+ * Port allocation configuration options
+ *
+ * Controls deterministic port and database allocation for worktrees
+ */
+export interface PortsConfig {
+  /**
+   * Whether port allocation is enabled
+   * @default false
+   */
+  enabled: boolean
+
+  /**
+   * Inclusive port range available for allocation
+   * @default '3100-3199'
+   */
+  range: string
+
+  /**
+   * Logical service names that receive allocated ports
+   * @default ['web']
+   */
+  names: string[]
+
+  /**
+   * Database naming strategy
+   * @default 'named'
+   */
+  dbStrategy: 'named'
+
+  /**
+   * Base name used when deriving worktree database names
+   * @default 'dev'
+   */
+  dbBaseName: string
 }
 
 export type PostCommandScript = z.infer<typeof PostCommandScriptSchema>
@@ -294,6 +477,9 @@ export interface PandoConfig {
   symlink: SymlinkConfig
   worktree: WorktreeConfig
   clean: CleanConfig
+  reap: ReapConfig
+  concurrency: ConcurrencyConfig
+  ports: PortsConfig
   postCommands: PostCommandsConfig
 }
 
@@ -305,6 +491,11 @@ export type PartialPandoConfig = {
   symlink?: Partial<SymlinkConfig>
   worktree?: Partial<WorktreeConfig>
   clean?: Partial<CleanConfig>
+  reap?: Partial<ReapConfig>
+  concurrency?: {
+    retry?: Partial<RetryConfig>
+  }
+  ports?: Partial<PortsConfig>
   postCommands?: PostCommandsConfig
 }
 
@@ -412,31 +603,15 @@ export class ConfigParseFailureError extends Error {
  *
  * Used when no configuration files are found
  */
-export const DEFAULT_CONFIG: PandoConfig = {
-  rsync: {
-    enabled: true,
-    // `.git` is excluded programmatically in fileOps.buildArgs (non-configurable).
-    flags: ['--archive'],
-    exclude: [],
-    onlyUntracked: true,
-  },
-  symlink: {
-    patterns: [],
-    relative: true,
-    beforeRsync: true,
-    allowTracked: true,
-  },
-  worktree: {
-    rebaseOnAdd: true,
-    deleteBranchOnRemove: 'local',
-    useProjectSubfolder: false,
-    targetBranch: 'main',
-  },
-  clean: {
-    fetch: false,
-  },
-  postCommands: {},
-}
+export const DEFAULT_CONFIG = PandoConfigSchema.parse({
+  rsync: {},
+  symlink: {},
+  worktree: {},
+  clean: {},
+  reap: {},
+  concurrency: { retry: {} },
+  ports: {},
+})
 
 // ============================================================================
 // Validation Functions

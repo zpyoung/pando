@@ -5,6 +5,7 @@ import { jsonFlag, forceFlag, pathFlag } from '../utils/common-flags.js'
 import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
 import { loadConfig } from '../config/loader.js'
 import type { DeleteBranchOption } from '../config/schema.js'
+import { readMetadata, type WorktreeMetadata } from '../utils/worktreeMetadata.js'
 import { checkbox, confirm } from '@inquirer/prompts'
 
 /**
@@ -248,6 +249,7 @@ export default class RemoveWorktree extends Command {
       // 2. Load config for branch deletion settings
       const gitRoot = await gitHelper.getRepositoryRoot()
       const config = await loadConfig({ gitRoot })
+      gitHelper.setRetryConfig(config.concurrency.retry)
 
       // Determine delete-branch option (--keep-branch takes precedence, then flag, then config)
       const deleteBranchOption: DeleteBranchOption = flags['keep-branch']
@@ -318,6 +320,7 @@ export default class RemoveWorktree extends Command {
         success: boolean
         error?: string
         branch?: string | null
+        metadata?: WorktreeMetadata
         branchDeletion?: {
           localDeleted: boolean
           remoteDeleted: boolean
@@ -328,6 +331,7 @@ export default class RemoveWorktree extends Command {
       }> = []
 
       for (const worktreePath of pathsToRemove) {
+        let metadata: WorktreeMetadata | undefined
         try {
           // Find worktree info
           const worktree = worktrees.find((w) => w.path === worktreePath)
@@ -339,6 +343,9 @@ export default class RemoveWorktree extends Command {
             })
             continue
           }
+
+          // Git deletes per-worktree config during removal, so retain it for JSON consumers first.
+          metadata = await readMetadata(worktree.path)
 
           // Check for uncommitted changes (unless --force)
           let forceRemove = flags.force
@@ -352,6 +359,7 @@ export default class RemoveWorktree extends Command {
                   success: false,
                   error: 'Has uncommitted changes (use --force to remove anyway)',
                   branch: worktree.branch,
+                  metadata,
                 })
                 continue
               }
@@ -372,6 +380,7 @@ export default class RemoveWorktree extends Command {
                   success: false,
                   error: 'Has uncommitted changes (use --force to remove anyway)',
                   branch: worktree.branch,
+                  metadata,
                 })
                 continue
               }
@@ -399,6 +408,7 @@ export default class RemoveWorktree extends Command {
             path: worktreePath,
             success: true,
             branch: worktree.branch,
+            metadata,
             branchDeletion,
           })
         } catch (error) {
@@ -406,6 +416,7 @@ export default class RemoveWorktree extends Command {
             path: worktreePath,
             success: false,
             error: error instanceof Error ? error.message : String(error),
+            metadata,
           })
         }
       }
@@ -424,6 +435,7 @@ export default class RemoveWorktree extends Command {
             success: result.success,
             path: result.path,
             branch: result.branch,
+            metadata: result.metadata,
             forced: flags.force,
             deleteBranchOption: deleteBranchOption,
             branchDeletion: result.branchDeletion,

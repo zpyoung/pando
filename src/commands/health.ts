@@ -2,6 +2,7 @@ import { Command } from '@oclif/core'
 import { createGitHelper } from '../utils/git.js'
 import { jsonFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
+import { readMetadata, type WorktreeMetadata } from '../utils/worktreeMetadata.js'
 
 /**
  * Worktree health check status
@@ -10,6 +11,11 @@ interface WorktreeHealth {
   path: string
   branch: string | null
   status: 'clean' | 'detached' | 'uncommitted' | 'behind' | 'gone' | 'error'
+  kind: WorktreeMetadata['kind'] | null
+  ageMs: number
+  ttl: string | null
+  locked: boolean
+  owner: string | null
   message?: string
   details?: {
     uncommittedFiles?: number
@@ -88,10 +94,17 @@ export default class Health extends Command {
       const healthResults: WorktreeHealth[] = []
 
       for (const worktree of worktrees) {
-        let health: WorktreeHealth = {
+        const metadata = await readMetadata(worktree.path)
+        const ageMs = await gitHelper.getWorktreeAgeMs(worktree.path, metadata)
+        const health: WorktreeHealth = {
           path: worktree.path,
           branch: worktree.branch,
           status: 'clean',
+          kind: metadata.kind ?? null,
+          ageMs,
+          ttl: metadata.ttl ?? null,
+          locked: Boolean(worktree.isLocked),
+          owner: metadata.owner ?? null,
         }
 
         // Skip detached HEAD worktrees for deep checks
@@ -243,6 +256,9 @@ export default class Health extends Command {
               if (item.branch) {
                 this.log(`    ${chalk.gray(`Branch: ${item.branch}`)}`)
               }
+              this.log(
+                `    ${chalk.gray(`Lifecycle: ${item.kind ?? 'unknown'}, ${item.locked ? 'locked' : 'unlocked'}`)}`
+              )
               if (item.message) {
                 this.log(`    ${section.color(item.message)}`)
               }

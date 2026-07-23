@@ -11,6 +11,7 @@ import CleanWorktree from '../../src/commands/clean.js'
 // Mock the git module
 vi.mock('../../src/utils/git.js', () => {
   const mockGitHelper = {
+    setRetryConfig: vi.fn(),
     isRepository: vi.fn(),
     getRepositoryRoot: vi.fn(),
     getStaleWorktrees: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('../../src/config/loader.js', () => ({
       targetBranch: 'main',
     },
     clean: { fetch: false },
+    concurrency: { retry: { maxAttempts: 5, baseMs: 100, capMs: 2000 } },
   }),
 }))
 
@@ -53,6 +55,7 @@ describe('clean', () => {
 
   function _getMockGitHelper() {
     return {
+      setRetryConfig: vi.fn(),
       isRepository: vi.fn(),
       getRepositoryRoot: vi.fn(),
       getStaleWorktrees: vi.fn(),

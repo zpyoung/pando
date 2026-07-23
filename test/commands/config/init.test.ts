@@ -82,6 +82,9 @@ describe('config init', () => {
       expect(config).toHaveProperty('rsync')
       expect(config).toHaveProperty('symlink')
       expect(config).toHaveProperty('worktree')
+      expect(config).toHaveProperty('reap')
+      expect(config).toHaveProperty('concurrency.retry')
+      expect(config).toHaveProperty('ports')
 
       // Check rsync defaults
       const rsync = config.rsync as Record<string, unknown>
@@ -99,6 +102,22 @@ describe('config init', () => {
       const worktree = config.worktree as Record<string, unknown>
       expect(worktree.rebaseOnAdd).toBe(true)
       expect(worktree.deleteBranchOnRemove).toBe('local')
+      expect(worktree.defaultKind).toBe('auto')
+      expect(worktree.ephemeralTtl).toBe('4h')
+      expect(worktree.autoLockActive).toBe(true)
+
+      // Check lifecycle, retry, and port defaults
+      expect(config.reap).toEqual({ requireMerged: true })
+      expect(config.concurrency).toEqual({
+        retry: { maxAttempts: 5, baseMs: 100, capMs: 2000 },
+      })
+      expect(config.ports).toEqual({
+        enabled: false,
+        range: '3100-3199',
+        names: ['web'],
+        dbStrategy: 'named',
+        dbBaseName: 'dev',
+      })
     })
 
     it('should include helpful comments in output', async () => {
@@ -121,6 +140,12 @@ describe('config init', () => {
       expect(content).toContain('# Symlink Configuration')
       expect(content).toContain('# Patterns support glob syntax')
       expect(content).toContain('# Worktree Configuration')
+      expect(content).toContain('[reap]')
+      expect(content).toContain('# Reap Configuration')
+      expect(content).toContain('[concurrency.retry]')
+      expect(content).toContain('# Concurrency Retry Configuration')
+      expect(content).toContain('[ports]')
+      expect(content).toContain('# Port Allocation Configuration')
     })
 
     it('should output JSON when --json flag is used', async () => {
@@ -240,6 +265,88 @@ patterns = ["node_modules"]
       expect(config.rsync.flags).toEqual(['--archive'])
       expect(config.symlink.relative).toBe(true)
       expect(config.worktree).toBeDefined()
+    })
+
+    it('should add lifecycle defaults to a legacy config', async () => {
+      const configPath = path.join(tempDir, '.pando.toml')
+
+      await fs.writeFile(
+        configPath,
+        `[rsync]
+enabled = true
+flags = ["--archive"]
+exclude = []
+onlyUntracked = true
+
+[symlink]
+patterns = []
+relative = true
+beforeRsync = true
+allowTracked = true
+
+[worktree]
+rebaseOnAdd = true
+deleteBranchOnRemove = "local"
+useProjectSubfolder = false
+targetBranch = "main"
+
+[clean]
+fetch = false
+
+[postCommands]
+`
+      )
+
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
+
+      const jsonOutput = logSpy.mock.calls[0]?.[0] as string
+      const result = JSON.parse(jsonOutput)
+      const addedPaths = result.added.map((setting: { path: string }) => setting.path)
+
+      expect(result.action).toBe('merged')
+      expect(addedPaths).toEqual([
+        'worktree.defaultKind',
+        'worktree.ephemeralTtl',
+        'worktree.autoLockActive',
+        'reap',
+        'concurrency',
+        'ports',
+      ])
+
+      const config = parseToml(await fs.readFile(configPath, 'utf-8')) as Record<string, any>
+      expect(config.worktree).toMatchObject({
+        defaultKind: 'auto',
+        ephemeralTtl: '4h',
+        autoLockActive: true,
+      })
+      expect(config.reap).toEqual({ requireMerged: true })
+      expect(config.concurrency.retry).toEqual({ maxAttempts: 5, baseMs: 100, capMs: 2000 })
+      expect(config.ports).toMatchObject({ enabled: false, range: '3100-3199' })
+    })
+
+    it('should preserve customized lifecycle values while merging defaults', async () => {
+      const configPath = path.join(tempDir, '.pando.toml')
+      await fs.writeFile(configPath, '[worktree]\nephemeralTtl = "2h"\n')
+
+      vi.spyOn(command, 'parse').mockResolvedValue({
+        flags: { json: true, global: false, 'git-root': false, force: false, merge: true },
+        args: {},
+      } as any)
+
+      await command.run()
+
+      const config = parseToml(await fs.readFile(configPath, 'utf-8')) as Record<string, any>
+      expect(config.worktree.ephemeralTtl).toBe('2h')
+
+      const jsonOutput = logSpy.mock.calls[0]?.[0] as string
+      const result = JSON.parse(jsonOutput)
+      const addedPaths = result.added.map((setting: { path: string }) => setting.path)
+      expect(addedPaths).not.toContain('worktree.ephemeralTtl')
     })
 
     it('should report nothing added when config is complete', async () => {

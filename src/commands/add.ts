@@ -1,6 +1,16 @@
 import { Args, Command, Flags } from '@oclif/core'
+import { basename } from 'node:path'
 import { createGitHelper } from '../utils/git.js'
 import { loadConfig } from '../config/loader.js'
+import { parseBoolean } from '../config/env.js'
+import type { PandoConfig } from '../config/schema.js'
+import {
+  assertGitVersion,
+  ensureWorktreeConfigEnabled,
+  writeMetadata,
+  type WorktreeMetadata,
+} from '../utils/worktreeMetadata.js'
+import { allocate, deriveDbName } from '../utils/portAllocator.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
 import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
@@ -19,6 +29,219 @@ import {
   runPostCommandScripts,
   type PostCommandResult,
 } from '../utils/postCommands.js'
+
+type WorktreeKind = NonNullable<WorktreeMetadata['kind']>
+
+type LifecycleGitHelper = Pick<
+  ReturnType<typeof createGitHelper>,
+  'getMainBranch' | 'inferOwner' | 'lockWorktree'
+>
+
+interface LifecycleDependencies {
+  assertGitVersion: () => Promise<void>
+  ensureWorktreeConfigEnabled: typeof ensureWorktreeConfigEnabled
+  writeMetadata: typeof writeMetadata
+  allocate: typeof allocate
+}
+
+interface LifecycleOptions {
+  flags: Record<string, unknown>
+  worktreeConfig: PandoConfig['worktree']
+  portsConfig: PandoConfig['ports']
+  gitHelper: LifecycleGitHelper
+  gitRoot: string
+  mainRepoPath: string
+  resolvedPath: string
+  sourceBranch?: string
+  worktreeBranch: string | null
+  env?: NodeJS.ProcessEnv
+  createdAt?: string
+}
+
+export interface AddLifecycleResult {
+  kind: WorktreeKind
+  owner?: string
+  ttl?: string
+  effectiveTtl?: string
+  ports?: Record<string, number>
+  dbName?: string
+  locked: boolean
+  notice?: string
+  warnings: string[]
+}
+
+const lifecycleDependencies: LifecycleDependencies = {
+  assertGitVersion,
+  ensureWorktreeConfigEnabled,
+  writeMetadata,
+  allocate,
+}
+
+/** Resolve lifecycle kind without coupling precedence rules to command I/O. */
+export function resolveWorktreeKind(
+  flags: Record<string, unknown>,
+  configuredKind: PandoConfig['worktree']['defaultKind'],
+  resolvedPath: string,
+  env: NodeJS.ProcessEnv = process.env
+): WorktreeKind {
+  if (flags.ephemeral) return 'ephemeral'
+  if (flags['long-lived']) return 'long-lived'
+  if (configuredKind === 'ephemeral' || configuredKind === 'long-lived') return configuredKind
+
+  const normalizedPath = resolvedPath.replaceAll('\\', '/')
+  const hasAgentSession = env.CLAUDE_SESSION_ID !== undefined || env.PANDO_SESSION !== undefined
+  const hasEphemeralSignal = env.PANDO_EPHEMERAL !== undefined && parseBoolean(env.PANDO_EPHEMERAL)
+  const isAgentWorktree =
+    normalizedPath.includes('/.claude/worktrees/') || hasAgentSession || hasEphemeralSignal
+
+  return isAgentWorktree ? 'ephemeral' : 'long-lived'
+}
+
+/**
+ * Lifecycle setup is best-effort because a usable worktree is more valuable
+ * than failing the whole add after setup has already completed.
+ */
+export async function setupLifecycleMetadata(
+  options: LifecycleOptions,
+  dependencies: LifecycleDependencies = lifecycleDependencies
+): Promise<AddLifecycleResult> {
+  const { flags, worktreeConfig, portsConfig, gitHelper, gitRoot, mainRepoPath, resolvedPath } =
+    options
+  const env = options.env ?? process.env
+  const kind = resolveWorktreeKind(flags, worktreeConfig.defaultKind, resolvedPath, env)
+  const owner = (flags.owner as string | undefined) ?? gitHelper.inferOwner()
+  const hasActiveSession = env.CLAUDE_SESSION_ID !== undefined || env.PANDO_SESSION !== undefined
+  const ttl = flags.ttl as string | undefined
+  const effectiveTtl = ttl ?? (kind === 'ephemeral' ? worktreeConfig.ephemeralTtl : undefined)
+  const result: AddLifecycleResult = {
+    kind,
+    ...(owner ? { owner } : {}),
+    ...(ttl ? { ttl } : {}),
+    ...(effectiveTtl !== undefined ? { effectiveTtl } : {}),
+    locked: false,
+    warnings: [],
+  }
+
+  try {
+    await dependencies.assertGitVersion()
+    const enablement = await dependencies.ensureWorktreeConfigEnabled(gitRoot)
+    if (enablement.notice) result.notice = enablement.notice
+
+    const sourceBranch = options.sourceBranch ?? (await gitHelper.getMainBranch())
+    await dependencies.writeMetadata(resolvedPath, {
+      kind,
+      createdAt: options.createdAt ?? new Date().toISOString(),
+      sourceBranch,
+      ...(owner ? { owner } : {}),
+      ...(ttl ? { ttl } : {}),
+    })
+
+    if (worktreeConfig.autoLockActive && hasActiveSession) {
+      // Locking is best-effort: a lock failure must not skip the remaining
+      // lifecycle setup (port allocation / DB name) below.
+      try {
+        const reason = owner ? `pando: active session ${owner}` : 'pando: active session'
+        await gitHelper.lockWorktree(resolvedPath, reason)
+        result.locked = true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        result.warnings.push(`Could not auto-lock worktree: ${message}`)
+      }
+    }
+
+    if (portsConfig.enabled) {
+      try {
+        const allocatedPorts = await dependencies.allocate(resolvedPath, {
+          range: portsConfig.range,
+          names: portsConfig.names,
+          mainRepoPath,
+        })
+        result.ports = allocatedPorts
+
+        const skippedNames = portsConfig.names.filter(
+          (name) => !Object.hasOwn(allocatedPorts, name)
+        )
+        if (skippedNames.length > 0) {
+          result.warnings.push(
+            `Could not allocate requested port(s) for ${skippedNames.join(', ')} in range ${portsConfig.range}`
+          )
+        }
+
+        if (portsConfig.dbStrategy === 'named') {
+          const databaseBranch = options.worktreeBranch ?? basename(resolvedPath)
+          const dbName = deriveDbName(portsConfig.dbBaseName, databaseBranch)
+          result.dbName = dbName
+          await dependencies.writeMetadata(resolvedPath, { dbName })
+        }
+      } catch (error) {
+        // Resource setup cannot invalidate a worktree that was already created successfully.
+        const reason = error instanceof Error ? error.message : String(error)
+        result.warnings.push(`Could not allocate worktree ports or database name: ${reason}`)
+      }
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    result.warnings.push(`Could not fully initialize worktree lifecycle metadata: ${reason}`)
+  }
+
+  return result
+}
+
+interface CreatedWorktreeInfo {
+  path: string
+  branch: string | null
+  commit: string
+  rebased?: boolean
+  rebaseSourceBranch?: string
+  sourceBranch?: string
+}
+
+interface AddWorktreeOutput {
+  path: string
+  branch: string | null
+  commit: string
+  rebased: boolean
+  rebaseSourceBranch: string | null
+  kind: WorktreeKind
+  owner?: string
+  ttl?: string
+  effectiveTtl?: string
+  ports?: Record<string, number>
+  dbName?: string
+  locked: boolean
+}
+
+interface AddOutputContext {
+  warnings: string[]
+  setupWarnings: string[]
+  worktreeInfo?: CreatedWorktreeInfo
+  lifecycle?: AddLifecycleResult
+}
+
+function buildWorktreeOutput(
+  worktreeInfo: CreatedWorktreeInfo,
+  lifecycle: AddLifecycleResult
+): AddWorktreeOutput {
+  return {
+    path: worktreeInfo.path,
+    branch: worktreeInfo.branch,
+    commit: worktreeInfo.commit,
+    rebased: worktreeInfo.rebased || false,
+    rebaseSourceBranch: worktreeInfo.rebaseSourceBranch || null,
+    kind: lifecycle.kind,
+    ...(lifecycle.owner ? { owner: lifecycle.owner } : {}),
+    ...(lifecycle.ttl ? { ttl: lifecycle.ttl } : {}),
+    ...(lifecycle.effectiveTtl ? { effectiveTtl: lifecycle.effectiveTtl } : {}),
+    ...(lifecycle.ports ? { ports: lifecycle.ports } : {}),
+    ...(lifecycle.dbName ? { dbName: lifecycle.dbName } : {}),
+    locked: lifecycle.locked,
+  }
+}
+
+function lifecycleWarnings(lifecycle?: AddLifecycleResult): string[] {
+  if (!lifecycle) return []
+  return [...(lifecycle.notice ? [lifecycle.notice] : []), ...lifecycle.warnings]
+}
 
 /**
  * Add a new git worktree
@@ -69,6 +292,28 @@ export default class AddWorktree extends Command {
       default: false,
     }),
 
+    // Lifecycle flags
+    ephemeral: Flags.boolean({
+      description: 'Mark the worktree as ephemeral',
+      exclusive: ['long-lived'],
+      default: false,
+    }),
+    'long-lived': Flags.boolean({
+      description: 'Mark the worktree as long-lived',
+      exclusive: ['ephemeral'],
+      default: false,
+    }),
+    ttl: Flags.string({
+      description: 'Set a per-worktree lifecycle duration',
+    }),
+    owner: Flags.string({
+      description: 'Set the worktree owner or agent session id',
+    }),
+    ports: Flags.boolean({
+      description: 'Enable port allocation for this run',
+      default: false,
+    }),
+
     // Rsync control flags
     'skip-rsync': Flags.boolean({
       description: 'Skip rsync operation (ignore config)',
@@ -107,6 +352,7 @@ export default class AddWorktree extends Command {
 
   async run(): Promise<void> {
     const { flags, args } = await this.parse(AddWorktree)
+    const outputContext: AddOutputContext = { warnings: [], setupWarnings: [] }
 
     // Use positional arg as branch if --branch is not provided
     if (args.branch && !flags.branch) {
@@ -118,12 +364,11 @@ export default class AddWorktree extends Command {
     if (flags.branch) {
       const branchValidation = validateBranchName(flags.branch)
       if (!branchValidation.valid) {
-        ErrorHelper.validation(
-          this,
+        this.failValidation(
           `Invalid branch name '${flags.branch}': ${branchValidation.reason}`,
-          flags.json
+          flags.json,
+          outputContext.warnings
         )
-        return
       }
     }
 
@@ -136,10 +381,10 @@ export default class AddWorktree extends Command {
       const gitHelper = createGitHelper()
       const isRepo = await gitHelper.isRepository()
       if (!isRepo) {
-        ErrorHelper.validation(
-          this,
+        this.failValidation(
           'Not a git repository. Run this command from within a git repository.',
-          flags.json
+          flags.json,
+          outputContext.warnings
         )
       }
 
@@ -147,8 +392,10 @@ export default class AddWorktree extends Command {
       const config = await this.loadAndMergeConfig(
         flags as Record<string, unknown>,
         gitHelper,
-        spinner
+        spinner,
+        outputContext.warnings
       )
+      gitHelper.setRetryConfig(config.concurrency.retry)
 
       // Get git root for path resolution
       const gitRoot = await gitHelper.getRepositoryRoot()
@@ -158,7 +405,8 @@ export default class AddWorktree extends Command {
         flags as Record<string, unknown>,
         spinner,
         config,
-        gitRoot
+        gitRoot,
+        outputContext.warnings
       )
 
       const worktreeInfo = await this.createWorktree(
@@ -166,8 +414,11 @@ export default class AddWorktree extends Command {
         gitHelper,
         resolvedPath,
         spinner,
-        config
+        config,
+        outputContext.warnings
       )
+      outputContext.worktreeInfo = worktreeInfo
+
       const setupResult = await this.runSetup(
         flags as Record<string, unknown>,
         config,
@@ -175,24 +426,87 @@ export default class AddWorktree extends Command {
         resolvedPath,
         spinner
       )
+      outputContext.setupWarnings = setupResult.warnings
+
+      // A linked worktree root can still enumerate peers if discovering the main path fails.
+      const mainRepoPath = config.ports.enabled
+        ? await gitHelper.getMainWorktreePath().catch(() => gitRoot)
+        : gitRoot
+      const lifecycle = await setupLifecycleMetadata({
+        flags: flags as Record<string, unknown>,
+        worktreeConfig: config.worktree,
+        portsConfig: config.ports,
+        gitHelper,
+        gitRoot,
+        mainRepoPath,
+        resolvedPath,
+        sourceBranch: worktreeInfo.sourceBranch,
+        worktreeBranch: worktreeInfo.branch,
+      })
+      outputContext.lifecycle = lifecycle
+      if (!flags.json) {
+        if (lifecycle.notice) ErrorHelper.warn(this, lifecycle.notice, false)
+        lifecycle.warnings.forEach((warning) => ErrorHelper.warn(this, warning, false))
+      }
       const postCommandResults = await this.runPostCommands(
         flags as Record<string, unknown>,
         config,
         worktreeInfo,
         resolvedPath,
-        spinner
+        spinner,
+        lifecycle.kind,
+        lifecycle.effectiveTtl,
+        lifecycle.ports,
+        lifecycle.dbName,
+        outputContext.warnings
       )
       this.formatOutput(
         flags as Record<string, unknown>,
         worktreeInfo,
         setupResult,
+        lifecycle,
         postCommandResults,
         Date.now() - startTime,
-        chalk
+        chalk,
+        outputContext.warnings
       )
     } catch (error) {
-      await this.handleError(error, flags as Record<string, unknown>, chalk, spinner)
+      await this.handleError(error, flags as Record<string, unknown>, chalk, spinner, outputContext)
     }
+  }
+
+  private emitWarning(message: string, isJson: boolean, warnings: string[]): void {
+    if (isJson) {
+      warnings.push(message)
+    } else {
+      ErrorHelper.warn(this, message, false)
+    }
+  }
+
+  private failValidation(message: string, isJson: boolean, warnings: string[]): never {
+    if (!isJson) return ErrorHelper.validation(this, message, false)
+
+    this.log(JSON.stringify({ success: false, error: message, warnings }, null, 2))
+    this.exit(1)
+  }
+
+  private failOperation(error: Error, context: string, isJson: boolean, warnings: string[]): never {
+    if (!isJson) return ErrorHelper.operation(this, error, context, false)
+
+    this.log(
+      JSON.stringify(
+        {
+          success: false,
+          error: `${context}: ${error.message}`,
+          context,
+          details: error.message,
+          warnings,
+        },
+        null,
+        2
+      )
+    )
+    this.exit(1)
   }
 
   /**
@@ -216,7 +530,8 @@ export default class AddWorktree extends Command {
     flags: Record<string, unknown>,
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
     config: Awaited<ReturnType<typeof loadConfig>>,
-    gitRoot: string
+    gitRoot: string,
+    warnings: string[] = []
   ): Promise<{ gitHelper: ReturnType<typeof createGitHelper>; resolvedPath: string }> {
     if (spinner) {
       spinner.start('Validating path...')
@@ -234,11 +549,7 @@ export default class AddWorktree extends Command {
     const fs = await import('fs-extra')
     // Validate: require either --branch or --path (or both)
     if (!branchArg && !pathArg) {
-      ErrorHelper.validation(
-        this,
-        'Either --branch or --path is required.',
-        flags.json as boolean | undefined
-      )
+      this.failValidation('Either --branch or --path is required.', Boolean(flags.json), warnings)
     }
 
     const path = await import('path')
@@ -261,10 +572,10 @@ export default class AddWorktree extends Command {
       }
     } else {
       // No path flag and no usable config default
-      ErrorHelper.validation(
-        this,
+      this.failValidation(
         'Path is required. Provide --path flag or set worktree.defaultPath in config.',
-        flags.json as boolean | undefined
+        Boolean(flags.json),
+        warnings
       )
     }
 
@@ -274,11 +585,7 @@ export default class AddWorktree extends Command {
       : path.resolve(gitRoot, worktreePath)
 
     if (await fs.pathExists(resolvedPath)) {
-      ErrorHelper.validation(
-        this,
-        `Path already exists: ${resolvedPath}`,
-        flags.json as boolean | undefined
-      )
+      this.failValidation(`Path already exists: ${resolvedPath}`, Boolean(flags.json), warnings)
     }
 
     // Ensure parent directory exists (needed for useProjectSubfolder and nested defaultPath)
@@ -286,15 +593,15 @@ export default class AddWorktree extends Command {
 
     // Validate force flag requires branch
     if (flags.force && !branchArg) {
-      ErrorHelper.validation(
-        this,
+      this.failValidation(
         'The --force flag requires --branch to be specified.\n\n' +
           'The --force flag resets an existing branch to a new commit.\n' +
           'Without a branch name, there is nothing to force-reset.\n\n' +
           'Options:\n' +
           '  • Add --branch <name> to specify the branch to reset\n' +
           '  • Remove --force if creating a new worktree without resetting',
-        flags.json as boolean | undefined
+        Boolean(flags.json),
+        warnings
       )
     }
 
@@ -303,14 +610,14 @@ export default class AddWorktree extends Command {
       // Check if branch already exists
       const branchExists = await gitHelper.branchExists(branchArg)
       if (branchExists) {
-        ErrorHelper.validation(
-          this,
+        this.failValidation(
           `Branch '${branchArg}' already exists.\n\n` +
             'Options:\n' +
             `  • Use --force to reset '${branchArg}' to commit ${commitArg.substring(0, 7)}\n` +
             '  • Choose a different branch name with --branch <new-name>\n' +
             '  • Omit --branch to checkout the commit in detached HEAD state',
-          flags.json as boolean | undefined
+          Boolean(flags.json),
+          warnings
         )
       }
     }
@@ -324,7 +631,8 @@ export default class AddWorktree extends Command {
   private async loadAndMergeConfig(
     flags: Record<string, unknown>,
     gitHelper: ReturnType<typeof createGitHelper>,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    warnings: string[] = []
   ): Promise<Awaited<ReturnType<typeof loadConfig>>> {
     if (spinner) {
       spinner.text = 'Loading configuration...'
@@ -344,10 +652,10 @@ export default class AddWorktree extends Command {
       config.rsync.enabled = false
       // Warn if rsync-specific flags were provided alongside --skip-rsync
       if (flags['rsync-flags'] || flags['rsync-exclude']) {
-        ErrorHelper.warn(
-          this,
+        this.emitWarning(
           '--rsync-flags and --rsync-exclude are ignored when --skip-rsync is set',
-          flags.json as boolean | undefined
+          Boolean(flags.json),
+          warnings
         )
       }
     }
@@ -372,6 +680,11 @@ export default class AddWorktree extends Command {
     if (flags['absolute-symlinks']) {
       config.symlink.relative = false
     }
+    if (flags.ports) {
+      // Allocation lands in T8; preserving the run-level override now keeps the
+      // flag contract stable for that phase without allocating prematurely.
+      config.ports.enabled = true
+    }
 
     return config
   }
@@ -384,14 +697,9 @@ export default class AddWorktree extends Command {
     gitHelper: ReturnType<typeof createGitHelper>,
     resolvedPath: string,
     spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
-    config: Awaited<ReturnType<typeof loadConfig>>
-  ): Promise<{
-    path: string
-    branch: string | null
-    commit: string
-    rebased?: boolean
-    rebaseSourceBranch?: string
-  }> {
+    config: Awaited<ReturnType<typeof loadConfig>>,
+    warnings: string[] = []
+  ): Promise<CreatedWorktreeInfo> {
     if (spinner) {
       spinner.text = 'Creating worktree...'
     }
@@ -414,12 +722,7 @@ export default class AddWorktree extends Command {
         skipPostCreate: true,
       })
     } catch (error) {
-      ErrorHelper.operation(
-        this,
-        error as Error,
-        'Failed to create worktree',
-        flags.json as boolean | undefined
-      )
+      this.failOperation(error as Error, 'Failed to create worktree', Boolean(flags.json), warnings)
     }
 
     // Determine if we should rebase
@@ -446,10 +749,10 @@ export default class AddWorktree extends Command {
         worktreeResult.commit = newCommit.trim()
       } else {
         // Warn but don't fail
-        ErrorHelper.warn(
-          this,
+        this.emitWarning(
           `Failed to rebase ${worktreeResult.branch} onto ${sourceBranch}. You may need to rebase manually.`,
-          flags.json as boolean | undefined
+          Boolean(flags.json),
+          warnings
         )
       }
     }
@@ -460,6 +763,7 @@ export default class AddWorktree extends Command {
       commit: worktreeResult.commit,
       rebased,
       rebaseSourceBranch: rebased ? sourceBranch! : undefined,
+      sourceBranch: sourceBranch ?? undefined,
     }
   }
 
@@ -489,7 +793,11 @@ export default class AddWorktree extends Command {
     // Register a SIGINT (Ctrl+C) handler so an interruption mid-setup triggers
     // the same transactional rollback as a thrown error (otherwise the signal
     // would bypass the catch block and leave a partial worktree behind).
-    const interruptHandler = this.createSetupInterruptHandler(orchestrator, spinner)
+    const interruptHandler = this.createSetupInterruptHandler(
+      orchestrator,
+      spinner,
+      Boolean(flags.json)
+    )
     // Node's signal listeners are `() => void`; wrap the async handler in a
     // void-returning fire-and-forget listener (it ends in process.exit anyway).
     const sigintListener = (): void => {
@@ -535,7 +843,8 @@ export default class AddWorktree extends Command {
    */
   createSetupInterruptHandler(
     orchestrator: ReturnType<typeof createWorktreeSetupOrchestrator>,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    isJson = false
   ): () => Promise<void> {
     return async (): Promise<void> => {
       if (spinner) {
@@ -547,7 +856,9 @@ export default class AddWorktree extends Command {
         // Rollback already swallows its own errors and returns warnings; this
         // guard only protects against unexpected throws so we still exit 130.
       }
-      this.log('\nInterrupted — rolled back')
+      if (!isJson) {
+        this.log('\nInterrupted — rolled back')
+      }
       // 130 = 128 + SIGINT(2), the conventional exit code for Ctrl+C.
       process.exit(130)
     }
@@ -611,7 +922,12 @@ export default class AddWorktree extends Command {
       commit: string
     },
     resolvedPath: string,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    kind: WorktreeKind,
+    ttl?: string,
+    ports?: Record<string, number>,
+    dbName?: string,
+    warnings: string[] = []
   ): Promise<PostCommandResult[]> {
     const scripts = normalizePostCommandScripts(config, 'add')
 
@@ -630,7 +946,8 @@ export default class AddWorktree extends Command {
       config.postCommandsSourcePath,
       scripts,
       isJson,
-      spinner
+      spinner,
+      warnings
     )
     if (!allowed) {
       return []
@@ -646,6 +963,10 @@ export default class AddWorktree extends Command {
       worktreePath: worktreeInfo.path,
       branch: worktreeInfo.branch,
       commit: worktreeInfo.commit,
+      kind,
+      ttl,
+      ...(ports ? { ports } : {}),
+      ...(dbName ? { dbName } : {}),
     })
   }
 
@@ -659,7 +980,8 @@ export default class AddWorktree extends Command {
     sourcePath: string | undefined,
     scripts: Array<{ name?: string; command: string }>,
     isJson: boolean,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    warnings: string[] = []
   ): Promise<boolean> {
     const envTrust = isEnvTrustEnabled(process.env.PANDO_TRUST_CONFIG)
 
@@ -692,14 +1014,14 @@ export default class AddWorktree extends Command {
     }
 
     if (decision === 'skip') {
-      ErrorHelper.warn(
-        this,
+      this.emitWarning(
         `Skipping ${scripts.length} post-command script(s) from untrusted config file` +
           (sourcePath ? ` '${sourcePath}'` : '') +
           '.\n' +
           'To allow them: run `pando add` interactively once to trust this file, ' +
           'or set PANDO_TRUST_CONFIG=1.',
-        isJson
+        isJson,
+        warnings
       )
       return false
     }
@@ -716,16 +1038,18 @@ export default class AddWorktree extends Command {
       spinner.stop()
     }
 
-    this.log('')
-    this.log(`A config file requests running post-command scripts on 'pando add':`)
-    if (sourcePath) {
-      this.log(`  File: ${sourcePath}`)
+    if (!isJson) {
+      this.log('')
+      this.log(`A config file requests running post-command scripts on 'pando add':`)
+      if (sourcePath) {
+        this.log(`  File: ${sourcePath}`)
+      }
+      for (const script of scripts) {
+        const label = script.name ? `${script.name}: ${script.command}` : script.command
+        this.log(`  • ${label}`)
+      }
+      this.log('')
     }
-    for (const script of scripts) {
-      const label = script.name ? `${script.name}: ${script.command}` : script.command
-      this.log(`  • ${label}`)
-    }
-    this.log('')
 
     const { confirm } = await import('@inquirer/prompts')
     const approved = await confirm({
@@ -734,10 +1058,10 @@ export default class AddWorktree extends Command {
     })
 
     if (!approved) {
-      ErrorHelper.warn(
-        this,
+      this.emitWarning(
         `Skipped ${scripts.length} post-command script(s); config file not trusted.`,
-        isJson
+        isJson,
+        warnings
       )
       return false
     }
@@ -750,10 +1074,10 @@ export default class AddWorktree extends Command {
       } catch {
         // Non-fatal: failing to persist trust just means we'll prompt again
         // next time. Still allow this run since the user approved it.
-        ErrorHelper.warn(
-          this,
+        this.emitWarning(
           'Could not persist trust decision; will prompt again next time.',
-          isJson
+          isJson,
+          warnings
         )
       }
     }
@@ -770,33 +1094,24 @@ export default class AddWorktree extends Command {
    */
   private formatOutput(
     flags: Record<string, unknown>,
-    worktreeInfo: {
-      path: string
-      branch: string | null
-      commit: string
-      rebased?: boolean
-      rebaseSourceBranch?: string
-    },
+    worktreeInfo: CreatedWorktreeInfo,
     setupResult: Awaited<
       ReturnType<ReturnType<typeof createWorktreeSetupOrchestrator>['setupNewWorktree']>
     > & { details: AddCommandDetails },
+    lifecycle: AddLifecycleResult,
     postCommandResults: PostCommandResult[],
     duration: number,
-    chalk: Awaited<typeof import('chalk').default> | null
+    chalk: Awaited<typeof import('chalk').default> | null,
+    warnings: string[] = []
   ): void {
     if (flags.json) {
-      // JSON output
+      const worktreeOutput = buildWorktreeOutput(worktreeInfo, lifecycle)
+
       this.log(
         JSON.stringify(
           {
             success: true,
-            worktree: {
-              path: worktreeInfo.path,
-              branch: worktreeInfo.branch,
-              commit: worktreeInfo.commit,
-              rebased: worktreeInfo.rebased || false,
-              rebaseSourceBranch: worktreeInfo.rebaseSourceBranch || null,
-            },
+            worktree: worktreeOutput,
             setup: {
               rsync: setupResult.rsyncResult
                 ? {
@@ -824,7 +1139,7 @@ export default class AddWorktree extends Command {
             },
             postCommands: postCommandResults,
             duration,
-            warnings: setupResult.warnings,
+            warnings: [...setupResult.warnings, ...warnings, ...lifecycleWarnings(lifecycle)],
             ...(flags.details ? { details: setupResult.details } : {}),
           },
           null,
@@ -847,6 +1162,23 @@ export default class AddWorktree extends Command {
         output.push(chalk.gray(`  Branch: ${branchInfo}`))
       }
       output.push(chalk.gray(`  Commit: ${worktreeInfo.commit.substring(0, 7)}`))
+      const lifecycleStatus = [
+        ...(lifecycle.locked ? ['locked'] : []),
+        ...(lifecycle.owner ? [`owner ${lifecycle.owner}`] : []),
+        ...(lifecycle.ttl ? [`ttl ${lifecycle.ttl}`] : []),
+      ]
+      output.push(
+        chalk.gray(
+          `  Kind: ${lifecycle.kind}${lifecycleStatus.length > 0 ? ` (${lifecycleStatus.join(', ')})` : ''}`
+        )
+      )
+      const resourceStatus = [
+        ...Object.entries(lifecycle.ports ?? {}).map(([name, port]) => `${name}=${port}`),
+        ...(lifecycle.dbName ? [`db=${lifecycle.dbName}`] : []),
+      ]
+      if (resourceStatus.length > 0) {
+        output.push(chalk.gray(`  Resources: ${resourceStatus.join(', ')}`))
+      }
       output.push('')
 
       // Rsync results
@@ -972,11 +1304,18 @@ export default class AddWorktree extends Command {
     error: unknown,
     flags: Record<string, unknown>,
     chalk: Awaited<typeof import('chalk').default> | null,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null
+    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
+    outputContext: AddOutputContext = { warnings: [], setupWarnings: [] }
   ): Promise<void> {
     if (isOclifExitError(error)) {
       throw error
     }
+
+    const warnings = [
+      ...outputContext.setupWarnings,
+      ...outputContext.warnings,
+      ...lifecycleWarnings(outputContext.lifecycle),
+    ]
 
     if (spinner) {
       spinner.fail('Failed')
@@ -989,8 +1328,17 @@ export default class AddWorktree extends Command {
             {
               success: false,
               error: error.message,
+              ...(outputContext.worktreeInfo && outputContext.lifecycle
+                ? {
+                    worktree: buildWorktreeOutput(
+                      outputContext.worktreeInfo,
+                      outputContext.lifecycle
+                    ),
+                  }
+                : {}),
               postCommands: error.results,
               failedPostCommand: error.result,
+              warnings,
             },
             null,
             2
@@ -1034,7 +1382,7 @@ export default class AddWorktree extends Command {
               success: false,
               error: setupError.message,
               rolledBack: result.rolledBack,
-              warnings: result.warnings,
+              warnings: [...result.warnings, ...warnings],
               duration: result.duration,
               symlinkConflicts: result.symlinkResult?.conflicts || [],
             },
@@ -1079,6 +1427,7 @@ export default class AddWorktree extends Command {
               success: false,
               error: 'rsync is not installed',
               hint: 'Install rsync or use --skip-rsync flag',
+              warnings,
             },
             null,
             2
@@ -1111,6 +1460,7 @@ export default class AddWorktree extends Command {
               success: false,
               error: 'symlink conflicts',
               conflicts: error.conflicts,
+              warnings,
             },
             null,
             2
@@ -1142,6 +1492,7 @@ export default class AddWorktree extends Command {
           {
             success: false,
             error: error instanceof Error ? error.message : String(error),
+            warnings,
           },
           null,
           2

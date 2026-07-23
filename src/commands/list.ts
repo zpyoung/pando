@@ -1,7 +1,48 @@
 import { Command, Flags } from '@oclif/core'
-import { createGitHelper } from '../utils/git.js'
+import { createGitHelper, type WorktreeInfo } from '../utils/git.js'
 import { jsonFlag } from '../utils/common-flags.js'
 import { ErrorHelper } from '../utils/errors.js'
+import { readMetadata, type WorktreeMetadata } from '../utils/worktreeMetadata.js'
+
+interface LifecycleWorktreeInfo extends Omit<WorktreeInfo, 'isLocked'> {
+  kind: WorktreeMetadata['kind'] | null
+  createdAt: string | null
+  owner: string | null
+  ttl: string | null
+  ageMs: number
+  locked: boolean
+}
+
+function formatAge(ageMs: number): string {
+  const seconds = Math.floor(ageMs / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
+}
+
+async function addLifecycleDetails(
+  worktrees: WorktreeInfo[],
+  gitHelper: ReturnType<typeof createGitHelper>
+): Promise<LifecycleWorktreeInfo[]> {
+  return Promise.all(
+    worktrees.map(async ({ isLocked, ...worktree }) => {
+      const metadata = await readMetadata(worktree.path)
+      const ageMs = await gitHelper.getWorktreeAgeMs(worktree.path, metadata)
+      return {
+        ...worktree,
+        kind: metadata.kind ?? null,
+        createdAt: metadata.createdAt ?? null,
+        owner: metadata.owner ?? null,
+        ttl: metadata.ttl ?? null,
+        ageMs,
+        locked: Boolean(isLocked),
+      }
+    })
+  )
+}
 
 /**
  * List all git worktrees
@@ -57,16 +98,18 @@ export default class ListWorktree extends Command {
         return
       }
 
+      const worktreesWithLifecycle = await addLifecycleDetails(worktrees, gitHelper)
+
       // 4-5. Format and output based on flags
       if (flags.json) {
         // JSON output
-        this.log(JSON.stringify({ worktrees }, null, 2))
+        this.log(JSON.stringify({ worktrees: worktreesWithLifecycle }, null, 2))
       } else {
         // Human-readable output with chalk
         const chalk = (await import('chalk')).default
-        this.log(chalk.bold(`Found ${worktrees.length} worktree(s):\n`))
+        this.log(chalk.bold(`Found ${worktreesWithLifecycle.length} worktree(s):\n`))
 
-        for (const worktree of worktrees) {
+        for (const worktree of worktreesWithLifecycle) {
           // Path (always show)
           this.log(chalk.cyan(`  ${worktree.path}`))
 
@@ -80,6 +123,11 @@ export default class ListWorktree extends Command {
           // Verbose mode: show commit hash and prunable status
           if (flags.verbose) {
             this.log(chalk.gray(`    Commit: ${worktree.commit}`))
+            this.log(
+              chalk.gray(
+                `    Lifecycle: kind ${worktree.kind ?? 'unknown'}, owner ${worktree.owner ?? '-'}, age ${formatAge(worktree.ageMs)}, ${worktree.locked ? 'locked' : 'unlocked'}`
+              )
+            )
             if (worktree.isPrunable) {
               this.log(chalk.red(`    Status: prunable (directory deleted)`))
             }

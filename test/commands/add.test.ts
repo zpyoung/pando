@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import AddWorktree from '../../src/commands/add'
+import AddWorktree, { resolveWorktreeKind, setupLifecycleMetadata } from '../../src/commands/add'
 import type { WorktreeSetupOrchestrator } from '../../src/utils/worktreeSetup'
 import type { PandoConfig } from '../../src/config/schema'
 
@@ -19,12 +19,17 @@ import type { PandoConfig } from '../../src/config/schema'
 // ---------------------------------------------------------------------------
 
 const mockGitHelper = {
+  setRetryConfig: vi.fn(),
   isRepository: vi.fn(),
   getRepositoryRoot: vi.fn(),
   getCurrentBranch: vi.fn(),
+  getMainWorktreePath: vi.fn(),
   branchExists: vi.fn(),
   addWorktree: vi.fn(),
   rebaseBranchInWorktree: vi.fn(),
+  getMainBranch: vi.fn(),
+  inferOwner: vi.fn(),
+  lockWorktree: vi.fn(),
 }
 
 vi.mock('../../src/utils/git.js', () => ({
@@ -35,6 +40,19 @@ vi.mock('../../src/utils/git.js', () => ({
 vi.mock('../../src/config/loader.js', () => ({
   loadConfig: vi.fn(),
 }))
+
+vi.mock('../../src/utils/worktreeMetadata.js', () => ({
+  assertGitVersion: vi.fn(),
+  ensureWorktreeConfigEnabled: vi.fn(),
+  writeMetadata: vi.fn(),
+}))
+
+vi.mock('../../src/utils/portAllocator.js', async () => {
+  const actual = await vi.importActual<typeof import('../../src/utils/portAllocator.js')>(
+    '../../src/utils/portAllocator.js'
+  )
+  return { ...actual, allocate: vi.fn() }
+})
 
 vi.mock('../../src/utils/configTrust.js', () => ({
   computeConfigHash: vi.fn(),
@@ -73,7 +91,17 @@ import {
   isConfigTrusted,
   computeConfigHash,
 } from '../../src/utils/configTrust.js'
-import { normalizePostCommandScripts, runPostCommandScripts } from '../../src/utils/postCommands.js'
+import {
+  normalizePostCommandScripts,
+  PostCommandError,
+  runPostCommandScripts,
+} from '../../src/utils/postCommands.js'
+import {
+  assertGitVersion,
+  ensureWorktreeConfigEnabled,
+  writeMetadata,
+} from '../../src/utils/worktreeMetadata.js'
+import { allocate } from '../../src/utils/portAllocator.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,8 +116,19 @@ function baseConfig(overrides: Partial<PandoConfig> = {}): PandoConfig {
       deleteBranchOnRemove: 'local',
       useProjectSubfolder: false,
       targetBranch: 'main',
+      defaultKind: 'auto',
+      ephemeralTtl: '4h',
+      autoLockActive: true,
     },
     clean: { fetch: false },
+    concurrency: { retry: { maxAttempts: 5, baseMs: 100, capMs: 2000 } },
+    ports: {
+      enabled: false,
+      range: '3100-3199',
+      names: ['web'],
+      dbStrategy: 'named',
+      dbBaseName: 'dev',
+    },
     ...overrides,
   } as PandoConfig
 }
@@ -131,11 +170,590 @@ function stubParse(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(assertGitVersion).mockResolvedValue(undefined)
+  vi.mocked(ensureWorktreeConfigEnabled).mockResolvedValue({ enabled: true, migrated: [] })
+  vi.mocked(writeMetadata).mockResolvedValue(undefined)
+  vi.mocked(allocate).mockResolvedValue({})
+  mockGitHelper.getMainWorktreePath.mockResolvedValue('/repo')
 })
 
 // ---------------------------------------------------------------------------
 // Branch-name validation
 // ---------------------------------------------------------------------------
+
+describe('add: lifecycle kind resolution', () => {
+  const emptyEnv: NodeJS.ProcessEnv = {}
+
+  it('registers mutually exclusive lifecycle flags', () => {
+    expect(AddWorktree.flags.ephemeral.exclusive).toContain('long-lived')
+    expect(AddWorktree.flags['long-lived'].exclusive).toContain('ephemeral')
+    expect(AddWorktree.flags).toHaveProperty('ttl')
+    expect(AddWorktree.flags).toHaveProperty('owner')
+    expect(AddWorktree.flags).toHaveProperty('ports')
+  })
+
+  it('uses explicit flags before config and inference', () => {
+    expect(resolveWorktreeKind({ ephemeral: true }, 'long-lived', '/repo/wt', emptyEnv)).toBe(
+      'ephemeral'
+    )
+    expect(
+      resolveWorktreeKind({ 'long-lived': true }, 'ephemeral', '/repo/.claude/worktrees/task', {
+        CLAUDE_SESSION_ID: 'session',
+      })
+    ).toBe('long-lived')
+  })
+
+  it('uses a configured kind before automatic inference', () => {
+    expect(resolveWorktreeKind({}, 'long-lived', '/repo/.claude/worktrees/task', emptyEnv)).toBe(
+      'long-lived'
+    )
+    expect(resolveWorktreeKind({}, 'ephemeral', '/repo/wt', emptyEnv)).toBe('ephemeral')
+  })
+
+  it('infers ephemeral kind from Claude worktree paths and agent environment signals', () => {
+    expect(resolveWorktreeKind({}, 'auto', '/repo/.claude/worktrees/task', emptyEnv)).toBe(
+      'ephemeral'
+    )
+    expect(resolveWorktreeKind({}, 'auto', '/repo/wt', { CLAUDE_SESSION_ID: '' })).toBe('ephemeral')
+    expect(resolveWorktreeKind({}, 'auto', '/repo/wt', { PANDO_SESSION: 'p1' })).toBe('ephemeral')
+    expect(resolveWorktreeKind({}, 'auto', '/repo/wt', { PANDO_EPHEMERAL: 'YES' })).toBe(
+      'ephemeral'
+    )
+    expect(resolveWorktreeKind({}, 'auto', '/repo/wt', emptyEnv)).toBe('long-lived')
+  })
+
+  it('parses PANDO_EPHEMERAL as a boolean', () => {
+    for (const value of ['false', '0', 'no', 'FALSE', 'No']) {
+      expect(resolveWorktreeKind({}, 'auto', '/repo/wt', { PANDO_EPHEMERAL: value })).toBe(
+        'long-lived'
+      )
+    }
+    for (const value of ['true', '1', 'yes', 'TRUE', 'Yes']) {
+      expect(resolveWorktreeKind({}, 'auto', '/repo/wt', { PANDO_EPHEMERAL: value })).toBe(
+        'ephemeral'
+      )
+    }
+  })
+})
+
+describe('add: lifecycle metadata setup', () => {
+  const dependencies = () => ({
+    assertGitVersion: vi.fn().mockResolvedValue(undefined),
+    ensureWorktreeConfigEnabled: vi.fn().mockResolvedValue({ enabled: true, migrated: [] }),
+    writeMetadata: vi.fn().mockResolvedValue(undefined),
+    allocate: vi.fn().mockResolvedValue({}),
+  })
+
+  const worktreeConfig = {
+    defaultKind: 'auto' as const,
+    ephemeralTtl: '4h',
+    autoLockActive: true,
+  }
+  const portsConfig = {
+    enabled: false,
+    range: '3100-3199',
+    names: ['web'],
+    dbStrategy: 'named' as const,
+    dbBaseName: 'dev',
+  }
+
+  it('does not auto-lock for an explicit owner without an active session', async () => {
+    const lockWorktree = vi.fn().mockResolvedValue(undefined)
+    const deps = dependencies()
+    const result = await setupLifecycleMetadata(
+      {
+        flags: { owner: 'manual-owner' },
+        worktreeConfig,
+        portsConfig,
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree,
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo',
+        resolvedPath: '/repo/wt',
+        sourceBranch: 'develop',
+        worktreeBranch: 'feature',
+        env: {},
+        createdAt: '2026-07-22T12:00:00.000Z',
+      },
+      deps
+    )
+
+    expect(result).toMatchObject({ owner: 'manual-owner', locked: false })
+    expect(deps.writeMetadata).toHaveBeenCalledWith('/repo/wt', {
+      kind: 'long-lived',
+      createdAt: '2026-07-22T12:00:00.000Z',
+      sourceBranch: 'develop',
+      owner: 'manual-owner',
+    })
+    expect(lockWorktree).not.toHaveBeenCalled()
+  })
+
+  it('auto-locks when an actual agent session is present and auto-lock is enabled', async () => {
+    const lockWorktree = vi.fn().mockResolvedValue(undefined)
+    const result = await setupLifecycleMetadata(
+      {
+        flags: { owner: 'agent-7' },
+        worktreeConfig,
+        portsConfig,
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue('agent-7'),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree,
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo',
+        resolvedPath: '/repo/wt',
+        sourceBranch: 'develop',
+        worktreeBranch: 'feature',
+        env: { CLAUDE_SESSION_ID: '' },
+      },
+      dependencies()
+    )
+
+    expect(result).toMatchObject({ kind: 'ephemeral', owner: 'agent-7', locked: true })
+    expect(lockWorktree).toHaveBeenCalledWith('/repo/wt', 'pando: active session agent-7')
+  })
+
+  it('allocates ports, derives a database name, and writes both when enabled', async () => {
+    const deps = dependencies()
+    deps.allocate.mockResolvedValue({ web: 3100, api: 3101 })
+
+    const result = await setupLifecycleMetadata(
+      {
+        flags: {},
+        worktreeConfig,
+        portsConfig: {
+          ...portsConfig,
+          enabled: true,
+          names: ['web', 'api'],
+          dbBaseName: 'pando',
+        },
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree: vi.fn(),
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo/main',
+        resolvedPath: '/repo/wt',
+        sourceBranch: 'main',
+        worktreeBranch: 'Feature/Ports',
+        env: {},
+      },
+      deps
+    )
+
+    expect(deps.allocate).toHaveBeenCalledWith('/repo/wt', {
+      range: '3100-3199',
+      names: ['web', 'api'],
+      mainRepoPath: '/repo/main',
+    })
+    expect(deps.writeMetadata).toHaveBeenLastCalledWith('/repo/wt', {
+      dbName: 'pando_feature_ports',
+    })
+    expect(result).toMatchObject({
+      ports: { web: 3100, api: 3101 },
+      dbName: 'pando_feature_ports',
+      warnings: [],
+    })
+  })
+
+  it('uses the path basename for a detached worktree database name', async () => {
+    const deps = dependencies()
+
+    const result = await setupLifecycleMetadata(
+      {
+        flags: {},
+        worktreeConfig,
+        portsConfig: { ...portsConfig, enabled: true },
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree: vi.fn(),
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo/main',
+        resolvedPath: '/repo/worktrees/detached-preview',
+        sourceBranch: 'develop',
+        worktreeBranch: null,
+        env: {},
+      },
+      deps
+    )
+
+    expect(result.dbName).toBe('dev_detached_preview')
+    expect(deps.writeMetadata).toHaveBeenLastCalledWith('/repo/worktrees/detached-preview', {
+      dbName: 'dev_detached_preview',
+    })
+  })
+
+  it('does not allocate ports when allocation is disabled', async () => {
+    const deps = dependencies()
+
+    const result = await setupLifecycleMetadata(
+      {
+        flags: {},
+        worktreeConfig,
+        portsConfig,
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree: vi.fn(),
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo/main',
+        resolvedPath: '/repo/wt',
+        sourceBranch: 'main',
+        worktreeBranch: 'feature',
+        env: {},
+      },
+      deps
+    )
+
+    expect(deps.allocate).not.toHaveBeenCalled()
+    expect(result).not.toHaveProperty('ports')
+    expect(result).not.toHaveProperty('dbName')
+  })
+
+  it('keeps allocation failures non-fatal and warns about skipped names', async () => {
+    const failedDeps = dependencies()
+    failedDeps.allocate.mockRejectedValue(new Error('port metadata denied'))
+    const exhaustedDeps = dependencies()
+    exhaustedDeps.allocate.mockResolvedValue({ web: 3100 })
+    const enabledPorts = { ...portsConfig, enabled: true, names: ['web', 'api'] }
+    const options = {
+      flags: {},
+      worktreeConfig,
+      portsConfig: enabledPorts,
+      gitHelper: {
+        inferOwner: vi.fn().mockReturnValue(''),
+        getMainBranch: vi.fn().mockResolvedValue('main'),
+        lockWorktree: vi.fn(),
+      },
+      gitRoot: '/repo',
+      mainRepoPath: '/repo/main',
+      resolvedPath: '/repo/wt',
+      sourceBranch: 'main',
+      worktreeBranch: 'main',
+      env: {},
+    }
+
+    await expect(setupLifecycleMetadata(options, failedDeps)).resolves.toMatchObject({
+      locked: false,
+      warnings: [expect.stringContaining('port metadata denied')],
+    })
+    await expect(setupLifecycleMetadata(options, exhaustedDeps)).resolves.toMatchObject({
+      ports: { web: 3100 },
+      dbName: 'dev_main',
+      warnings: [expect.stringContaining('api')],
+    })
+  })
+
+  it('keeps lock failures non-fatal and reports the actual unlocked state', async () => {
+    const lockWorktree = vi.fn().mockRejectedValue(new Error('lock denied'))
+    await expect(
+      setupLifecycleMetadata(
+        {
+          flags: { owner: 'agent-7' },
+          worktreeConfig,
+          portsConfig,
+          gitHelper: {
+            inferOwner: vi.fn().mockReturnValue('agent-7'),
+            getMainBranch: vi.fn().mockResolvedValue('main'),
+            lockWorktree,
+          },
+          gitRoot: '/repo',
+          mainRepoPath: '/repo',
+          resolvedPath: '/repo/wt',
+          sourceBranch: 'develop',
+          worktreeBranch: 'feature',
+          env: { PANDO_SESSION: 'session-7' },
+        },
+        dependencies()
+      )
+    ).resolves.toMatchObject({
+      owner: 'agent-7',
+      locked: false,
+      warnings: [expect.stringContaining('lock denied')],
+    })
+  })
+
+  it('includes lifecycle metadata in the single JSON success result', () => {
+    const { command, logSpy } = createCommand()
+    const setupResult = {
+      rsyncResult: undefined,
+      symlinkResult: undefined,
+      skipWorktreeResult: undefined,
+      cleanTree: true,
+      warnings: ['setup warning'],
+      details: {},
+    }
+
+    ;(
+      command as unknown as {
+        formatOutput: (
+          flags: Record<string, unknown>,
+          worktree: Record<string, unknown>,
+          setup: Record<string, unknown>,
+          lifecycle: Record<string, unknown>,
+          postCommands: unknown[],
+          duration: number,
+          chalk: null
+        ) => void
+      }
+    ).formatOutput(
+      { json: true },
+      { path: '/repo/wt', branch: 'feature', commit: 'abc1234' },
+      setupResult,
+      {
+        kind: 'ephemeral',
+        owner: 'agent-7',
+        ttl: '30m',
+        effectiveTtl: '30m',
+        ports: { web: 3100 },
+        dbName: 'dev_feature',
+        locked: true,
+        notice: 'Enabled extensions.worktreeConfig (migrated: none)',
+        warnings: ['metadata warning'],
+      },
+      [],
+      10,
+      null
+    )
+
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string)
+    expect(output.worktree).toMatchObject({
+      path: '/repo/wt',
+      kind: 'ephemeral',
+      owner: 'agent-7',
+      ttl: '30m',
+      effectiveTtl: '30m',
+      ports: { web: 3100 },
+      dbName: 'dev_feature',
+      locked: true,
+    })
+    expect(output.warnings).toEqual([
+      'setup warning',
+      'Enabled extensions.worktreeConfig (migrated: none)',
+      'metadata warning',
+    ])
+  })
+
+  it('keeps metadata failures non-fatal after worktree creation', async () => {
+    const deps = dependencies()
+    deps.writeMetadata.mockRejectedValue(new Error('config.worktree denied'))
+    const lockWorktree = vi.fn().mockResolvedValue(undefined)
+
+    await expect(
+      setupLifecycleMetadata(
+        {
+          flags: { ephemeral: true, ttl: '30m' },
+          worktreeConfig,
+          portsConfig,
+          gitHelper: {
+            inferOwner: vi.fn().mockReturnValue('agent-7'),
+            getMainBranch: vi.fn().mockResolvedValue('main'),
+            lockWorktree,
+          },
+          gitRoot: '/repo',
+          mainRepoPath: '/repo',
+          resolvedPath: '/repo/wt',
+          sourceBranch: 'develop',
+          worktreeBranch: 'feature',
+          env: {},
+        },
+        deps
+      )
+    ).resolves.toMatchObject({
+      kind: 'ephemeral',
+      owner: 'agent-7',
+      ttl: '30m',
+      effectiveTtl: '30m',
+      locked: false,
+      warnings: [expect.stringContaining('config.worktree denied')],
+    })
+    expect(lockWorktree).not.toHaveBeenCalled()
+  })
+})
+
+describe('add: JSON document consistency', () => {
+  const setupResult = {
+    rsyncResult: undefined,
+    symlinkResult: undefined,
+    skipWorktreeResult: undefined,
+    cleanTree: true,
+    warnings: ['setup warning'],
+    details: {},
+  }
+
+  function prepareRun(command: AddWorktree, config: PandoConfig): void {
+    vi.mocked(loadConfig).mockResolvedValue(config)
+    mockGitHelper.isRepository.mockResolvedValue(true)
+    mockGitHelper.getRepositoryRoot.mockResolvedValue('/repo')
+    mockGitHelper.getCurrentBranch.mockResolvedValue('main')
+    mockGitHelper.addWorktree.mockResolvedValue({
+      path: '/repo/wt',
+      branch: 'feature',
+      commit: 'abc1234',
+      isExistingBranch: false,
+    })
+    mockGitHelper.inferOwner.mockReturnValue('')
+
+    const internals = command as unknown as {
+      runSetup: () => Promise<unknown>
+    }
+    vi.spyOn(internals, 'runSetup').mockResolvedValue(setupResult)
+  }
+
+  it('emits one parseable JSON document with flag, trust, and lifecycle warnings', async () => {
+    const { command, logSpy, warnSpy } = createCommand()
+    stubParse(command, {
+      path: '/repo/wt',
+      branch: 'feature',
+      ephemeral: true,
+      owner: 'agent-7',
+      ttl: '30m',
+      'skip-rsync': true,
+      'rsync-flags': ['--checksum'],
+      json: true,
+    })
+    prepareRun(
+      command,
+      baseConfig({
+        postCommands: { add: ['echo hi'] },
+        postCommandsSourcePath: '/repo/.pando.toml',
+      } as Partial<PandoConfig>)
+    )
+    vi.mocked(ensureWorktreeConfigEnabled).mockResolvedValue({
+      enabled: true,
+      migrated: [],
+      notice: 'Enabled extensions.worktreeConfig (migrated: none)',
+    })
+    vi.mocked(writeMetadata).mockRejectedValue(new Error('metadata denied'))
+    vi.mocked(normalizePostCommandScripts).mockReturnValue([{ command: 'echo hi' }])
+    vi.mocked(isEnvTrustEnabled).mockReturnValue(false)
+    vi.mocked(computeConfigHash).mockResolvedValue('deadbeef')
+    vi.mocked(isConfigTrusted).mockResolvedValue(false)
+    vi.mocked(decidePostCommandTrust).mockReturnValue('skip')
+
+    await command.run()
+
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string)
+    expect(output.success).toBe(true)
+    expect(output.worktree).toMatchObject({
+      kind: 'ephemeral',
+      owner: 'agent-7',
+      ttl: '30m',
+      effectiveTtl: '30m',
+      locked: false,
+    })
+    expect(output.warnings).toEqual(
+      expect.arrayContaining([
+        'setup warning',
+        '--rsync-flags and --rsync-exclude are ignored when --skip-rsync is set',
+        expect.stringContaining('untrusted config file'),
+        'Enabled extensions.worktreeConfig (migrated: none)',
+        expect.stringContaining('metadata denied'),
+      ])
+    )
+  })
+
+  it('keeps --ports allocation failures non-fatal in the command result', async () => {
+    const { command, logSpy, warnSpy } = createCommand()
+    stubParse(command, {
+      path: '/repo/wt',
+      branch: 'feature',
+      ports: true,
+      json: true,
+    })
+    prepareRun(command, baseConfig())
+    vi.mocked(allocate).mockRejectedValue(new Error('allocator unavailable'))
+    vi.mocked(normalizePostCommandScripts).mockReturnValue([])
+
+    await command.run()
+
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(mockGitHelper.getMainWorktreePath).toHaveBeenCalledTimes(1)
+    const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string)
+    expect(output.success).toBe(true)
+    expect(output.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('allocator unavailable')])
+    )
+  })
+
+  it('retains lifecycle fields and warnings when a post-command fails', async () => {
+    const { command, logSpy, warnSpy } = createCommand()
+    stubParse(command, {
+      path: '/repo/wt',
+      branch: 'feature',
+      ephemeral: true,
+      owner: 'agent-7',
+      ttl: '30m',
+      json: true,
+    })
+    prepareRun(
+      command,
+      baseConfig({
+        ports: {
+          enabled: true,
+          range: '3100-3199',
+          names: ['web'],
+          dbStrategy: 'named',
+          dbBaseName: 'dev',
+        },
+      })
+    )
+    vi.mocked(allocate).mockResolvedValue({ web: 3100 })
+    vi.mocked(ensureWorktreeConfigEnabled).mockResolvedValue({
+      enabled: true,
+      migrated: [],
+      notice: 'lifecycle notice',
+    })
+
+    const failedResult = {
+      name: 'failing-script',
+      command: 'exit 2',
+      cwd: '/repo/wt',
+      exitCode: 2,
+      signal: null,
+      stdout: '',
+      stderr: 'failed',
+      success: false,
+      duration: 1,
+    }
+    const internals = command as unknown as {
+      runPostCommands: () => Promise<unknown>
+    }
+    vi.spyOn(internals, 'runPostCommands').mockRejectedValue(
+      new PostCommandError('Post-command script failed: exit 2', failedResult, [failedResult])
+    )
+
+    await expect(command.run()).rejects.toThrow()
+
+    expect(warnSpy).not.toHaveBeenCalled()
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    const output = JSON.parse(logSpy.mock.calls[0]?.[0] as string)
+    expect(output.success).toBe(false)
+    expect(output.worktree).toMatchObject({
+      path: '/repo/wt',
+      kind: 'ephemeral',
+      owner: 'agent-7',
+      ttl: '30m',
+      effectiveTtl: '30m',
+      ports: { web: 3100 },
+      dbName: 'dev_feature',
+      locked: false,
+    })
+    expect(output.warnings).toEqual(['setup warning', 'lifecycle notice'])
+    expect(output.failedPostCommand).toEqual(failedResult)
+  })
+})
 
 describe('add: branch-name validation', () => {
   it('rejects an invalid branch name (positional arg) before doing any git work', async () => {
@@ -374,7 +992,8 @@ describe('add: post-command trust gate wiring', () => {
   function callRunPostCommands(
     command: AddWorktree,
     config: PandoConfig,
-    flags: Record<string, unknown>
+    flags: Record<string, unknown>,
+    resources: { ports?: Record<string, number>; dbName?: string } = {}
   ): Promise<unknown> {
     return (
       command as unknown as {
@@ -383,10 +1002,24 @@ describe('add: post-command trust gate wiring', () => {
           c: PandoConfig,
           w: typeof worktreeInfo,
           p: string,
-          s: null
+          s: null,
+          k: 'ephemeral' | 'long-lived',
+          t?: string,
+          ports?: Record<string, number>,
+          dbName?: string
         ) => Promise<unknown>
       }
-    ).runPostCommands(flags, config, worktreeInfo, '/wt', null)
+    ).runPostCommands(
+      flags,
+      config,
+      worktreeInfo,
+      '/wt',
+      null,
+      'ephemeral',
+      '4h',
+      resources.ports,
+      resources.dbName
+    )
   }
 
   it('runs post-commands when the trust decision is "run"', async () => {
@@ -411,10 +1044,26 @@ describe('add: post-command trust gate wiring', () => {
     const config = baseConfig({
       postCommandsSourcePath: '/repo/.pando.toml',
     } as Partial<PandoConfig>)
-    const result = await callRunPostCommands(command, config, { json: false })
+    const result = await callRunPostCommands(
+      command,
+      config,
+      { json: false },
+      { ports: { web: 3100 }, dbName: 'dev_feature' }
+    )
 
     expect(decidePostCommandTrust).toHaveBeenCalledTimes(1)
     expect(runPostCommandScripts).toHaveBeenCalledTimes(1)
+    expect(runPostCommandScripts).toHaveBeenCalledWith(scripts, {
+      commandName: 'add',
+      cwd: '/wt',
+      worktreePath: '/wt',
+      branch: 'feature',
+      commit: 'abc1234',
+      kind: 'ephemeral',
+      ttl: '4h',
+      ports: { web: 3100 },
+      dbName: 'dev_feature',
+    })
     expect(result).toHaveLength(1)
   })
 

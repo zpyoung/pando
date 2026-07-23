@@ -188,6 +188,13 @@ describe('parseEnvValue', () => {
     expect(parseEnvValue('PANDO_SYMLINK_ALLOW_TRACKED', 'no')).toBe(false)
   })
 
+  it('should preserve a non-numeric number value for schema validation', () => {
+    const parsed = parseEnvValue('PANDO_CONCURRENCY_RETRY_MAX_ATTEMPTS', 'abc')
+
+    expect(parsed).toBe('abc')
+    expect(Number.isNaN(parsed)).toBe(false)
+  })
+
   it('should return string for unknown keys', () => {
     expect(parseEnvValue('PANDO_UNKNOWN_KEY', 'value')).toBe('value')
   })
@@ -268,6 +275,28 @@ describe('parseEnvVars', () => {
     expect(parseEnvVars(env)).toEqual({
       worktree: {
         useProjectSubfolder: true,
+      },
+    })
+  })
+
+  it('should parse lifecycle values using their schema-compatible types', () => {
+    const env = {
+      PANDO_WORKTREE_DEFAULT_KIND: 'ephemeral',
+      PANDO_WORKTREE_AUTO_LOCK_ACTIVE: 'false',
+      PANDO_CONCURRENCY_RETRY_MAX_ATTEMPTS: '9',
+      PANDO_PORTS_NAMES: 'web,api',
+    }
+
+    expect(parseEnvVars(env)).toEqual({
+      worktree: {
+        defaultKind: 'ephemeral',
+        autoLockActive: false,
+      },
+      concurrency: {
+        retry: { maxAttempts: 9 },
+      },
+      ports: {
+        names: ['web', 'api'],
       },
     })
   })

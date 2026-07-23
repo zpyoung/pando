@@ -1,4 +1,7 @@
+import { stat } from 'node:fs/promises'
 import { simpleGit, type SimpleGit } from 'simple-git'
+import { withGitRetry, type GitRetryOptions } from './gitRetry.js'
+import { readMetadata, type WorktreeMetadata } from './worktreeMetadata.js'
 
 /**
  * Git utility wrapper for worktree and branch operations
@@ -13,6 +16,7 @@ export interface WorktreeInfo {
   commit: string
   isPrunable: boolean
   isExistingBranch?: boolean
+  isLocked?: boolean
 }
 
 export interface BranchInfo {
@@ -59,9 +63,15 @@ export interface StaleWorktreeInfo extends WorktreeInfo {
 
 export class GitHelper {
   private git: SimpleGit
+  private retryConfig: GitRetryOptions | undefined
 
-  constructor(baseDir?: string) {
+  constructor(baseDir?: string, retryConfig?: GitRetryOptions) {
     this.git = simpleGit(baseDir)
+    this.retryConfig = retryConfig
+  }
+
+  setRetryConfig(cfg?: GitRetryOptions): void {
+    this.retryConfig = cfg
   }
 
   /**
@@ -157,7 +167,7 @@ export class GitHelper {
     }
 
     // Execute worktree add command
-    await this.git.raw(args)
+    await withGitRetry(() => this.git.raw(args), this.retryConfig)
 
     // Get the commit hash for the new worktree, not the source checkout.
     const commitHash = await this.getWorktreeCommit(path)
@@ -197,6 +207,8 @@ export class GitHelper {
         currentWorktree.branch = null
       } else if (line.startsWith('prunable')) {
         currentWorktree.isPrunable = true
+      } else if (line === 'locked' || line.startsWith('locked ')) {
+        currentWorktree.isLocked = true
       } else if (line === '' && currentWorktree.path) {
         // Empty line marks end of worktree entry
         worktrees.push({
@@ -204,6 +216,7 @@ export class GitHelper {
           branch: currentWorktree.branch || null,
           commit: currentWorktree.commit || '',
           isPrunable: currentWorktree.isPrunable || false,
+          ...(currentWorktree.isLocked ? { isLocked: true } : {}),
         })
         currentWorktree = {}
       }
@@ -216,6 +229,7 @@ export class GitHelper {
         branch: currentWorktree.branch || null,
         commit: currentWorktree.commit || '',
         isPrunable: currentWorktree.isPrunable || false,
+        ...(currentWorktree.isLocked ? { isLocked: true } : {}),
       })
     }
 
@@ -266,7 +280,103 @@ export class GitHelper {
 
     args.push(path)
 
-    await this.git.raw(args)
+    await withGitRetry(() => this.git.raw(args), this.retryConfig)
+  }
+
+  /**
+   * Lock a worktree so Git will not prune or move it
+   */
+  async lockWorktree(worktreePath: string, reason?: string): Promise<void> {
+    const args = ['worktree', 'lock']
+    if (reason !== undefined) {
+      args.push('--reason', reason)
+    }
+    args.push(worktreePath)
+
+    await withGitRetry(async () => {
+      try {
+        await this.git.raw(args)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        // Lifecycle cleanup may replay a completed lock operation after interruption.
+        if (/is already locked\b/i.test(message)) return
+        throw error
+      }
+    }, this.retryConfig)
+  }
+
+  /**
+   * Unlock a worktree
+   */
+  async unlockWorktree(worktreePath: string): Promise<void> {
+    await withGitRetry(async () => {
+      try {
+        await this.git.raw(['worktree', 'unlock', worktreePath])
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        // Lifecycle cleanup may replay a completed unlock operation after interruption.
+        if (/is not locked\b/i.test(message)) return
+        throw error
+      }
+    }, this.retryConfig)
+  }
+
+  /**
+   * Get the age of a worktree, preferring its lifecycle metadata
+   */
+  async getWorktreeAgeMs(worktreePath: string, knownMetadata?: WorktreeMetadata): Promise<number> {
+    try {
+      // Callers that already read the metadata (list/health) can pass it to
+      // avoid a second `git config --worktree` read per worktree.
+      const { createdAt } = knownMetadata ?? (await readMetadata(worktreePath))
+      if (createdAt !== undefined) {
+        const createdAtMs = Date.parse(createdAt)
+        const ageMs = Date.now() - createdAtMs
+        if (Number.isFinite(ageMs)) return Math.max(0, ageMs)
+      }
+    } catch {
+      // Older or partially-created worktrees may not have readable metadata.
+    }
+
+    try {
+      const worktreeStat = await stat(worktreePath)
+      const ageMs = Date.now() - worktreeStat.mtimeMs
+      return Number.isFinite(ageMs) ? Math.max(0, ageMs) : 0
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * Check whether a worktree can be reaped without losing work or commits
+   */
+  async isReapClean(worktreePath: string, targetBranch: string): Promise<boolean> {
+    try {
+      const mergeTarget = targetBranch.trim()
+      if (!mergeTarget) return false
+
+      const status = await simpleGit(worktreePath).status()
+      if (!status.isClean()) return false
+
+      await this.git.raw(['show-ref', '--verify', '--quiet', `refs/heads/${mergeTarget}`])
+
+      const worktree = (await this.listWorktrees()).find(({ path }) => path === worktreePath)
+      if (!worktree?.branch) return false
+
+      return await this.isBranchMerged(worktree.branch, `refs/heads/${mergeTarget}`)
+    } catch {
+      // Reaping must never proceed when repository state cannot be established.
+      return false
+    }
+  }
+
+  /**
+   * Infer the agent session that owns a worktree
+   */
+  inferOwner(): string {
+    // Use `||` on trimmed values so an empty/whitespace CLAUDE_SESSION_ID still
+    // falls back to PANDO_SESSION (nullish-coalescing would stop at '').
+    return process.env.CLAUDE_SESSION_ID?.trim() || process.env.PANDO_SESSION?.trim() || ''
   }
 
   /**
@@ -299,7 +409,7 @@ export class GitHelper {
       args.push(startPoint)
     }
 
-    await this.git.raw(args)
+    await withGitRetry(() => this.git.raw(args), this.retryConfig)
 
     // Get commit hash for the new branch
     const commit = await this.git.raw(['rev-parse', name])
@@ -319,7 +429,7 @@ export class GitHelper {
     const args = ['branch', force ? '-D' : '-d', name]
 
     try {
-      await this.git.raw(args)
+      await withGitRetry(() => this.git.raw(args), this.retryConfig)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
 
@@ -373,7 +483,7 @@ export class GitHelper {
       const output = await this.git.raw(['branch', '--merged', target])
       const mergedBranches = output
         .split('\n')
-        .map((line) => line.trim().replace(/^\*\s*/, ''))
+        .map((line) => line.replace(/^[*+]?\s*/, '').trim())
         .filter(Boolean)
 
       return mergedBranches.includes(name)
@@ -534,7 +644,7 @@ export class GitHelper {
    */
   async forceUpdateBranch(branch: string, commit: string): Promise<void> {
     try {
-      await this.git.raw(['branch', '-f', branch, commit])
+      await withGitRetry(() => this.git.raw(['branch', '-f', branch, commit]), this.retryConfig)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`Failed to update branch '${branch}': ${errorMessage}`)
@@ -548,7 +658,7 @@ export class GitHelper {
    */
   async resetHard(commit: string): Promise<void> {
     try {
-      await this.git.raw(['reset', '--hard', commit])
+      await withGitRetry(() => this.git.raw(['reset', '--hard', commit]), this.retryConfig)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(`Failed to reset to '${commit}': ${errorMessage}`)
@@ -855,7 +965,7 @@ export class GitHelper {
    * @param remote - Remote name (default: 'origin')
    */
   async fetchWithPrune(remote: string = 'origin'): Promise<void> {
-    await this.git.fetch([remote, '--prune'])
+    await withGitRetry(() => this.git.fetch([remote, '--prune']), this.retryConfig)
   }
 
   /**
@@ -1071,6 +1181,6 @@ export class GitHelper {
 /**
  * Create a new GitHelper instance
  */
-export function createGitHelper(baseDir?: string): GitHelper {
-  return new GitHelper(baseDir)
+export function createGitHelper(baseDir?: string, retryConfig?: GitRetryOptions): GitHelper {
+  return new GitHelper(baseDir, retryConfig)
 }
