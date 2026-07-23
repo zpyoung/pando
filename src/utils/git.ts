@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import { withGitRetry, type GitRetryOptions } from './gitRetry.js'
-import { readMetadata } from './worktreeMetadata.js'
+import { readMetadata, type WorktreeMetadata } from './worktreeMetadata.js'
 
 /**
  * Git utility wrapper for worktree and branch operations
@@ -324,9 +324,11 @@ export class GitHelper {
   /**
    * Get the age of a worktree, preferring its lifecycle metadata
    */
-  async getWorktreeAgeMs(worktreePath: string): Promise<number> {
+  async getWorktreeAgeMs(worktreePath: string, knownMetadata?: WorktreeMetadata): Promise<number> {
     try {
-      const { createdAt } = await readMetadata(worktreePath)
+      // Callers that already read the metadata (list/health) can pass it to
+      // avoid a second `git config --worktree` read per worktree.
+      const { createdAt } = knownMetadata ?? (await readMetadata(worktreePath))
       if (createdAt !== undefined) {
         const createdAtMs = Date.parse(createdAt)
         const ageMs = Date.now() - createdAtMs
@@ -372,7 +374,9 @@ export class GitHelper {
    * Infer the agent session that owns a worktree
    */
   inferOwner(): string {
-    return process.env.CLAUDE_SESSION_ID ?? process.env.PANDO_SESSION ?? ''
+    // Use `||` on trimmed values so an empty/whitespace CLAUDE_SESSION_ID still
+    // falls back to PANDO_SESSION (nullish-coalescing would stop at '').
+    return process.env.CLAUDE_SESSION_ID?.trim() || process.env.PANDO_SESSION?.trim() || ''
   }
 
   /**

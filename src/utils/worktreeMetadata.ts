@@ -14,6 +14,9 @@ export interface WorktreeMetadata {
 
 const PANDO_KEY_PATTERN = '^pando\\.'
 const MIGRATED_CORE_KEYS = ['core.worktree', 'core.bare', 'core.sparseCheckout'] as const
+// git lowercases config keys on read; this mirrors the allocator's write-time
+// name guard (git-config-valid: leading letter, then letters/digits/hyphen).
+const VALID_PORT_NAME = /^[a-z][a-z0-9-]*$/
 
 function parseMetadata(output: string): WorktreeMetadata {
   const metadata: WorktreeMetadata = {}
@@ -59,8 +62,11 @@ function parseMetadata(output: string): WorktreeMetadata {
         if (key.startsWith('pando.port.')) {
           const name = key.slice('pando.port.'.length)
           const port = Number(value)
-          if (name && value.trim() && Number.isFinite(port)) {
-            metadata.ports ??= {}
+          // Only accept git-config-valid names (matches the allocator's write
+          // guard) and use a null-prototype map so a key like `__proto__` or
+          // `constructor` cannot pollute the prototype of the ports object.
+          if (VALID_PORT_NAME.test(name) && value.trim() && Number.isFinite(port)) {
+            metadata.ports ??= Object.create(null) as Record<string, number>
             metadata.ports[name] = port
           }
         }

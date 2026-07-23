@@ -137,8 +137,16 @@ export async function setupLifecycleMetadata(
     })
 
     if (worktreeConfig.autoLockActive && hasActiveSession) {
-      await gitHelper.lockWorktree(resolvedPath, `pando: active session ${owner}`)
-      result.locked = true
+      // Locking is best-effort: a lock failure must not skip the remaining
+      // lifecycle setup (port allocation / DB name) below.
+      try {
+        const reason = owner ? `pando: active session ${owner}` : 'pando: active session'
+        await gitHelper.lockWorktree(resolvedPath, reason)
+        result.locked = true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        result.warnings.push(`Could not auto-lock worktree: ${message}`)
+      }
     }
 
     if (portsConfig.enabled) {

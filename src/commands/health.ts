@@ -94,10 +94,8 @@ export default class Health extends Command {
       const healthResults: WorktreeHealth[] = []
 
       for (const worktree of worktrees) {
-        const [metadata, ageMs] = await Promise.all([
-          readMetadata(worktree.path),
-          gitHelper.getWorktreeAgeMs(worktree.path),
-        ])
+        const metadata = await readMetadata(worktree.path)
+        const ageMs = await gitHelper.getWorktreeAgeMs(worktree.path, metadata)
         const health: WorktreeHealth = {
           path: worktree.path,
           branch: worktree.branch,

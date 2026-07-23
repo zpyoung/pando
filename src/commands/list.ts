@@ -29,10 +29,8 @@ async function addLifecycleDetails(
 ): Promise<LifecycleWorktreeInfo[]> {
   return Promise.all(
     worktrees.map(async ({ isLocked, ...worktree }) => {
-      const [metadata, ageMs] = await Promise.all([
-        readMetadata(worktree.path),
-        gitHelper.getWorktreeAgeMs(worktree.path),
-      ])
+      const metadata = await readMetadata(worktree.path)
+      const ageMs = await gitHelper.getWorktreeAgeMs(worktree.path, metadata)
       return {
         ...worktree,
         kind: metadata.kind ?? null,
