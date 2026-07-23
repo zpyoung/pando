@@ -212,6 +212,34 @@ describe('worktreeMetadata', () => {
         [['config', '--local', '--unset', 'core.bare']],
       ])
     })
+
+    it('never writes an empty core.worktree when keys are unset (simple-git returns "")', async () => {
+      // Regression: simple-git resolves an absent `config --get` to '' rather
+      // than throwing. Writing that empty value back via `config --worktree
+      // core.worktree ''` bricks the repo (`fatal: cannot chdir to ''`) and
+      // poisons every later git command. Only genuinely-set keys must migrate.
+      mockRaw.mockImplementation((args: string[]) => {
+        const key = args.at(-1)
+        if (key === 'extensions.worktreeConfig' && args.includes('--get')) {
+          return Promise.reject(new Error('not set'))
+        }
+        if (key === 'core.bare') return Promise.resolve('false\n')
+        // core.worktree and core.sparseCheckout are unset → simple-git yields ''.
+        if (args.includes('--get')) return Promise.resolve('')
+        return Promise.resolve('')
+      })
+
+      await expect(ensureWorktreeConfigEnabled('/repo')).resolves.toEqual({
+        enabled: true,
+        migrated: ['core.bare'],
+        notice: 'Enabled extensions.worktreeConfig (migrated: core.bare)',
+      })
+
+      const writeCalls = mockRaw.mock.calls.map(([args]) => args as string[])
+      expect(writeCalls).not.toContainEqual(['config', '--worktree', 'core.worktree', ''])
+      expect(writeCalls).not.toContainEqual(['config', '--worktree', 'core.sparseCheckout', ''])
+      expect(writeCalls).toContainEqual(['config', '--worktree', 'core.bare', 'false'])
+    })
   })
 
   describe('assertGitVersion', () => {

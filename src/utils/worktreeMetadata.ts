@@ -206,8 +206,13 @@ export async function ensureWorktreeConfigEnabled(
   const settings: Array<{ name: string; value: string }> = []
   for (const name of MIGRATED_CORE_KEYS) {
     try {
-      const value = await git.raw(['config', '--local', '--get', name])
-      settings.push({ name, value: value.trim() })
+      const value = (await git.raw(['config', '--local', '--get', name])).trim()
+      // simple-git resolves an absent config key to '' instead of throwing, so
+      // the catch below never fires for a missing key. Writing an empty value
+      // back via `git config --worktree` — notably core.worktree — bricks the
+      // repository (`fatal: cannot chdir to ''`), poisoning every later git
+      // command. Only migrate keys that actually hold a value.
+      if (value) settings.push({ name, value })
     } catch {
       // Missing core settings need no per-worktree override.
     }
