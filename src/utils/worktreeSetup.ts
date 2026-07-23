@@ -744,11 +744,17 @@ export class WorktreeSetupOrchestrator {
       // replace it instead of failing with EEXIST.
       for (const item of symlinkItems) {
         const targetPath = path.default.join(worktreePath, item)
+        // Only the "no entry" case is caught here; a real removal failure
+        // (EACCES/EPERM/IO) must propagate so setup fails and rolls back rather
+        // than silently leaving the target and reporting a bogus conflict.
+        let targetExists = true
         try {
           await fs.lstat(targetPath)
-          await fs.remove(targetPath)
         } catch {
-          // No entry at target; nothing to remove.
+          targetExists = false
+        }
+        if (targetExists) {
+          await fs.remove(targetPath)
         }
       }
 
