@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft — awaiting user review.
+Approved — ready for implementation.
 
 ## Purpose
 
