@@ -226,8 +226,9 @@ dbBaseName = "dev"
 # Post-command Scripts
 # ============================================================================
 # Shell commands to run after a pando command succeeds. Keys are command ids;
-# the only supported hook today is "add". For `pando add`, scripts run from the
-# newly created worktree once rsync/symlink setup has finished.
+# the supported hooks are "add" and "adopt". Scripts run from the worktree once
+# rsync/symlink setup has finished. `pando adopt` uses the "adopt" scripts and
+# falls back to the "add" scripts when no "adopt" key is set.
 #
 # SECURITY — trust prompt: post-commands run with a shell, so the FIRST time a
 # config file would run them, Pando shows the commands and asks you to trust the
@@ -238,6 +239,7 @@ dbBaseName = "dev"
 #
 # [postCommands]
 # add = ["pnpm install", "pnpm run prepare"]
+# adopt = ["pnpm install"]    # optional; omit to reuse the "add" scripts
 
 # ============================================================================
 # Project-Specific Examples

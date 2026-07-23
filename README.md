@@ -137,6 +137,45 @@ pando add --path ../feature-x --branch feature-x --details
 
 When `--details` is used with `--json`, the response includes a stable `details` object with `rsync` totals and `symlink` counts/sample paths. Without `--details`, default human and JSON output are unchanged.
 
+### `pando adopt`
+
+Take over a git worktree that pando did **not** create (for example one made by raw `git worktree add` or another tool) and run pando's standard setup on it — rsync of untracked artifacts, symlinks, skip-worktree, lifecycle metadata, ports, and post-commands. After a successful adopt, the worktree is indistinguishable from one created by `pando add`.
+
+Adopt is designed to be safe on a worktree that already contains real work: **it never removes the worktree and never overwrites your files.**
+
+```bash
+# Adopt the worktree you're currently in
+pando adopt
+
+# Adopt a specific worktree by path
+pando adopt ../feature-x
+
+# Preview exactly what would happen, changing nothing
+pando adopt ../feature-x --dry-run
+```
+
+**Flags:**
+
+- `[path]`: Path to the worktree to adopt (positional; defaults to the current directory)
+- `--dry-run`: Print the plan (symlinks to create / already-linked / skipped, rsync file count, metadata) without changing anything
+- `--replace-existing`: Replace a real file/dir sitting at a symlink target instead of skipping it
+- `--ephemeral` / `--long-lived`: Lifecycle kind (mutually exclusive)
+- `--ttl <duration>` / `--owner <id>` / `--ports`: Same lifecycle/port options as `pando add`
+- `--skip-rsync` / `--rsync-flags` / `--rsync-exclude`: Rsync controls (same as `pando add`)
+- `--skip-symlink` / `--symlink` / `--absolute-symlinks`: Symlink controls (same as `pando add`)
+- `--details` / `-j, --json`: Output controls
+
+**Safety semantics:**
+
+- **Your work is never touched.** Rsync only carries gitignored artifacts (never tracked or modified files), and adopting a dirty worktree leaves every uncommitted change in place. JSON output lists them under `preexistingDirty`.
+- **Symlink conflicts are skipped by default.** If a real file or directory already sits where pando would create a symlink, pando leaves it alone and warns (reported under `setup.symlink.conflicts`). Pass `--replace-existing` to replace it instead.
+- **Failure never deletes the worktree.** If setup fails, pando rolls back only the changes it made this run; the worktree and your work survive.
+- **Idempotent.** Re-running `adopt` on an already-managed worktree re-applies setup and reports `alreadyManaged: true` — handy as a "re-sync / repair".
+
+**Lifecycle metadata**: adopt defaults the kind to **long-lived** (a hand-created worktree with real work should not be auto-reaped), ignoring `worktree.defaultKind`; pass `--ephemeral`/`--ttl` to override. The recorded `sourceBranch` is your configured `worktree.targetBranch` (e.g. `main`), since an adopted worktree has no "branched-from" moment.
+
+**Post-commands**: adopt runs scripts under the `[postCommands] adopt` config key, falling back to `[postCommands] add` when no adopt-specific scripts are configured. The same config-trust prompt as `pando add` applies.
+
 ### `pando list`
 
 List all git worktrees
@@ -594,23 +633,25 @@ dbBaseName = "dev"              # Prefix for a name derived from each worktree's
 fetch = false                 # Run git fetch --prune before detection
 
 # Post-command scripts
-# Runs after a command succeeds. For pando add, scripts run from the created worktree.
+# Runs after a command succeeds. Scripts run from the target worktree.
 [postCommands]
 add = ["pnpm install"]        # Optional setup commands after pando add succeeds
+adopt = ["pnpm install"]      # Optional; falls back to the add scripts if omitted
 ```
 
 ### Post-command scripts
 
-`postCommands` lets you configure shell commands to run after Pando completes a command successfully. The first supported hook is `add`:
+`postCommands` lets you configure shell commands to run after Pando completes a command successfully. The supported hooks are `add` and `adopt`:
 
 ```toml
 [postCommands]
 add = ["pnpm install", "pnpm run prepare"]
+adopt = ["pnpm install"]      # optional; falls back to the `add` scripts if omitted
 ```
 
-Scripts configured for `add` run **after** the worktree has been created and rsync/symlink setup has finished. They execute from the created worktree directory and receive useful context through environment variables:
+Scripts configured for `add` run **after** the worktree has been created and rsync/symlink setup has finished. `pando adopt` runs its `adopt` scripts, falling back to the `add` scripts when no `adopt` key is configured (so an existing `add` setup "just works" for adopts too). They execute from the worktree directory and receive useful context through environment variables:
 
-- `PANDO_COMMAND` — command id, such as `add`
+- `PANDO_COMMAND` — command id, such as `add` or `adopt`
 - `PANDO_WORKTREE_PATH` — absolute path to the created worktree
 - `PANDO_BRANCH` — branch name, or empty in detached HEAD mode
 - `PANDO_COMMIT` — created worktree commit

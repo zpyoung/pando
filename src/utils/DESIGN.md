@@ -8,8 +8,10 @@ This module provides core utility functions for git operations, file operations 
 
 - **git.ts** - Git operations wrapper using simple-git
 - **fileOps.ts** - Rsync and symlink operations with transaction support; strips transport/exec-class rsync flags as a security denylist
-- **worktreeSetup.ts** - Post-worktree-creation orchestrator (rsync + symlink, transactional)
+- **worktreeSetup.ts** - Post-worktree-creation orchestrator (rsync + symlink, transactional). Also powers `pando adopt` via **adopt mode** (`SetupOptions.adopt`): non-destructive rollback, skip-not-clobber symlink conflicts, dirt-tolerant clean-tree check, and a `dryRun` plan (`SetupPlan`)
 - **postCommands.ts** - Run configured post-command shell scripts and shape their results (`PostCommandResult`, `PostCommandError`)
+- **postCommandRunner.ts** - Trust-gated post-command execution shared by `add` and `adopt` (`runTrustedPostCommands`): normalize → config-trust gate → run, with a fallback config key
+- **setupFlags.ts** - Shared rsync/symlink/ports flag-override logic applied by both `add` and `adopt` (`applySetupFlagOverrides`)
 - **configTrust.ts** - direnv-style trust store gating config-file post-commands (content-hash pinning, pure decision function)
 - **branch-backups.ts** - Timestamp formatting and backup branch name parsing/formatting for backup/restore
 - **commandDetails.ts** - Build the `--details` payload for `add` (rsync totals, sampled symlink paths)
