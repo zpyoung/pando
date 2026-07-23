@@ -2,7 +2,8 @@
 
 ## Status
 
-Approved — ready for implementation.
+Approved — ready for implementation. Tech spec authored (`tech.md`) — gate fired:
+touches ≳3 source files.
 
 ## Purpose
 
