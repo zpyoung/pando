@@ -120,6 +120,57 @@ branch refs/heads/feature
     })
   })
 
+  describe('getWorktreeByPath', () => {
+    const porcelain = `worktree /path/to/main
+HEAD abc123def456
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def789abc012
+branch refs/heads/feature
+`
+
+    it('returns the matching linked worktree with isMain false', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(porcelain)
+
+      const result = await gitHelper.getWorktreeByPath('/path/to/feature')
+
+      expect(result).not.toBeNull()
+      expect(result!.info.path).toBe('/path/to/feature')
+      expect(result!.info.branch).toBe('feature')
+      expect(result!.isMain).toBe(false)
+    })
+
+    it('flags the main worktree with isMain true', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(porcelain)
+
+      const result = await gitHelper.getWorktreeByPath('/path/to/main')
+
+      expect(result).not.toBeNull()
+      expect(result!.isMain).toBe(true)
+    })
+
+    it('returns null for a path that is not a linked worktree', async () => {
+      mockGit.raw = vi.fn().mockResolvedValue(porcelain)
+
+      const result = await gitHelper.getWorktreeByPath('/some/other/dir')
+
+      expect(result).toBeNull()
+    })
+
+    it('resolves a cwd-relative path (and canonicalizes via realpath)', async () => {
+      const cwd = process.cwd()
+      mockGit.raw = vi
+        .fn()
+        .mockResolvedValue(`worktree ${cwd}\nHEAD abc123def456\nbranch refs/heads/main\n`)
+
+      const result = await gitHelper.getWorktreeByPath('.')
+
+      expect(result).not.toBeNull()
+      expect(result!.isMain).toBe(true)
+    })
+  })
+
   describe('worktree operations', () => {
     it('should add a new worktree with branch', async () => {
       mockGit.raw = vi

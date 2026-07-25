@@ -9,6 +9,7 @@ This directory contains all CLI command implementations for Pando. Each command 
 | File | Description |
 |------|-------------|
 | `add.ts` | Create new git worktrees with optional rsync/symlink setup and post-commands |
+| `adopt.ts` | Take over an externally-created worktree: run pando setup (adopt-safe mode) without creating or clobbering |
 | `list.ts` | List all git worktrees in the repository |
 | `remove.ts` | Remove worktrees with optional branch deletion (guards the main worktree) |
 | `clean.ts` | Detect and remove stale worktrees (merged, gone upstream, prunable) |
@@ -73,6 +74,24 @@ export default class CommandName extends Command {
 - `--commit, -c`: Base commit
 - `--force, -f`: Force reset existing branch
 - `--no-rebase`: Skip automatic rebase
+
+### adopt.ts
+
+**Purpose**: Take over a worktree pando did **not** create (raw `git worktree add`, another tool) and run pando's standard setup on it — the setup-only half of `add`, with safety rails for a worktree that may already hold real work.
+
+**Key Features**:
+- Resolves the target from a positional `[path]` or the cwd; rejects the main worktree and non-worktrees (`GitHelper.getWorktreeByPath`)
+- Reuses `WorktreeSetupOrchestrator.setupNewWorktree` in **adopt mode** (`SetupOptions.adopt`): non-destructive rollback (never `git worktree remove`), skip-not-clobber symlink conflicts (`--replace-existing` to override), dirt-tolerant clean-tree check
+- `--dry-run` returns a `SetupPlan` (symlink create/already-linked/conflict buckets + rsync file count/mode) and mutates nothing
+- Reuses `setupLifecycleMetadata` with a long-lived-default `kindOverride`; records `sourceBranch = worktree.targetBranch`
+- Shares the trust-gated post-command runner (`runTrustedPostCommands`) with `add`, using the `adopt` config key (falling back to `add`)
+- Idempotent: re-adopting an already-managed worktree re-applies and reports `alreadyManaged`
+
+**Flags**:
+- `[path]`: Worktree to adopt (positional; defaults to cwd)
+- `--dry-run`: Preview the plan without changes
+- `--replace-existing`: Replace real files at symlink targets instead of skipping
+- Lifecycle (`--ephemeral`/`--long-lived`/`--ttl`/`--owner`/`--ports`) and setup (`--skip-rsync`/`--skip-symlink`/`--rsync-*`/`--symlink`/`--absolute-symlinks`) flags mirror `add`
 
 ### list.ts
 

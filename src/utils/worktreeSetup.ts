@@ -51,6 +51,60 @@ export interface SetupOptions {
    * Progress callback for long operations
    */
   onProgress?: (phase: SetupPhase, message: string) => void
+
+  /**
+   * Adopt mode: set up a worktree pando did NOT create (takeover). Changes three
+   * behaviors versus the create-time path:
+   *  1. No 'worktree' checkpoint is created, so a setup failure rolls back only
+   *     the file operations pando performed - it never removes the worktree.
+   *  2. Symlink targets that hold a real file/dir are skipped (not clobbered);
+   *     see `replaceExistingSymlinks` to opt back into replacement.
+   *  3. The clean-tree check excludes `preexistingDirtyPaths` so pre-existing
+   *     work-in-progress does not read as setup pollution.
+   */
+  adopt?: boolean
+
+  /**
+   * Adopt mode only: replace a real file/dir sitting at a symlink target instead
+   * of skipping it (restores the create-time remove-then-link behavior).
+   */
+  replaceExistingSymlinks?: boolean
+
+  /**
+   * Compute and return the setup plan without mutating anything. Meaningful for
+   * adopt previews (`pando adopt --dry-run`).
+   */
+  dryRun?: boolean
+
+  /**
+   * Adopt mode only: paths that were already dirty before setup ran. Excluded
+   * from the post-setup clean-tree check so the user's own changes are not
+   * reported as pollution.
+   */
+  preexistingDirtyPaths?: string[]
+}
+
+/**
+ * Classification of planned symlink targets against the current worktree state.
+ */
+export interface SymlinkClassification {
+  /** Target path is empty - a symlink will be created */
+  toCreate: string[]
+  /** Target is already the correct symlink - nothing to do (idempotent) */
+  alreadyLinked: string[]
+  /** Target holds a real file/dir/other symlink - skipped unless replacing */
+  conflicts: string[]
+}
+
+/**
+ * A preview of what setup would do, returned on `dryRun` and attached to adopt
+ * runs for reporting.
+ */
+export interface SetupPlan {
+  symlinks: SymlinkClassification
+  /** Number of untracked/ignored files rsync would (or did) copy */
+  rsyncFileCount: number
+  rsyncMode: 'untracked' | 'full' | 'skipped'
 }
 
 /**
@@ -85,6 +139,12 @@ export interface SetupResult {
   duration: number
   warnings: string[]
   rolledBack: boolean
+  /**
+   * Setup plan. Populated on `dryRun` (the whole result) and on adopt runs (for
+   * reporting what was created / already-linked / skipped). Undefined for
+   * create-time runs.
+   */
+  plan?: SetupPlan
 }
 
 // ============================================================================
@@ -114,6 +174,14 @@ export class WorktreeSetupOrchestrator {
    */
   private hasRolledBack = false
 
+  /**
+   * True while setting up an adopted worktree. Makes rollback non-destructive:
+   * it never removes the worktree (no 'worktree' checkpoint is created) and
+   * never removes the rsync destination (which is the pre-existing worktree
+   * root). Set per-run at the start of setupNewWorktree.
+   */
+  private adoptMode = false
+
   constructor(
     private gitHelper: GitHelper,
     private config: PandoConfig
@@ -133,6 +201,9 @@ export class WorktreeSetupOrchestrator {
    */
   async setupNewWorktree(worktreePath: string, options: SetupOptions = {}): Promise<SetupResult> {
     const startTime = Date.now()
+    // Record adopt mode for rollback() (which is also called from the SIGINT
+    // handler, without access to these options).
+    this.adoptMode = Boolean(options.adopt)
     const warnings: string[] = []
     let rsyncResult: RsyncResult | undefined
     let symlinkResult: SymlinkResult | undefined
@@ -161,6 +232,20 @@ export class WorktreeSetupOrchestrator {
         ],
       }
 
+      // Adopt mode: harden rsync so it can never overwrite the user's files.
+      //  (1) Force onlyUntracked — a config with onlyUntracked=false would
+      //      full-mirror and clobber tracked/modified target files when the
+      //      commits happen to match.
+      //  (2) Add --ignore-existing — a path that is gitignored in the source but
+      //      already exists in the adopted worktree (e.g. a hand-made .env) must
+      //      not be replaced by the source's copy.
+      if (options.adopt) {
+        rsyncConfig.onlyUntracked = true
+        if (!rsyncConfig.flags.includes('--ignore-existing')) {
+          rsyncConfig.flags = [...rsyncConfig.flags, '--ignore-existing']
+        }
+      }
+
       // Get source tree path (main worktree)
       const sourceTreePath = await this.gitHelper.getMainWorktreePath()
 
@@ -184,7 +269,14 @@ export class WorktreeSetupOrchestrator {
       // below) - otherwise a failure there leaves rollback() with no
       // 'worktree' checkpoint, and the already-created git worktree is never
       // cleaned up.
-      this.transaction.createCheckpoint('worktree', { path: worktreePath })
+      //
+      // Adopt mode deliberately skips this: pando did not create the worktree,
+      // so a setup failure must roll back only pando's own file operations and
+      // NEVER `git worktree remove` a tree that predates pando's involvement.
+      // rollback() removes the worktree only when this checkpoint is present.
+      if (!options.adopt) {
+        this.transaction.createCheckpoint('worktree', { path: worktreePath })
+      }
 
       // Plan symlinks once: matched items minus (in strict mode) git-tracked
       // paths. The symlink phases and rsync exclusions all consume this plan so
@@ -217,6 +309,37 @@ export class WorktreeSetupOrchestrator {
         }
       }
 
+      // Adopt/dry-run: classify each planned symlink target against the current
+      // worktree (create / already-linked / conflict). Consumed by the dry-run
+      // plan, the preserve-existing symlink phase, and adopt-run reporting.
+      const preserveExisting = Boolean(options.adopt) && !options.replaceExistingSymlinks
+      const classification =
+        options.adopt || options.dryRun
+          ? await this.classifyAdoptSymlinks(sourceTreePath, worktreePath, symlinkItems)
+          : undefined
+
+      // ============================================================
+      // Dry run: report the plan, mutate nothing
+      // ============================================================
+      if (options.dryRun) {
+        const rsync = await this.planRsync(sourceTreePath, worktreePath, rsyncConfig, options)
+        this.reportProgress(options.onProgress, SetupPhase.COMPLETE, 'Dry run complete')
+        return {
+          success: true,
+          plan: {
+            symlinks: classification ?? { toCreate: [], alreadyLinked: [], conflicts: [] },
+            rsyncFileCount: rsync.count,
+            rsyncMode: rsync.mode,
+          },
+          duration: Date.now() - startTime,
+          warnings,
+          rolledBack: false,
+        }
+      }
+
+      // Track rsync outcome for the adopt-run plan.
+      let rsyncMode: SetupPlan['rsyncMode'] = 'skipped'
+
       // ============================================================
       // Phase 3: Symlinks (Before Rsync)
       // ============================================================
@@ -231,7 +354,8 @@ export class WorktreeSetupOrchestrator {
           sourceTreePath,
           worktreePath,
           symlinkConfig,
-          symlinkItems
+          symlinkItems,
+          { preserveExisting, classification }
         )
 
         // Add warnings for skipped conflicts
@@ -286,6 +410,7 @@ export class WorktreeSetupOrchestrator {
         }
 
         if (runRsync) {
+          rsyncMode = onlyUntracked ? 'untracked' : 'full'
           // Check rsync is installed
           const { RsyncNotInstalledError } = await import('./fileOps.js')
           if (!(await this.rsyncHelper.isInstalled())) {
@@ -352,7 +477,8 @@ export class WorktreeSetupOrchestrator {
           sourceTreePath,
           worktreePath,
           symlinkConfig,
-          symlinkItems
+          symlinkItems,
+          { preserveExisting, classification }
         )
 
         // Add warnings for any conflicts (shouldn't happen since rsync excluded them)
@@ -435,8 +561,11 @@ export class WorktreeSetupOrchestrator {
       let cleanTree: boolean | undefined
       try {
         const symlinkItemSet = new Set(symlinkItems)
+        // Adopt mode: the user's pre-existing work-in-progress is not setup
+        // pollution, so exclude it from the clean-tree verdict.
+        const preexistingSet = new Set(options.preexistingDirtyPaths ?? [])
         const dirtyPaths = (await this.gitHelper.getDirtyPaths(worktreePath)).filter(
-          (dirtyPath) => !symlinkItemSet.has(dirtyPath)
+          (dirtyPath) => !symlinkItemSet.has(dirtyPath) && !preexistingSet.has(dirtyPath)
         )
         cleanTree = dirtyPaths.length === 0
         if (!cleanTree) {
@@ -469,6 +598,17 @@ export class WorktreeSetupOrchestrator {
         duration,
         warnings,
         rolledBack: false,
+        // Attach the plan on adopt runs so the command can report already-linked
+        // vs. created vs. skipped without re-deriving it.
+        ...(classification
+          ? {
+              plan: {
+                symlinks: classification,
+                rsyncFileCount: rsyncResult?.filesTransferred ?? 0,
+                rsyncMode,
+              } satisfies SetupPlan,
+            }
+          : {}),
       }
     } catch (error) {
       // ============================================================
@@ -529,8 +669,12 @@ export class WorktreeSetupOrchestrator {
       this.reportProgress(onProgress, SetupPhase.ROLLBACK, 'Rolling back file operations')
 
       // 1. Rollback file operations (symlinks, copied files)
-      // rollback() returns preserved checkpoints since it clears internal state
-      const rollbackResult = await this.transaction.rollback()
+      // rollback() returns preserved checkpoints since it clears internal state.
+      // In adopt mode, skip removing the rsync destination — it is the
+      // pre-existing worktree root, not something pando created.
+      const rollbackResult = await this.transaction.rollback({
+        skipRsyncRollback: this.adoptMode,
+      })
 
       // 2. Remove the worktree via git using preserved checkpoint
       const worktreeCheckpoint = rollbackResult.checkpoints.get('worktree')
@@ -586,25 +730,121 @@ export class WorktreeSetupOrchestrator {
     sourceTreePath: string,
     worktreePath: string,
     symlinkConfig: SymlinkConfig,
-    symlinkItems: string[]
+    symlinkItems: string[],
+    options: { preserveExisting?: boolean; classification?: SymlinkClassification } = {}
   ): Promise<SymlinkResult> {
     const fs = (await import('fs-extra')).default
     const path = await import('path')
 
-    // Remove git-checked-out files that will be symlinked
-    // Git automatically checks out tracked files when creating worktrees
+    if (!options.preserveExisting) {
+      // Create-time (and adopt --replace-existing): remove any checked-out copy
+      // git created, then symlink in its place. Git automatically checks out
+      // tracked files when creating worktrees. Use lstat so a dangling symlink
+      // (which pathExists misses) is also cleared, letting --replace-existing
+      // replace it instead of failing with EEXIST.
+      for (const item of symlinkItems) {
+        const targetPath = path.default.join(worktreePath, item)
+        // Only the "no entry" case is caught here; a real removal failure
+        // (EACCES/EPERM/IO) must propagate so setup fails and rolls back rather
+        // than silently leaving the target and reporting a bogus conflict.
+        let targetExists = true
+        try {
+          await fs.lstat(targetPath)
+        } catch {
+          targetExists = false
+        }
+        if (targetExists) {
+          await fs.remove(targetPath)
+        }
+      }
+
+      return this.symlinkHelper.createSymlinks(sourceTreePath, worktreePath, symlinkConfig, {
+        replaceExisting: true,
+        skipConflicts: true,
+        items: symlinkItems,
+      })
+    }
+
+    // Adopt (preserve): never delete a real file. Drop targets that are already
+    // the correct symlink (idempotent no-op) and leave the rest to
+    // createSymlinks, which skips real-file conflicts (surfaced as warnings
+    // upstream) rather than clobbering them.
+    const classification =
+      options.classification ??
+      (await this.classifyAdoptSymlinks(sourceTreePath, worktreePath, symlinkItems))
+    const alreadyLinked = new Set(classification.alreadyLinked)
+    const actionable = symlinkItems.filter((item) => !alreadyLinked.has(item))
+
+    return this.symlinkHelper.createSymlinks(sourceTreePath, worktreePath, symlinkConfig, {
+      replaceExisting: false,
+      skipConflicts: true,
+      items: actionable,
+    })
+  }
+
+  /**
+   * Classify each planned symlink target against the current worktree: empty
+   * (toCreate), already the correct symlink (alreadyLinked), or a real
+   * file/dir/other symlink (conflict). Read-only; used by adopt/dry-run.
+   */
+  private async classifyAdoptSymlinks(
+    sourceTreePath: string,
+    worktreePath: string,
+    symlinkItems: string[]
+  ): Promise<SymlinkClassification> {
+    const fs = (await import('fs-extra')).default
+    const path = await import('path')
+    const result: SymlinkClassification = { toCreate: [], alreadyLinked: [], conflicts: [] }
+
     for (const item of symlinkItems) {
-      const targetPath = path.default.join(worktreePath, item)
-      if (await fs.pathExists(targetPath)) {
-        await fs.remove(targetPath)
+      const target = path.default.join(worktreePath, item)
+      const source = path.default.join(sourceTreePath, item)
+      // lstat (not pathExists): pathExists follows symlinks and returns false for
+      // a dangling link, which would misclassify it as `toCreate` even though a
+      // link entry is present. lstat sees the entry itself.
+      let exists = true
+      try {
+        await fs.lstat(target)
+      } catch {
+        exists = false
+      }
+      if (!exists) {
+        result.toCreate.push(item)
+      } else if (await this.symlinkHelper.verifySymlink(target, source)) {
+        result.alreadyLinked.push(item)
+      } else {
+        result.conflicts.push(item)
       }
     }
 
-    return this.symlinkHelper.createSymlinks(sourceTreePath, worktreePath, symlinkConfig, {
-      replaceExisting: true,
-      skipConflicts: true,
-      items: symlinkItems,
-    })
+    return result
+  }
+
+  /**
+   * Compute the rsync file count and mode without running rsync (for dry-run).
+   * Mirrors the mode decision in Phase 4.
+   */
+  private async planRsync(
+    sourceTreePath: string,
+    worktreePath: string,
+    rsyncConfig: RsyncConfig,
+    options: SetupOptions
+  ): Promise<{ count: number; mode: SetupPlan['rsyncMode'] }> {
+    if (options.skipRsync || !rsyncConfig.enabled) {
+      return { count: 0, mode: 'skipped' }
+    }
+
+    const onlyUntracked = rsyncConfig.onlyUntracked ?? true
+    if (onlyUntracked) {
+      const files = await this.gitHelper.listIgnoredFiles(sourceTreePath)
+      return { count: files.length, mode: files.length > 0 ? 'untracked' : 'skipped' }
+    }
+
+    const sourceCommit = await this.gitHelper.getWorktreeCommit(sourceTreePath)
+    const targetCommit = await this.gitHelper.getWorktreeCommit(worktreePath)
+    return sourceCommit === targetCommit
+      ? { count: 0, mode: 'full' }
+      : { count: 0, mode: 'skipped' }
   }
 
   /**
