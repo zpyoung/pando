@@ -309,8 +309,14 @@ export default class AdoptWorktree extends Command {
     warnings: string[]
   ): Promise<LoadedPandoConfig> {
     if (spinner) spinner.text = 'Loading configuration...'
-    const gitRoot = await gitHelper.getRepositoryRoot()
-    const config = await loadConfig({ cwd: process.cwd(), gitRoot })
+    // adopt runs from inside the target worktree, so process.cwd()/--show-toplevel
+    // both resolve to that worktree. Project config (symlink/rsync patterns) lives
+    // in the main worktree — which is also the rsync/symlink source. Loading from
+    // the target worktree instead would miss the real config AND try to parse the
+    // user's own local files (e.g. a non-JSON package.json at a symlink target),
+    // which adopt must tolerate rather than choke on.
+    const mainWorktree = await gitHelper.getMainWorktreePath()
+    const config = await loadConfig({ cwd: mainWorktree, gitRoot: mainWorktree })
     applySetupFlagOverrides(config, flags, (message) =>
       this.emitWarning(message, Boolean(flags.json), warnings)
     )
