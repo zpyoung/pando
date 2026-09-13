@@ -317,6 +317,38 @@ describe('add: lifecycle metadata setup', () => {
     expect(lockWorktree).toHaveBeenCalledWith('/repo/wt', 'pando: active session agent-7')
   })
 
+  it('honors kindOverride, ignoring flags/config/inference (used by adopt)', async () => {
+    const deps = dependencies()
+    const result = await setupLifecycleMetadata(
+      {
+        flags: {},
+        worktreeConfig,
+        portsConfig,
+        gitHelper: {
+          inferOwner: vi.fn().mockReturnValue(''),
+          getMainBranch: vi.fn().mockResolvedValue('main'),
+          lockWorktree: vi.fn(),
+        },
+        gitRoot: '/repo',
+        mainRepoPath: '/repo',
+        resolvedPath: '/repo/wt',
+        sourceBranch: 'main',
+        worktreeBranch: 'feature',
+        // An agent session would normally infer 'ephemeral'...
+        env: { CLAUDE_SESSION_ID: 'abc' },
+        // ...but the override wins.
+        kindOverride: 'long-lived',
+      },
+      deps
+    )
+
+    expect(result.kind).toBe('long-lived')
+    expect(deps.writeMetadata).toHaveBeenCalledWith(
+      '/repo/wt',
+      expect.objectContaining({ kind: 'long-lived' })
+    )
+  })
+
   it('allocates ports, derives a database name, and writes both when enabled', async () => {
     const deps = dependencies()
     deps.allocate.mockResolvedValue({ web: 3100, api: 3101 })
@@ -727,10 +759,13 @@ describe('add: JSON document consistency', () => {
       success: false,
       duration: 1,
     }
-    const internals = command as unknown as {
-      runPostCommands: () => Promise<unknown>
-    }
-    vi.spyOn(internals, 'runPostCommands').mockRejectedValue(
+    // Drive the failure through the real shared runner: trust the config file,
+    // then have the script execution throw a PostCommandError (as a non-zero
+    // exit would). This exercises add's handleError PostCommandError branch.
+    vi.mocked(normalizePostCommandScripts).mockReturnValue([{ command: 'exit 2' }])
+    vi.mocked(isEnvTrustEnabled).mockReturnValue(true)
+    vi.mocked(decidePostCommandTrust).mockReturnValue('run')
+    vi.mocked(runPostCommandScripts).mockRejectedValue(
       new PostCommandError('Post-command script failed: exit 2', failedResult, [failedResult])
     )
 
@@ -985,121 +1020,8 @@ describe('add: flag-consistency warnings', () => {
 // Trust gate decision wiring (runPostCommands)
 // ---------------------------------------------------------------------------
 
-describe('add: post-command trust gate wiring', () => {
-  const scripts = [{ command: 'echo hi' }]
-  const worktreeInfo = { path: '/wt', branch: 'feature', commit: 'abc1234' }
-
-  function callRunPostCommands(
-    command: AddWorktree,
-    config: PandoConfig,
-    flags: Record<string, unknown>,
-    resources: { ports?: Record<string, number>; dbName?: string } = {}
-  ): Promise<unknown> {
-    return (
-      command as unknown as {
-        runPostCommands: (
-          f: Record<string, unknown>,
-          c: PandoConfig,
-          w: typeof worktreeInfo,
-          p: string,
-          s: null,
-          k: 'ephemeral' | 'long-lived',
-          t?: string,
-          ports?: Record<string, number>,
-          dbName?: string
-        ) => Promise<unknown>
-      }
-    ).runPostCommands(
-      flags,
-      config,
-      worktreeInfo,
-      '/wt',
-      null,
-      'ephemeral',
-      '4h',
-      resources.ports,
-      resources.dbName
-    )
-  }
-
-  it('runs post-commands when the trust decision is "run"', async () => {
-    const { command } = createCommand()
-    vi.mocked(normalizePostCommandScripts).mockReturnValue(scripts)
-    vi.mocked(isEnvTrustEnabled).mockReturnValue(true)
-    vi.mocked(decidePostCommandTrust).mockReturnValue('run')
-    vi.mocked(runPostCommandScripts).mockResolvedValue([
-      {
-        name: null,
-        command: 'echo hi',
-        cwd: '/wt',
-        exitCode: 0,
-        signal: null,
-        stdout: 'hi\n',
-        stderr: '',
-        success: true,
-        duration: 1,
-      },
-    ])
-
-    const config = baseConfig({
-      postCommandsSourcePath: '/repo/.pando.toml',
-    } as Partial<PandoConfig>)
-    const result = await callRunPostCommands(
-      command,
-      config,
-      { json: false },
-      { ports: { web: 3100 }, dbName: 'dev_feature' }
-    )
-
-    expect(decidePostCommandTrust).toHaveBeenCalledTimes(1)
-    expect(runPostCommandScripts).toHaveBeenCalledTimes(1)
-    expect(runPostCommandScripts).toHaveBeenCalledWith(scripts, {
-      commandName: 'add',
-      cwd: '/wt',
-      worktreePath: '/wt',
-      branch: 'feature',
-      commit: 'abc1234',
-      kind: 'ephemeral',
-      ttl: '4h',
-      ports: { web: 3100 },
-      dbName: 'dev_feature',
-    })
-    expect(result).toHaveLength(1)
-  })
-
-  it('skips post-commands (without running them) when the trust decision is "skip"', async () => {
-    const { command, warnSpy } = createCommand()
-    vi.mocked(normalizePostCommandScripts).mockReturnValue(scripts)
-    vi.mocked(isEnvTrustEnabled).mockReturnValue(false)
-    vi.mocked(computeConfigHash).mockResolvedValue('deadbeef')
-    vi.mocked(isConfigTrusted).mockResolvedValue(false)
-    vi.mocked(decidePostCommandTrust).mockReturnValue('skip')
-
-    const config = baseConfig({
-      postCommandsSourcePath: '/repo/.pando.toml',
-    } as Partial<PandoConfig>)
-    // Non-JSON mode → skip decision warns via command.warn and returns [].
-    const result = await callRunPostCommands(command, config, { json: false })
-
-    expect(decidePostCommandTrust).toHaveBeenCalledTimes(1)
-    expect(runPostCommandScripts).not.toHaveBeenCalled()
-    expect(result).toEqual([])
-    // A warning explains how to trust the file.
-    expect(warnSpy).toHaveBeenCalled()
-    expect(warnSpy.mock.calls[0]?.[0]).toContain('untrusted config file')
-  })
-
-  it('short-circuits without consulting the trust gate when there are no scripts', async () => {
-    const { command } = createCommand()
-    vi.mocked(normalizePostCommandScripts).mockReturnValue([])
-
-    const result = await callRunPostCommands(command, baseConfig(), { json: false })
-
-    expect(decidePostCommandTrust).not.toHaveBeenCalled()
-    expect(runPostCommandScripts).not.toHaveBeenCalled()
-    expect(result).toEqual([])
-  })
-})
+// Post-command trust-gate wiring is exercised in test/utils/postCommandRunner.test.ts
+// (the logic moved to src/utils/postCommandRunner.ts, shared by add + adopt).
 
 // ---------------------------------------------------------------------------
 // SIGINT interrupt handler (preserved from security work — DO NOT DELETE)

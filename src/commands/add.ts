@@ -13,22 +13,12 @@ import {
 import { allocate, deriveDbName } from '../utils/portAllocator.js'
 import { createWorktreeSetupOrchestrator, SetupPhase } from '../utils/worktreeSetup.js'
 import { jsonFlag, pathFlag } from '../utils/common-flags.js'
+import { applySetupFlagOverrides } from '../utils/setupFlags.js'
 import { ErrorHelper, isOclifExitError } from '../utils/errors.js'
 import { validateBranchName } from '../utils/validation.js'
-import {
-  computeConfigHash,
-  decidePostCommandTrust,
-  isConfigTrusted,
-  isEnvTrustEnabled,
-  recordTrust,
-} from '../utils/configTrust.js'
 import { buildAddCommandDetails, type AddCommandDetails } from '../utils/commandDetails.js'
-import {
-  normalizePostCommandScripts,
-  PostCommandError,
-  runPostCommandScripts,
-  type PostCommandResult,
-} from '../utils/postCommands.js'
+import { PostCommandError, type PostCommandResult } from '../utils/postCommands.js'
+import { runTrustedPostCommands } from '../utils/postCommandRunner.js'
 
 type WorktreeKind = NonNullable<WorktreeMetadata['kind']>
 
@@ -56,6 +46,12 @@ interface LifecycleOptions {
   worktreeBranch: string | null
   env?: NodeJS.ProcessEnv
   createdAt?: string
+  /**
+   * Force the lifecycle kind instead of deriving it from flags/config/path.
+   * `pando adopt` uses this to default to long-lived (a hand-created worktree
+   * with real work should not be auto-reaped).
+   */
+  kindOverride?: WorktreeKind
 }
 
 export interface AddLifecycleResult {
@@ -108,7 +104,9 @@ export async function setupLifecycleMetadata(
   const { flags, worktreeConfig, portsConfig, gitHelper, gitRoot, mainRepoPath, resolvedPath } =
     options
   const env = options.env ?? process.env
-  const kind = resolveWorktreeKind(flags, worktreeConfig.defaultKind, resolvedPath, env)
+  const kind =
+    options.kindOverride ??
+    resolveWorktreeKind(flags, worktreeConfig.defaultKind, resolvedPath, env)
   const owner = (flags.owner as string | undefined) ?? gitHelper.inferOwner()
   const hasActiveSession = env.CLAUDE_SESSION_ID !== undefined || env.PANDO_SESSION !== undefined
   const ttl = flags.ttl as string | undefined
@@ -448,18 +446,25 @@ export default class AddWorktree extends Command {
         if (lifecycle.notice) ErrorHelper.warn(this, lifecycle.notice, false)
         lifecycle.warnings.forEach((warning) => ErrorHelper.warn(this, warning, false))
       }
-      const postCommandResults = await this.runPostCommands(
-        flags as Record<string, unknown>,
+      const postCommandResults = await runTrustedPostCommands({
+        command: this,
         config,
-        worktreeInfo,
-        resolvedPath,
+        commandName: 'add',
+        scriptKey: 'add',
+        context: {
+          cwd: resolvedPath,
+          worktreePath: worktreeInfo.path,
+          branch: worktreeInfo.branch,
+          commit: worktreeInfo.commit,
+          kind: lifecycle.kind,
+          ttl: lifecycle.effectiveTtl,
+          ...(lifecycle.ports ? { ports: lifecycle.ports } : {}),
+          ...(lifecycle.dbName ? { dbName: lifecycle.dbName } : {}),
+        },
+        isJson: Boolean(flags.json),
         spinner,
-        lifecycle.kind,
-        lifecycle.effectiveTtl,
-        lifecycle.ports,
-        lifecycle.dbName,
-        outputContext.warnings
-      )
+        warnings: outputContext.warnings,
+      })
       this.formatOutput(
         flags as Record<string, unknown>,
         worktreeInfo,
@@ -647,44 +652,10 @@ export default class AddWorktree extends Command {
       gitRoot,
     })
 
-    // Apply flag overrides
-    if (flags['skip-rsync']) {
-      config.rsync.enabled = false
-      // Warn if rsync-specific flags were provided alongside --skip-rsync
-      if (flags['rsync-flags'] || flags['rsync-exclude']) {
-        this.emitWarning(
-          '--rsync-flags and --rsync-exclude are ignored when --skip-rsync is set',
-          Boolean(flags.json),
-          warnings
-        )
-      }
-    }
-    if (flags['rsync-flags']) {
-      const rsyncFlags = flags['rsync-flags'] as string[]
-      config.rsync.flags = rsyncFlags.flatMap((f: string) => f.split(','))
-    }
-    if (flags['rsync-exclude']) {
-      const rsyncExclude = flags['rsync-exclude'] as string[]
-      config.rsync.exclude = [
-        ...config.rsync.exclude,
-        ...rsyncExclude.flatMap((e: string) => e.split(',')),
-      ]
-    }
-    if (flags['skip-symlink']) {
-      config.symlink.patterns = []
-    }
-    if (flags.symlink) {
-      const symlinkPatterns = flags.symlink as string[]
-      config.symlink.patterns = symlinkPatterns.flatMap((s: string) => s.split(','))
-    }
-    if (flags['absolute-symlinks']) {
-      config.symlink.relative = false
-    }
-    if (flags.ports) {
-      // Allocation lands in T8; preserving the run-level override now keeps the
-      // flag contract stable for that phase without allocating prematurely.
-      config.ports.enabled = true
-    }
+    // Apply the shared rsync/symlink/ports flag overrides (identical for adopt)
+    applySetupFlagOverrides(config, flags, (message) =>
+      this.emitWarning(message, Boolean(flags.json), warnings)
+    )
 
     return config
   }
@@ -911,182 +882,6 @@ export default class AddWorktree extends Command {
         // Could add verbose flag later to control this
       }
     }
-  }
-
-  private async runPostCommands(
-    flags: Record<string, unknown>,
-    config: Awaited<ReturnType<typeof loadConfig>>,
-    worktreeInfo: {
-      path: string
-      branch: string | null
-      commit: string
-    },
-    resolvedPath: string,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
-    kind: WorktreeKind,
-    ttl?: string,
-    ports?: Record<string, number>,
-    dbName?: string,
-    warnings: string[] = []
-  ): Promise<PostCommandResult[]> {
-    const scripts = normalizePostCommandScripts(config, 'add')
-
-    if (scripts.length === 0) {
-      return []
-    }
-
-    const isJson = Boolean(flags.json)
-
-    // ============================================================
-    // Trust gate (direnv-style): post-commands run with shell: true,
-    // so a config file from a freshly-cloned repo must be explicitly
-    // trusted before its scripts execute. See src/utils/configTrust.ts.
-    // ============================================================
-    const allowed = await this.evaluatePostCommandTrust(
-      config.postCommandsSourcePath,
-      scripts,
-      isJson,
-      spinner,
-      warnings
-    )
-    if (!allowed) {
-      return []
-    }
-
-    if (spinner) {
-      spinner.text = `Running ${scripts.length} post-command script${scripts.length === 1 ? '' : 's'}...`
-    }
-
-    return runPostCommandScripts(scripts, {
-      commandName: 'add',
-      cwd: resolvedPath,
-      worktreePath: worktreeInfo.path,
-      branch: worktreeInfo.branch,
-      commit: worktreeInfo.commit,
-      kind,
-      ttl,
-      ...(ports ? { ports } : {}),
-      ...(dbName ? { dbName } : {}),
-    })
-  }
-
-  /**
-   * Decide whether post-commands from a config file are allowed to run, and
-   * persist trust when the user approves interactively.
-   *
-   * @returns True if the post-commands should run; false to skip them
-   */
-  private async evaluatePostCommandTrust(
-    sourcePath: string | undefined,
-    scripts: Array<{ name?: string; command: string }>,
-    isJson: boolean,
-    spinner: Awaited<ReturnType<typeof import('ora').default>> | null,
-    warnings: string[] = []
-  ): Promise<boolean> {
-    const envTrust = isEnvTrustEnabled(process.env.PANDO_TRUST_CONFIG)
-
-    // Only hash/check trust when there is an actual file on disk to vet.
-    let currentHash: string | undefined
-    let trustedWithMatchingHash = false
-    if (sourcePath && !envTrust) {
-      try {
-        currentHash = await computeConfigHash(sourcePath)
-        trustedWithMatchingHash = await isConfigTrusted(sourcePath, currentHash)
-      } catch {
-        // If we cannot read/hash the file, treat it as untrusted.
-        trustedWithMatchingHash = false
-      }
-    }
-
-    const isTty = Boolean(process.stdin.isTTY)
-
-    const decision = decidePostCommandTrust({
-      hasScripts: scripts.length > 0,
-      sourcePath,
-      envTrust,
-      trustedWithMatchingHash,
-      isTty,
-      isJson,
-    })
-
-    if (decision === 'run') {
-      return true
-    }
-
-    if (decision === 'skip') {
-      this.emitWarning(
-        `Skipping ${scripts.length} post-command script(s) from untrusted config file` +
-          (sourcePath ? ` '${sourcePath}'` : '') +
-          '.\n' +
-          'To allow them: run `pando add` interactively once to trust this file, ' +
-          'or set PANDO_TRUST_CONFIG=1.',
-        isJson,
-        warnings
-      )
-      return false
-    }
-
-    // decision === 'prompt' (interactive TTY, not JSON)
-    // Pause the spinner so the inquirer prompt renders cleanly. By this point
-    // the spinner has typically already succeeded (setup completed), so it is
-    // usually NOT spinning — but it may still be active if a caller invokes the
-    // trust gate mid-setup. The wasSpinning guard handles both cases: we only
-    // stop a spinner that is actually running, and only restart it afterward if
-    // we stopped it (see the matching `if (spinner && wasSpinning)` below).
-    const wasSpinning = Boolean(spinner?.isSpinning)
-    if (spinner && wasSpinning) {
-      spinner.stop()
-    }
-
-    if (!isJson) {
-      this.log('')
-      this.log(`A config file requests running post-command scripts on 'pando add':`)
-      if (sourcePath) {
-        this.log(`  File: ${sourcePath}`)
-      }
-      for (const script of scripts) {
-        const label = script.name ? `${script.name}: ${script.command}` : script.command
-        this.log(`  • ${label}`)
-      }
-      this.log('')
-    }
-
-    const { confirm } = await import('@inquirer/prompts')
-    const approved = await confirm({
-      message: 'Trust this config file and run its post-commands?',
-      default: false,
-    })
-
-    if (!approved) {
-      this.emitWarning(
-        `Skipped ${scripts.length} post-command script(s); config file not trusted.`,
-        isJson,
-        warnings
-      )
-      return false
-    }
-
-    // Persist trust at the current content hash, then run.
-    if (sourcePath) {
-      try {
-        const hash = currentHash ?? (await computeConfigHash(sourcePath))
-        await recordTrust(sourcePath, hash)
-      } catch {
-        // Non-fatal: failing to persist trust just means we'll prompt again
-        // next time. Still allow this run since the user approved it.
-        this.emitWarning(
-          'Could not persist trust decision; will prompt again next time.',
-          isJson,
-          warnings
-        )
-      }
-    }
-
-    if (spinner && wasSpinning) {
-      spinner.start()
-    }
-
-    return true
   }
 
   /**

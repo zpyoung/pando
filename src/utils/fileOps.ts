@@ -166,8 +166,16 @@ export class FileOperationTransaction {
 
   /**
    * Rollback all operations in reverse order
+   *
+   * @param options.skipRsyncRollback - Do NOT remove the rsync destination during
+   *   rollback. Rsync records its destination (the worktree root) as the rollback
+   *   target, so the default RSYNC rollback `fs.remove(destination)` deletes the
+   *   entire worktree. That is only safe when the worktree was created this run
+   *   (e.g. `pando add`, which also removes the worktree via checkpoint). For an
+   *   ADOPTED worktree pando did not create, this would destroy the user's work,
+   *   so adopt mode sets this flag.
    */
-  async rollback(): Promise<RollbackResult> {
+  async rollback(options: { skipRsyncRollback?: boolean } = {}): Promise<RollbackResult> {
     // Preserve checkpoints BEFORE clearing - critical for post-rollback use
     const preservedCheckpoints = new Map(this.checkpoints)
     const rolledBackOperations: Operation[] = []
@@ -203,6 +211,15 @@ export class FileOperationTransaction {
             break
 
           case OperationType.RSYNC:
+            // Adopt mode: never remove the rsync destination — it is the
+            // pre-existing worktree root, and removing it would delete the
+            // user's work along with the synced artifacts.
+            if (options.skipRsyncRollback) {
+              this.onWarning?.(
+                `Skipped rollback of ${op.type} at ${op.path}: adopt mode preserves the existing worktree (synced artifacts left in place)`
+              )
+              break
+            }
             // For rsync, we need to remove the destination
             // This is tricky - we can only remove if we have metadata about what was created
             if (op.metadata?.destination) {

@@ -30,6 +30,22 @@ export function pandoList(container: E2EContainer, cwd: string): Promise<PandoRe
   return runPando(container, { command: 'list', cwd, json: true })
 }
 
+export function pandoAdopt(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'adopt', args, cwd, json: true })
+}
+
+export function pandoAdoptHuman(
+  container: E2EContainer,
+  cwd: string,
+  args: string[] = []
+): Promise<PandoResult> {
+  return runPando(container, { command: 'adopt', args, cwd, json: false })
+}
+
 export function pandoRemove(
   container: E2EContainer,
   cwd: string,
